@@ -1,0 +1,1053 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ora — Architecture</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+@font-face {
+  font-family: 'DynaPuff';
+  src: url('/ui/DynaPuff-Variable.ttf') format('truetype');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'DynaPuff';
+  src: url('/ui/DynaPuff-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@keyframes oraType {
+  from { opacity: 0; transform: translateY(3px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: #f5f2ec;
+  min-height: 100vh;
+  font-family: 'Inter', -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+  color: #1e160a;
+}
+#bg { position: fixed; inset: 0; pointer-events: none; z-index: 0; }
+
+.page {
+  position: relative; z-index: 1;
+  max-width: 1040px; margin: 0 auto;
+  padding: 30px 44px 56px;
+  display: flex; flex-direction: column; gap: 0;
+}
+
+/* ── Nav ─────────────────────────────────────────────────── */
+.nav {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 32px;
+}
+.wordmark {
+  font-family:'DynaPuff','JetBrains Mono',monospace;
+  font-size:26px; font-weight:400; letter-spacing:0.02em;
+  background: linear-gradient(135deg, #1a2d6b 0%, #3b5fc0 55%, #1e160a 100%);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  background-clip: text;
+  display:inline-flex; align-items:center;
+  filter: drop-shadow(0 1px 3px rgba(60,95,192,.12));
+}
+.nav-cursor {
+  display:inline-block; width:2px; height:0.72em;
+  background:#3b5fc0; border-radius:1px; margin-left:2px;
+  animation:blink 0.8s ease-in-out infinite; vertical-align:middle; flex-shrink:0;
+}
+.nav-badge {
+  font-size:8px; font-weight:600; letter-spacing:0.14em;
+  color:rgba(59,95,192,.80); border:1px solid rgba(59,95,192,.30);
+  border-radius:3px; padding:2px 7px; margin-left:10px;
+  font-family:'JetBrains Mono',monospace;
+  background:rgba(59,95,192,.07);
+  text-transform:uppercase;
+}
+.tagline { font-size:10.5px; color:rgba(20,14,4,.32); letter-spacing:0.08em; font-family:'JetBrains Mono',monospace; }
+
+/* ═══════════════════════════════════════════════════════════ */
+/* PRODUCT WINDOW MOCKUP                                       */
+/* ═══════════════════════════════════════════════════════════ */
+.product-wrap {
+  margin-bottom: 36px;
+  position: relative;
+}
+.product-label {
+  font-size:9px; font-family:'JetBrains Mono',monospace; letter-spacing:0.18em; text-transform:uppercase;
+  color:rgba(20,14,4,.30); margin-bottom:10px; text-align:center;
+}
+.product-window {
+  border: 1.5px solid rgba(20,14,4,.28);
+  border-radius: 10px;
+  overflow: hidden;
+  background: #f0ece4;
+  box-shadow: 3px 5px 0 rgba(20,14,4,.07), 6px 10px 0 rgba(20,14,4,.03);
+}
+
+/* Window chrome */
+.win-chrome {
+  background: #e8e3d8;
+  border-bottom: 1.5px solid rgba(20,14,4,.18);
+  padding: 9px 14px;
+  display: flex; align-items: center; gap: 10px;
+}
+.win-dots { display:flex; gap:5px; }
+.win-dot { width:10px; height:10px; border-radius:50%; border:1px solid rgba(20,14,4,.18); }
+.win-dot.red    { background:#ff5f57; }
+.win-dot.yellow { background:#ffbd2e; }
+.win-dot.green  { background:#28c940; }
+.win-url {
+  flex:1; font-size:10px; font-family:'JetBrains Mono',monospace;
+  color:rgba(20,14,4,.35); text-align:center; letter-spacing:0.05em;
+}
+
+/* Window body */
+.win-body {
+  padding: 20px 28px 22px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  align-items: start;
+}
+
+/* Left column — query UI */
+.win-left {}
+.win-install {
+  display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+  margin-bottom:16px;
+}
+.win-install-cmd {
+  background:#e2ddd4; border:1px solid rgba(20,14,4,.20); border-radius:6px;
+  padding:5px 12px; font-size:11px; font-family:'JetBrains Mono',monospace;
+  color:rgba(20,14,4,.70); display:flex; align-items:center; gap:8px;
+}
+.win-copy-btn {
+  font-size:9px; background:#fff; border:1px solid rgba(20,14,4,.18);
+  border-radius:4px; padding:2px 7px; color:rgba(20,14,4,.50); cursor:pointer;
+  font-family:'Inter',sans-serif; font-weight:500;
+}
+.win-link-btn {
+  font-size:10px; padding:4px 10px; border:1px solid rgba(20,14,4,.18);
+  border-radius:20px; background:rgba(255,255,255,.55); color:rgba(20,14,4,.60);
+  cursor:pointer; font-family:'Inter',sans-serif; white-space:nowrap;
+  text-decoration:none; display:inline-block; transition:background 120ms, color 120ms;
+}
+.win-link-btn:hover { background:rgba(255,255,255,.85); color:rgba(20,14,4,.85); }
+.win-query-input {
+  border: 2px solid #5b8af0;
+  border-radius: 8px; padding: 10px 14px;
+  background: white;
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 12px;
+  box-shadow: 0 0 0 3px rgba(91,138,240,.12);
+}
+.win-query-placeholder { font-size:13px; color:rgba(20,14,4,.35); flex:1; font-family:'Inter',sans-serif; }
+.win-query-arrow {
+  width:28px; height:28px; border-radius:6px;
+  background:#5b8af0; color:white; display:flex; align-items:center; justify-content:center;
+  font-size:14px; flex-shrink:0;
+}
+.win-suggestions { display:flex; flex-wrap:wrap; gap:6px; }
+.win-suggestion {
+  font-size:10px; padding:5px 10px;
+  border:1px solid rgba(20,14,4,.18); border-radius:20px;
+  background:rgba(255,255,255,.50); color:rgba(20,14,4,.55);
+  font-family:'Inter',sans-serif; cursor:pointer;
+}
+
+/* Right column — code block */
+.win-right {}
+.win-code-block {
+  border: 1.5px solid rgba(20,14,4,.18);
+  border-radius: 8px; overflow:hidden;
+}
+.win-code-tabs {
+  display:flex; align-items:center;
+  background:#e8e3d8;
+  border-bottom:1px solid rgba(20,14,4,.14);
+  padding:0 14px;
+}
+.win-tab {
+  font-size:10.5px; padding:8px 12px;
+  color:rgba(20,14,4,.40); cursor:pointer;
+  font-family:'Inter',sans-serif; font-weight:500;
+  border-bottom: 2px solid transparent; margin-bottom:-1px;
+}
+.win-tab.active { color:#5b8af0; border-bottom-color:#5b8af0; }
+.win-traffic { margin-left:auto; display:flex; gap:4px; }
+.win-traffic span { width:8px; height:8px; border-radius:50%; }
+.win-traffic .r { background:#ff5f57; }
+.win-traffic .y { background:#ffbd2e; }
+.win-traffic .g { background:#28c940; }
+.win-code-body { padding:16px; background:#f9f6f0; }
+.win-code-body pre { font-size:11px; font-family:'JetBrains Mono',monospace; line-height:1.8; color:rgba(20,14,4,.75); }
+.code-kw   { color:#5b8af0; font-weight:500; }
+.code-fn   { color:#2d8a6f; }
+.code-str  { color:#c04a00; }
+.win-code-result {
+  border-top:1px solid rgba(20,14,4,.12);
+  padding:8px 16px;
+  display:flex; align-items:center; justify-content:space-between;
+  background:#f0ece4;
+}
+.win-result-text { font-size:10px; font-family:'JetBrains Mono',monospace; color:rgba(20,14,4,.55); }
+.win-result-text .check { color:#22a44a; font-weight:600; }
+.win-copy-sm { font-size:9px; font-family:'Inter',sans-serif; border:1px solid rgba(20,14,4,.16); border-radius:4px; padding:2px 8px; color:rgba(20,14,4,.45); background:rgba(255,255,255,.55); cursor:pointer; }
+
+/* ── Workspace picker ────────────────────────────────────── */
+.wp-wrap { margin-bottom: 36px; }
+.wp-label { font-size:9px; font-family:'JetBrains Mono',monospace; letter-spacing:0.22em; text-transform:uppercase; color:rgba(20,14,4,.28); margin-bottom:12px; text-align:center; }
+.wp-input-outer { display:flex; align-items:center; gap:10px; border:1.5px solid rgba(20,14,4,.28); border-radius:8px; padding:11px 14px; background:rgba(255,252,244,.82); max-width:660px; margin:0 auto 10px; box-shadow:2px 3px 0 rgba(20,14,4,.06); transition:border-color 150ms,box-shadow 150ms; }
+.wp-input-outer:focus-within { border-color:rgba(74,144,217,.65); box-shadow:0 0 0 3px rgba(74,144,217,.08),2px 3px 0 rgba(20,14,4,.03); }
+.wp-input { flex:1; background:none; border:none; outline:none; font-size:13.5px; font-family:'Inter',sans-serif; color:rgba(20,14,4,.82); }
+.wp-input::placeholder { color:rgba(20,14,4,.30); }
+.wp-run { background:rgba(20,14,4,.08); border:1.5px solid rgba(20,14,4,.18); border-radius:6px; padding:5px 14px; font-size:13px; color:rgba(20,14,4,.55); cursor:pointer; font-family:'JetBrains Mono',monospace; transition:all 130ms; flex-shrink:0; }
+.wp-run:hover { background:rgba(20,14,4,.14); color:rgba(20,14,4,.80); }
+.wp-chips { display:flex; flex-wrap:wrap; gap:6px; max-width:660px; margin:0 auto 18px; }
+.wp-chip { padding:4px 12px; border-radius:100px; font-size:10.5px; font-family:'JetBrains Mono',monospace; background:rgba(255,252,244,.70); border:1px solid rgba(20,14,4,.18); color:rgba(20,14,4,.48); cursor:pointer; transition:all 130ms; }
+.wp-chip:hover { background:rgba(74,144,217,.08); border-color:rgba(74,144,217,.28); color:rgba(40,80,180,.72); }
+.wp-code { border:1.5px solid rgba(20,14,4,.22); border-radius:9px; background:rgba(240,236,226,.80); overflow:hidden; max-width:660px; margin:0 auto 20px; box-shadow:2px 3px 0 rgba(20,14,4,.05); }
+.wp-code-tabs { display:flex; align-items:center; padding:6px 14px 0; background:rgba(228,222,210,.85); border-bottom:1px solid rgba(20,14,4,.12); }
+.wp-tab { background:none; border:none; border-bottom:2px solid transparent; padding:5px 10px; font-size:10px; font-family:'Inter',sans-serif; color:rgba(20,14,4,.38); cursor:pointer; transition:color 130ms; margin-bottom:-1px; }
+.wp-tab.active { border-bottom-color:rgba(74,144,217,.72); color:rgba(60,100,190,.85); font-weight:500; }
+.wp-code-dots { margin-left:auto; display:flex; gap:4px; padding-bottom:5px; }
+.wcd { width:7px; height:7px; border-radius:50%; }
+.wcd.red{background:#d9514e;opacity:.75} .wcd.yellow{background:#e5a217;opacity:.75} .wcd.green{background:#3ab54a;opacity:.75}
+.wp-code-body { padding:13px 16px; font-family:'JetBrains Mono',monospace; font-size:11.5px; line-height:1.9; color:rgba(20,14,4,.72); background:rgba(245,240,228,.82); }
+.wp-code-divider { border:none; border-top:1px solid rgba(20,14,4,.12); margin:9px 0; }
+.wp-code-copy { float:right; background:rgba(74,127,192,.12); border:1px solid rgba(74,127,192,.22); border-radius:4px; padding:2px 8px; font-size:9.5px; color:rgba(40,80,180,.75); cursor:pointer; font-family:'JetBrains Mono',monospace; }
+.wp-ws-section { max-width:660px; margin:0 auto; }
+.wp-ws-hdr { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+.wp-ws-title { font-size:10px; font-weight:500; font-family:'JetBrains Mono',monospace; color:rgba(20,14,4,.35); letter-spacing:0.14em; text-transform:uppercase; }
+.wp-ws-new { background:rgba(74,144,217,.10); border:1px solid rgba(74,144,217,.26); border-radius:6px; padding:5px 12px; font-size:11px; color:rgba(40,90,190,.78); cursor:pointer; font-family:'Inter',sans-serif; font-weight:500; transition:all 130ms; }
+.wp-ws-new:hover { background:rgba(74,144,217,.18); border-color:rgba(74,144,217,.44); }
+.wp-ws-empty { border:1.5px dashed rgba(20,14,4,.18); border-radius:7px; padding:28px; text-align:center; font-size:12px; font-family:'Inter',sans-serif; color:rgba(20,14,4,.32); background:rgba(255,252,244,.40); }
+.wp-ws-card { display:flex; align-items:center; justify-content:space-between; padding:12px 14px; background:rgba(255,252,244,.72); border:1.5px solid rgba(20,14,4,.18); border-radius:7px; cursor:pointer; transition:all 140ms; margin-bottom:7px; box-shadow:1px 2px 0 rgba(20,14,4,.04); }
+.wp-ws-card:hover { background:rgba(255,252,244,.92); border-color:rgba(20,14,4,.30); box-shadow:2px 4px 0 rgba(20,14,4,.07); transform:translateY(-1px); }
+.wp-ws-name { font-size:13px; font-weight:500; color:rgba(20,14,4,.82); font-family:'Inter',sans-serif; }
+.wp-ws-meta { font-size:10.5px; color:rgba(20,14,4,.38); font-family:'JetBrains Mono',monospace; margin-top:2px; }
+.wp-ws-dot { width:6px; height:6px; border-radius:50%; background:#22c55e; box-shadow:0 0 5px rgba(34,197,94,.45); flex-shrink:0; }
+.wp-ws-setup { font-size:10px; color:rgba(190,120,0,.80); background:rgba(245,158,11,.10); padding:2px 8px; border-radius:100px; border:1px solid rgba(245,158,11,.25); font-family:'JetBrains Mono',monospace; }
+.wp-ws-del { background:none; border:none; color:rgba(20,14,4,.20); cursor:pointer; font-size:16px; padding:3px 6px; border-radius:4px; transition:color 130ms; line-height:1; }
+.wp-ws-del:hover { color:rgba(180,40,40,.65); }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+.result-pill.show { opacity:1; }
+
+/* ── Section card ─────────────────────────────────────────── */
+.card {
+  border: 1.5px solid rgba(20,14,4,.30);
+  border-radius: 10px;
+  padding: 24px 28px 20px;
+  background: rgba(255,252,242,.55);
+  position: relative;
+  /* Pencil sketch shadow — offset, no blur */
+  box-shadow: 2px 3px 0 rgba(20,14,4,.06), 4px 6px 0 rgba(20,14,4,.03);
+}
+/* Tiny corner sketch marks */
+.card::after {
+  content: '';
+  position: absolute; top: 6px; left: 6px;
+  width: 12px; height: 12px;
+  border-top: 1.5px solid rgba(20,14,4,.25);
+  border-left: 1.5px solid rgba(20,14,4,.25);
+  border-radius: 0;
+}
+.section-num {
+  position:absolute; top:-10px; left:22px;
+  font-size:8.5px; font-family:'JetBrains Mono',monospace;
+  font-weight:500; letter-spacing:0.18em;
+  color:rgba(20,14,4,.38); background:#f5f2ec; padding:0 8px;
+}
+
+/* ── Card header ─────────────────────────────────────────── */
+.card-header { display:flex; align-items:center; gap:12px; margin-bottom:20px; }
+.card-icon { width:28px; height:28px; border-radius:6px; display:flex; align-items:center; justify-content:center; flex-shrink:0; font-size:13px; border:1.5px solid rgba(20,14,4,.22); background:rgba(255,252,242,.70); }
+.card-title { flex:1; }
+.card-title-main { font-size:12.5px; font-weight:600; color:rgba(20,14,4,.82); letter-spacing:.01em; }
+.card-title-sub { font-size:9.5px; font-family:'JetBrains Mono',monospace; color:rgba(20,14,4,.36); margin-top:2px; letter-spacing:.06em; }
+.card-header-line { flex:1; height:1px; background:linear-gradient(to right,rgba(20,14,4,.22),transparent); }
+
+/* ── Flow connector ──────────────────────────────────────── */
+.flow-connector { display:flex; flex-direction:column; align-items:center; padding:5px 0; cursor:pointer; position:relative; }
+.flow-line { width:1px; height:24px; background:rgba(20,14,4,.25); transition:background 200ms; }
+.flow-line.dashed { background:none; border-left:1.5px dashed rgba(20,14,4,.22); height:24px; }
+.flow-node {
+  width:10px; height:10px; border-radius:50%;
+  background:rgba(20,14,4,.55); border:1.5px solid rgba(20,14,4,.40);
+  flex-shrink:0; position:relative; transition:all 200ms;
+}
+.flow-node::after { content:''; position:absolute; bottom:-7px; left:50%; transform:translateX(-50%); border-left:4px solid transparent; border-right:4px solid transparent; border-top:6px solid rgba(20,14,4,.40); transition:border-top-color 200ms; }
+.flow-connector:hover .flow-node { background:rgba(74,144,217,.75); border-color:rgba(74,144,217,.60); box-shadow:0 0 8px rgba(74,144,217,.30); transform:scale(1.3); }
+.flow-connector:hover .flow-node::after { border-top-color:rgba(74,144,217,.60); }
+.flow-connector:hover .flow-line { background:rgba(74,144,217,.40); }
+.flow-label {
+  font-size:8px; font-family:'JetBrains Mono',monospace;
+  color:rgba(20,14,4,.28); letter-spacing:.16em; text-transform:uppercase; margin:5px 0;
+  transition:color 200ms;
+}
+.flow-connector:hover .flow-label { color:rgba(74,144,217,.75); }
+@keyframes nodeRipple { 0%{transform:scale(1);opacity:.8} 100%{transform:scale(2.8);opacity:0} }
+.flow-node-ripple { position:absolute; width:10px; height:10px; border-radius:50%; border:1.5px solid rgba(74,144,217,.60); animation:nodeRipple 500ms ease-out forwards; pointer-events:none; }
+/* Flow connector popover */
+.flow-pop {
+  display:none; position:absolute; left:50%; transform:translateX(-50%);
+  bottom:calc(100% + 8px);
+  background:rgba(248,245,238,.98); border:1.5px solid rgba(20,14,4,.25);
+  border-radius:8px; padding:10px 13px; width:200px;
+  font-size:9.5px; font-family:'JetBrains Mono',monospace;
+  color:rgba(20,14,4,.72); line-height:1.7;
+  box-shadow:3px 5px 0 rgba(20,14,4,.08); z-index:50; pointer-events:none;
+  white-space:pre-line;
+}
+.flow-connector.pop-open .flow-pop { display:block; }
+.flow-pop-title { font-weight:600; color:rgba(20,14,4,.85); margin-bottom:4px; font-size:9px; letter-spacing:.10em; text-transform:uppercase; }
+
+/* ── DB logos ─────────────────────────────────────────────── */
+.logos { display:flex; align-items:flex-start; justify-content:space-between; padding:6px 0 2px; }
+.logo-wrap { display:flex; flex-direction:column; align-items:center; gap:8px; cursor:pointer; position:relative; flex:1; }
+.logo-disc { width:54px; height:54px; border-radius:50%; display:flex; align-items:center; justify-content:center; transition:transform 200ms,box-shadow 200ms; border:2px solid rgba(20,14,4,.15); overflow:hidden; position:relative; }
+.logo-disc::after { content:''; position:absolute; inset:0; border-radius:50%; background:radial-gradient(circle at 35% 35%,rgba(255,255,255,.22),transparent 65%); }
+.logo-wrap:hover .logo-disc { transform:translateY(-4px) scale(1.08); box-shadow:2px 6px 0 var(--logo-glow,rgba(0,0,0,.18)),4px 10px 0 rgba(20,14,4,.06); }
+.logo-disc svg { width:28px; height:28px; position:relative; z-index:1; }
+.logo-name { font-size:8.5px; font-family:'JetBrains Mono',monospace; color:rgba(20,14,4,.36); text-align:center; transition:color 200ms; white-space:nowrap; }
+.logo-wrap:hover .logo-name { color:rgba(20,14,4,.72); }
+.logo-conn { align-self:center; padding:0 2px; margin-top:-12px; display:flex; flex-direction:column; align-items:center; gap:3px; flex-shrink:0; }
+.logo-conn-dot { width:3px; height:3px; border-radius:50%; background:rgba(20,14,4,.20); }
+.logo-pg  { background:#336791; --logo-glow:rgba(51,103,145,.35); }
+.logo-sf  { background:#29b5e8; --logo-glow:rgba(41,181,232,.35); }
+.logo-bq  { background:#4285f4; --logo-glow:rgba(66,133,244,.35); }
+.logo-dk  { background:#e36820; --logo-glow:rgba(227,104,32,.35); }
+.logo-my  { background:#00758f; --logo-glow:rgba(0,117,143,.35); }
+.logo-rs  { background:#8c4fff; --logo-glow:rgba(140,79,255,.35); }
+.logo-csv { background:#16a34a; --logo-glow:rgba(22,163,74,.35); }
+
+/* ── Pipeline ─────────────────────────────────────────────── */
+.pipeline { display:flex; align-items:flex-start; gap:0; margin-bottom:18px; }
+.pipe-arrow { display:flex; align-items:center; flex-shrink:0; width:30px; position:relative; align-self:center; margin-top:-16px; }
+.pipe-arrow::before { content:''; display:block; width:100%; height:1.5px; background:rgba(20,14,4,.28); }
+.pipe-arrow::after { content:''; position:absolute; right:0; width:0; height:0; border-top:4px solid transparent; border-bottom:4px solid transparent; border-left:6px solid rgba(20,14,4,.32); }
+
+/* ── Stage node ──────────────────────────────────────────── */
+.stage {
+  flex:1; min-width:0;
+  background:rgba(255,252,242,.72);
+  border:1.5px solid rgba(20,14,4,.24);
+  border-radius:8px;
+  padding:11px 13px 9px;
+  cursor:pointer;
+  transition:background 180ms,border-color 180ms,transform 180ms,box-shadow 180ms;
+  position:relative; overflow:hidden;
+  box-shadow:1px 2px 0 rgba(20,14,4,.06);
+}
+.stage.active {
+  background:rgba(255,252,238,.95);
+  border-color:rgba(20,14,4,.50);
+  box-shadow:2px 4px 0 rgba(20,14,4,.08);
+}
+.stage:hover:not(.active) { background:rgba(255,252,240,.90); border-color:rgba(20,14,4,.40); transform:translateY(-2px); box-shadow:2px 5px 0 rgba(20,14,4,.08); }
+.stage-num { font-size:7.5px; font-family:'JetBrains Mono',monospace; color:rgba(20,14,4,.32); letter-spacing:.12em; margin-bottom:4px; font-weight:500; }
+.stage-name { font-size:11.5px; font-weight:600; color:rgba(20,14,4,.80); white-space:nowrap; margin-bottom:3px; }
+.stage-sub { font-size:8.5px; font-family:'JetBrains Mono',monospace; color:rgba(20,14,4,.42); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; line-height:1.4; }
+.stage.result { background:rgba(22,163,74,.07); border-color:rgba(22,163,74,.30); }
+.stage.result.active,.stage.result:hover:not(.active) { background:rgba(22,163,74,.13); border-color:rgba(22,163,74,.55); transform:translateY(-2px); box-shadow:2px 5px 0 rgba(22,163,74,.10); }
+.stage.result .stage-name { color:rgba(12,90,35,.82); }
+.stage.result .stage-num  { color:rgba(12,90,35,.44); }
+
+/* ── Stream output ───────────────────────────────────────── */
+.stream-out { max-height:0; overflow:hidden; transition:max-height 280ms ease,opacity 220ms ease,margin-top 220ms ease; opacity:0; margin-top:0; }
+.stage.active .stream-out { max-height:200px; opacity:1; margin-top:8px; }
+.stream-body { background:rgba(20,14,4,.05); border:1px solid rgba(20,14,4,.14); border-radius:5px; padding:7px 10px; font-size:8.5px; line-height:1.7; font-family:'JetBrains Mono',monospace; color:rgba(20,14,4,.65); min-height:24px; }
+.s-cursor { display:inline-block; width:6px; height:8px; background:rgba(20,14,4,.45); border-radius:1px; vertical-align:middle; animation:blink 0.8s ease-in-out infinite; margin-left:1px; }
+
+/* ── Tech badges ─────────────────────────────────────────── */
+.badges { display:flex; align-items:center; gap:6px; flex-wrap:wrap; padding-top:2px; }
+.badge { display:inline-flex; align-items:center; gap:5px; padding:4px 10px; border-radius:100px; font-size:9.5px; font-weight:500; cursor:pointer; transition:transform 160ms,box-shadow 160ms; border:1.5px solid rgba(20,14,4,.22); white-space:nowrap; position:relative; font-family:'Inter',sans-serif; background:rgba(255,252,242,.80); color:rgba(20,14,4,.65); box-shadow:1px 1px 0 rgba(20,14,4,.06); }
+.badge:hover { transform:translateY(-2px); box-shadow:2px 4px 0 rgba(20,14,4,.08); }
+.bdot { width:6px; height:6px; border-radius:50%; display:inline-block; flex-shrink:0; }
+.btip { display:none; position:absolute; bottom:calc(100% + 8px); left:50%; transform:translateX(-50%); background:rgba(248,245,238,.98); border:1.5px solid rgba(20,14,4,.25); border-radius:6px; padding:8px 11px; font-size:9px; line-height:1.6; color:rgba(20,14,4,.75); font-family:'JetBrains Mono',monospace; white-space:nowrap; z-index:100; box-shadow:2px 4px 0 rgba(20,14,4,.08); }
+.badge:hover .btip { display:block; }
+.b-lg  { border-color:rgba(232,97,26,.32);  } .b-lg .bdot  { background:#e8611a; }
+.b-lc  { border-color:rgba(28,122,92,.30);  } .b-lc .bdot  { background:#1c7a5c; }
+.b-llm { border-color:rgba(124,58,237,.28); } .b-llm .bdot { background:#7c3aed; }
+.b-ot  { border-color:rgba(66,92,199,.28);  } .b-ot .bdot  { background:#425cc7; }
+.b-fa  { border-color:rgba(0,120,180,.26);  } .b-fa .bdot  { background:#0078b4; }
+.b-qd  { border-color:rgba(200,20,60,.26);  } .b-qd .bdot  { background:#dc143c; }
+.b-sa  { border-color:rgba(200,30,0,.26);   } .b-sa .bdot  { background:#d71f00; }
+.b-sg  { border-color:rgba(45,106,79,.28);  } .b-sg .bdot  { background:#2d6a4f; }
+.b-fe  { border-color:rgba(230,95,40,.28);  } .b-fe .bdot  { background:#ff6b35; }
+.b-dk  { border-color:rgba(200,135,0,.26);  } .b-dk .bdot  { background:#f5a500; }
+
+/* ── Specialist agents grid ──────────────────────────────── */
+.agents-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:18px; }
+.agent-card { background:rgba(255,252,242,.72); border:1.5px solid rgba(20,14,4,.24); border-radius:8px; padding:13px 15px 11px; cursor:pointer; transition:background 180ms,border-color 180ms,transform 180ms,box-shadow 180ms; box-shadow:1px 2px 0 rgba(20,14,4,.06); overflow:hidden; }
+.agent-card.active { background:rgba(255,252,238,.95); border-color:rgba(20,14,4,.48); box-shadow:2px 4px 0 rgba(20,14,4,.08); }
+.agent-card:hover:not(.active) { background:rgba(255,252,240,.90); border-color:rgba(20,14,4,.38); transform:translateY(-2px); box-shadow:2px 5px 0 rgba(20,14,4,.08); }
+.agent-name { font-size:11px; font-weight:600; color:rgba(20,14,4,.78); margin-bottom:3px; }
+.agent-sub  { font-size:8.5px; font-family:'JetBrains Mono',monospace; color:rgba(20,14,4,.40); line-height:1.4; }
+.agent-card .stream-out { margin-top:0; }
+.agent-card.active .stream-out { margin-top:8px; }
+
+/* ── Click hint ──────────────────────────────────────────── */
+.click-hint { font-size:8px; font-family:'JetBrains Mono',monospace; color:rgba(20,14,4,.38); letter-spacing:.12em; text-align:right; margin-bottom:8px; }
+.click-hint::before { content:'◎ '; }
+@keyframes hintPulse { 0%,100%{opacity:.38} 50%{opacity:.75} }
+.click-hint { animation:hintPulse 2.4s ease-in-out infinite; }
+
+/* ── Footer ─────────────────────────────────────────────── */
+.footer { margin-top:24px; display:flex; align-items:center; justify-content:center; gap:20px; }
+.footer-link { font-size:9px; font-family:'JetBrains Mono',monospace; color:rgba(20,14,4,.24); letter-spacing:.14em; text-decoration:none; cursor:pointer; transition:color 160ms; text-transform:uppercase; }
+.footer-link:hover { color:rgba(20,14,4,.55); }
+.footer-dot { color:rgba(20,14,4,.14); font-size:7px; }
+
+/* ── Mobile responsiveness ───────────────────────────────── */
+@media (max-width: 768px) {
+  .page { padding:16px 12px 24px; max-width:100%; }
+  .nav { padding:0 12px; }
+  .nav-links { gap:16px; }
+  .nav-link { font-size:10px; }
+  .product-window { margin:20px 0 16px; }
+  .window-body { padding:12px; }
+  .section-grid { grid-template-columns:1fr !important; gap:12px; }
+  .arch-row { flex-direction:column; gap:8px; }
+  .arch-connector { transform:rotate(90deg); margin:4px auto; }
+  .flow-nodes { flex-wrap:wrap; gap:8px; justify-content:center; }
+  .flow-connector { display:none; }
+  .ws-list { grid-template-columns:1fr !important; }
+  .footer { flex-wrap:wrap; gap:10px; }
+}
+@media (max-width: 480px) {
+  .nav-links { display:none; }
+  .wp-input-row { flex-direction:column; gap:8px; }
+  .wp-btn { width:100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration:0.01ms !important;
+    transition-duration:0.01ms !important;
+  }
+}
+</style>
+</head>
+<body>
+<canvas id="bg"></canvas>
+<div class="page">
+
+  <!-- Nav -->
+  <div class="nav">
+    <div style="display:flex;align-items:center;gap:2px">
+      <span class="wordmark" id="navWordmark"></span>
+      <span class="nav-badge">alpha</span>
+    </div>
+    <div class="tagline">LLM-agnostic &nbsp;·&nbsp; any database &nbsp;·&nbsp; 3 lines of code</div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════ -->
+  <!-- PRODUCT WINDOW                                         -->
+  <!-- ══════════════════════════════════════════════════════ -->
+  <div class="product-wrap">
+    <div class="product-label">↑ &nbsp;the product &nbsp;↑</div>
+    <div class="product-window">
+      <div class="win-chrome">
+        <div class="win-dots">
+          <div class="win-dot red"></div>
+          <div class="win-dot yellow"></div>
+          <div class="win-dot green"></div>
+        </div>
+        <div class="win-url">ora-app &nbsp;·&nbsp; workspace &nbsp;·&nbsp; localhost:8080</div>
+      </div>
+      <div class="win-body">
+        <!-- Left: query UI -->
+        <div class="win-left">
+          <div class="win-install">
+            <div class="win-install-cmd">
+              <span>$ pip install ora-sql</span>
+              <span class="win-copy-btn">Copy</span>
+            </div>
+            <a href="https://github.com/sqlagent/sqlagent" target="_blank" rel="noopener" class="win-link-btn">⭐ GitHub</a>
+            <a href="https://huggingface.co/spaces/sqlagent/demo" target="_blank" rel="noopener" class="win-link-btn">🤗 HuggingFace</a>
+            <a href="/guide" target="_blank" rel="noopener" class="win-link-btn">📖 Docs</a>
+            <a href="https://discord.gg/ora-sql" target="_blank" rel="noopener" class="win-link-btn">💬 Discord</a>
+          </div>
+          <div class="win-query-input">
+            <span class="win-query-placeholder">Ask anything about your data...</span>
+            <div class="win-query-arrow">→</div>
+          </div>
+          <div class="win-suggestions">
+            <span class="win-suggestion">Revenue by region this quarter</span>
+            <span class="win-suggestion">Average order value over time</span>
+            <span class="win-suggestion">Monthly active users trend</span>
+            <span class="win-suggestion">Inventory turnover by category</span>
+          </div>
+        </div>
+        <!-- Right: code block -->
+        <div class="win-right">
+          <div class="win-code-block">
+            <div class="win-code-tabs">
+              <span class="win-tab active">3-line start</span>
+              <span class="win-tab">multi-source</span>
+              <div class="win-traffic"><span class="r"></span><span class="y"></span><span class="g"></span></div>
+            </div>
+            <div class="win-code-body">
+              <pre><span class="code-kw">import</span> <strong>ora</strong>
+
+db = <span class="code-fn">ora.connect</span>(<span class="code-str">"postgresql://localhost/mydb"</span>)
+
+result = db.<span class="code-fn">query</span>(<span class="code-str">"Show me top 10 customers by revenue"</span>)</pre>
+            </div>
+            <div class="win-code-result">
+              <span class="win-result-text"><span class="check">✓</span> DataFrame &nbsp;·&nbsp; 1.2s &nbsp;·&nbsp; $0.003 &nbsp;·&nbsp; BIRD 65%+</span>
+              <span class="win-copy-sm">Copy</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════ -->
+  <!-- WORKSPACE PICKER                                        -->
+  <!-- ══════════════════════════════════════════════════════ -->
+  <div class="wp-wrap">
+    <div class="wp-label">↓ &nbsp;speak to your data &nbsp;↓</div>
+
+    <!-- Query input -->
+    <div class="wp-input-outer" id="wpInputOuter">
+      <input id="wpQuery" class="wp-input" type="text"
+        placeholder="Ask anything about your data..."
+        onkeydown="if(event.key==='Enter') handleQuery()" />
+      <button class="wp-run" id="wpRun" onclick="handleQuery()">→</button>
+    </div>
+
+    <!-- Suggestion chips -->
+    <div class="wp-chips" id="wpChips"></div>
+
+    <!-- Code block tabs -->
+    <div class="wp-code">
+      <div class="wp-code-tabs">
+        <button class="wp-tab active" onclick="setCodeTab('quick',this)">3-line start</button>
+        <button class="wp-tab" onclick="setCodeTab('multi',this)">multi-source</button>
+        <div class="wp-code-dots">
+          <div class="wcd red"></div><div class="wcd yellow"></div><div class="wcd green"></div>
+        </div>
+      </div>
+      <div class="wp-code-body" id="wpCodeBody"></div>
+    </div>
+
+    <!-- Workspace list -->
+    <div class="wp-ws-section">
+      <div class="wp-ws-hdr">
+        <span class="wp-ws-title">Your workspaces</span>
+        <button class="wp-ws-new" onclick="createWorkspace()">+ New workspace</button>
+      </div>
+      <div id="wpList"><div class="wp-ws-empty">Loading…</div></div>
+    </div>
+  </div>
+
+  <!-- ── 01 · DATA LAYER ──────────────────────────────────── -->
+  <div class="card" id="card-data" style="border-color:rgba(22,163,74,.28)">
+    <div class="section-num">01</div>
+    <div class="card-header">
+      <div class="card-icon">◉</div>
+      <div class="card-title">
+        <div class="card-title-main">Data Layer</div>
+        <div class="card-title-sub">connected sources · any dialect · SQLAlchemy 2.0</div>
+      </div>
+      <div class="card-header-line"></div>
+    </div>
+    <div class="logos">
+      <div class="logo-wrap"><div class="logo-disc logo-pg"><svg viewBox="0 0 64 64" fill="none"><ellipse cx="32" cy="30" rx="14" ry="17" stroke="white" stroke-width="2.5"/><path d="M42 45 Q50 53 48 60" stroke="white" stroke-width="2.5" stroke-linecap="round"/><path d="M22 24 Q14 18 17 11 Q22 5 28 10" stroke="white" stroke-width="2" stroke-linecap="round"/><circle cx="37" cy="26" r="2.5" fill="white"/><path d="M29 46 Q24 53 27 59" stroke="white" stroke-width="2" stroke-linecap="round" opacity="0.6"/></svg></div><div class="logo-name">PostgreSQL</div></div>
+      <div class="logo-conn"><div class="logo-conn-dot"></div><div class="logo-conn-dot"></div><div class="logo-conn-dot"></div></div>
+      <div class="logo-wrap"><div class="logo-disc logo-sf"><svg viewBox="0 0 64 64" fill="none"><line x1="32" y1="9" x2="32" y2="55" stroke="white" stroke-width="3" stroke-linecap="round"/><line x1="9" y1="21" x2="55" y2="43" stroke="white" stroke-width="3" stroke-linecap="round"/><line x1="9" y1="43" x2="55" y2="21" stroke="white" stroke-width="3" stroke-linecap="round"/><line x1="32" y1="9" x2="26" y2="17" stroke="white" stroke-width="2" stroke-linecap="round"/><line x1="32" y1="9" x2="38" y2="17" stroke="white" stroke-width="2" stroke-linecap="round"/><line x1="32" y1="55" x2="26" y2="47" stroke="white" stroke-width="2" stroke-linecap="round"/><line x1="32" y1="55" x2="38" y2="47" stroke="white" stroke-width="2" stroke-linecap="round"/></svg></div><div class="logo-name">Snowflake</div></div>
+      <div class="logo-conn"><div class="logo-conn-dot"></div><div class="logo-conn-dot"></div><div class="logo-conn-dot"></div></div>
+      <div class="logo-wrap"><div class="logo-disc logo-bq"><svg viewBox="0 0 64 64" fill="none"><path d="M32 32 L32 10 A22 22 0 0 1 51 43 Z" fill="white" opacity="0.92"/><path d="M32 32 L51 43 A22 22 0 0 1 22 52 Z" fill="white" opacity="0.65"/><path d="M32 32 L22 52 A22 22 0 0 1 13 21 Z" fill="white" opacity="0.40"/><path d="M32 32 L13 21 A22 22 0 0 1 32 10 Z" fill="white" opacity="0.18"/><line x1="46" y1="46" x2="56" y2="56" stroke="white" stroke-width="5" stroke-linecap="round"/><circle cx="32" cy="32" r="5.5" fill="#4285f4"/></svg></div><div class="logo-name">BigQuery</div></div>
+      <div class="logo-conn"><div class="logo-conn-dot"></div><div class="logo-conn-dot"></div><div class="logo-conn-dot"></div></div>
+      <div class="logo-wrap"><div class="logo-disc logo-dk"><svg viewBox="0 0 64 64" fill="none"><ellipse cx="32" cy="38" rx="17" ry="12" fill="rgba(255,255,255,.90)"/><circle cx="32" cy="34" r="9" fill="#e36820"/><circle cx="37" cy="30" r="3" fill="white"/><circle cx="38" cy="29" r="1.5" fill="#1a0a00"/><path d="M16 35 Q11 29 15 23 Q19 17 23 21" stroke="white" stroke-width="2" stroke-linecap="round" fill="none"/><ellipse cx="32" cy="22" rx="5" ry="5" fill="rgba(255,255,255,.82)"/></svg></div><div class="logo-name">DuckDB</div></div>
+      <div class="logo-conn"><div class="logo-conn-dot"></div><div class="logo-conn-dot"></div><div class="logo-conn-dot"></div></div>
+      <div class="logo-wrap"><div class="logo-disc logo-my"><svg viewBox="0 0 64 64" fill="none"><path d="M12 44 L12 22 Q12 18 15 16 L22 12 L30 22 L38 12 L45 16 Q48 18 48 22 L52 44" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M30 22 L30 44" stroke="white" stroke-width="2.5" stroke-linecap="round"/></svg></div><div class="logo-name">MySQL</div></div>
+      <div class="logo-conn"><div class="logo-conn-dot"></div><div class="logo-conn-dot"></div><div class="logo-conn-dot"></div></div>
+      <div class="logo-wrap"><div class="logo-disc logo-rs"><svg viewBox="0 0 64 64" fill="none"><ellipse cx="32" cy="20" rx="15" ry="5.5" stroke="white" stroke-width="2.5"/><line x1="17" y1="20" x2="17" y2="44" stroke="white" stroke-width="2.5"/><line x1="47" y1="20" x2="47" y2="44" stroke="white" stroke-width="2.5"/><ellipse cx="32" cy="44" rx="15" ry="5.5" stroke="white" stroke-width="2.5"/><ellipse cx="32" cy="32" rx="15" ry="5.5" stroke="white" stroke-width="1.5" opacity="0.40"/></svg></div><div class="logo-name">Redshift</div></div>
+      <div class="logo-conn"><div class="logo-conn-dot"></div><div class="logo-conn-dot"></div><div class="logo-conn-dot"></div></div>
+      <div class="logo-wrap"><div class="logo-disc logo-csv"><svg viewBox="0 0 64 64" fill="none"><rect x="12" y="12" width="40" height="40" rx="4" stroke="white" stroke-width="2.5"/><line x1="12" y1="24" x2="52" y2="24" stroke="white" stroke-width="2"/><line x1="12" y1="36" x2="52" y2="36" stroke="white" stroke-width="2"/><line x1="28" y1="12" x2="28" y2="52" stroke="white" stroke-width="2"/><line x1="44" y1="12" x2="44" y2="52" stroke="white" stroke-width="1.5" opacity="0.60"/></svg></div><div class="logo-name">CSV / XLSX</div></div>
+    </div>
+  </div>
+
+  <div class="flow-connector" id="fc-schema" onclick="toggleFlowPop('fc-schema')">
+    <div class="flow-pop">
+      <div class="flow-pop-title">Schema Analysis</div>SchemaAgent introspects the DB → builds KnowledgeGraph → detects FK topology → serializes to M-Schema for token-efficient prompting.</div>
+    <div class="flow-line"></div>
+    <div class="flow-node" id="fn-schema"></div>
+    <div class="flow-label">schema analysis</div>
+    <div class="flow-line dashed"></div>
+  </div>
+
+  <!-- ── 02 · SCHEMA AGENT ───────────────────────────────── -->
+  <div class="card" id="card-schema" style="border-color:rgba(66,92,199,.26)">
+    <div class="section-num">02</div>
+    <div class="card-header">
+      <div class="card-icon">◈</div>
+      <div class="card-title">
+        <div class="card-title-main">Schema Agent</div>
+        <div class="card-title-sub">knowledge construction · graph topology · vector indexing</div>
+      </div>
+      <div class="card-header-line"></div>
+    </div>
+    <div class="click-hint">↑ click any node to see live output</div>
+    <div class="pipeline">
+      <div class="stage" id="st-di" onclick="toggleStage('st-di')"><div class="stage-num">STAGE 1</div><div class="stage-name">DB Introspect</div><div class="stage-sub">DDL · FK · cardinality</div><div class="stream-out"><div class="stream-body" id="so-di"></div></div></div>
+      <div class="pipe-arrow"></div>
+      <div class="stage" id="st-kg" onclick="toggleStage('st-kg')"><div class="stage-num">STAGE 2</div><div class="stage-name">Knowledge Graph</div><div class="stage-sub">nodes · edges · layers</div><div class="stream-out"><div class="stream-body" id="so-kg"></div></div></div>
+      <div class="pipe-arrow"></div>
+      <div class="stage" id="st-tp" onclick="toggleStage('st-tp')"><div class="stage-num">STAGE 3</div><div class="stage-name">FK Topology</div><div class="stage-sub">Merkle · 3-pass detect</div><div class="stream-out"><div class="stream-body" id="so-tp"></div></div></div>
+      <div class="pipe-arrow"></div>
+      <div class="stage" id="st-vi" onclick="toggleStage('st-vi')"><div class="stage-num">STAGE 4</div><div class="stage-name">Vector Index</div><div class="stage-sub">M-Schema · NL→SQL</div><div class="stream-out"><div class="stream-body" id="so-vi"></div></div></div>
+    </div>
+    <div class="badges">
+      <span class="badge b-lg"><span class="bdot"></span>LangGraph<span class="btip">5-node agent StateGraph<br>SchemaAgent class</span></span>
+      <span class="badge b-sa"><span class="bdot"></span>SQLAlchemy 2.0<span class="btip">async dialect reflection<br>PostgreSQL · Snowflake · BQ</span></span>
+      <span class="badge b-sg"><span class="bdot"></span>SQLGlot<span class="btip">AST parsing · transpilation<br>cross-dialect normalization</span></span>
+      <span class="badge b-qd"><span class="bdot"></span>Qdrant<span class="btip">in-process vector store<br>NL→SQL example retrieval</span></span>
+      <span class="badge b-fe"><span class="bdot"></span>fastembed<span class="btip">BAAI/bge-small-en-v1.5<br>zero-API-key embeddings</span></span>
+      <span class="badge b-dk"><span class="bdot"></span>DuckDB<span class="btip">in-memory cross-source JOIN<br>data never leaves environment</span></span>
+    </div>
+  </div>
+
+  <div class="flow-connector" id="fc-orch" onclick="toggleFlowPop('fc-orch')">
+    <div class="flow-pop">
+      <div class="flow-pop-title">Query Orchestration</div>LangGraph StateGraph routes NL query → CHESS schema pruning → parallel SQL generation → ReFoRCE 3-stage self-correction → result.</div>
+    <div class="flow-line"></div>
+    <div class="flow-node" id="fn-orch"></div>
+    <div class="flow-label">query orchestration</div>
+    <div class="flow-line dashed"></div>
+  </div>
+
+  <!-- ── 03 · AGENTSQL ORCHESTRATION ─────────────────────── -->
+  <div class="card" id="card-orch" style="border-color:rgba(124,58,237,.22)">
+    <div class="section-num">03</div>
+    <div class="card-header">
+      <div class="card-icon">⬡</div>
+      <div class="card-title">
+        <div class="card-title-main">AgentSQL Orchestration</div>
+        <div class="card-title-sub">LangGraph pipeline · self-correcting · CHESS + ReFoRCE</div>
+      </div>
+      <div class="card-header-line"></div>
+    </div>
+    <div class="pipeline">
+      <div class="stage" id="st-sl" onclick="toggleStage('st-sl')"><div class="stage-num">STAGE 1</div><div class="stage-name">Schema Linker</div><div class="stage-sub">CHESS LSH · RAG</div><div class="stream-out"><div class="stream-body" id="so-sl"></div></div></div>
+      <div class="pipe-arrow"></div>
+      <div class="stage" id="st-sg" onclick="toggleStage('st-sg')"><div class="stage-num">STAGE 2</div><div class="stage-name">SQL Generator</div><div class="stage-sub">3 candidates · parallel</div><div class="stream-out"><div class="stream-body" id="so-sg"></div></div></div>
+      <div class="pipe-arrow"></div>
+      <div class="stage" id="st-sc" onclick="toggleStage('st-sc')"><div class="stage-num">STAGE 3</div><div class="stage-name">Self-Corrector</div><div class="stage-sub">ReFoRCE · 3-stage loop</div><div class="stream-out"><div class="stream-body" id="so-sc"></div></div></div>
+      <div class="pipe-arrow"></div>
+      <div class="stage result" id="st-rs" onclick="toggleStage('st-rs')"><div class="stage-num">OUTPUT</div><div class="stage-name">Result</div><div class="stage-sub">DataFrame · NL · Chart</div><div class="stream-out"><div class="stream-body" id="so-rs"></div></div></div>
+    </div>
+    <div class="badges">
+      <span class="badge b-lg"><span class="bdot"></span>LangGraph<span class="btip">StateGraph per query<br>conditional edges</span></span>
+      <span class="badge b-lc"><span class="bdot"></span>LangChain<span class="btip">Tool adapters +<br>few-shot prompt chains</span></span>
+      <span class="badge b-llm"><span class="bdot"></span>LiteLLM<span class="btip">Unified router — OpenAI<br>Anthropic · Bedrock · Ollama</span></span>
+      <span class="badge b-ot"><span class="bdot"></span>OpenTelemetry<span class="btip">One span per node<br>Langfuse + Prometheus</span></span>
+      <span class="badge b-fa"><span class="bdot"></span>FastAPI<span class="btip">SSE /query/stream<br>live trace events to UI</span></span>
+    </div>
+  </div>
+
+  <div class="flow-connector" id="fc-agents" onclick="toggleFlowPop('fc-agents')">
+    <div class="flow-pop">
+      <div class="flow-pop-title">Specialist Agents</div>Decompose cross-source queries → fan out to each DB → DuckDB in-memory synthesis → NL response generation → LearningLoop trains on feedback.</div>
+    <div class="flow-line"></div>
+    <div class="flow-node" id="fn-agents"></div>
+    <div class="flow-label">specialist agents</div>
+    <div class="flow-line dashed"></div>
+  </div>
+
+  <!-- ── 04 · SPECIALIST AGENTS ──────────────────────────── -->
+  <div class="card" id="card-agents" style="border-color:rgba(200,135,0,.24)">
+    <div class="section-num">04</div>
+    <div class="card-header">
+      <div class="card-icon">◇</div>
+      <div class="card-title">
+        <div class="card-title-main">Specialist Agents</div>
+        <div class="card-title-sub">decompose · synthesize · respond · learn</div>
+      </div>
+      <div class="card-header-line"></div>
+    </div>
+    <div class="agents-grid">
+      <div class="agent-card" id="ag-da" onclick="toggleAgent('ag-da')"><div class="stage-num">AGENT</div><div class="agent-name">DecomposeAgent</div><div class="agent-sub">cross-source split · DAG planner</div><div class="stream-out"><div class="stream-body" id="so-da"></div></div></div>
+      <div class="agent-card" id="ag-sa" onclick="toggleAgent('ag-sa')"><div class="stage-num">AGENT</div><div class="agent-name">SynthesisAgent</div><div class="agent-sub">DuckDB JOIN · in-memory merge</div><div class="stream-out"><div class="stream-body" id="so-sa"></div></div></div>
+      <div class="agent-card" id="ag-rg" onclick="toggleAgent('ag-rg')"><div class="stage-num">AGENT</div><div class="agent-name">ResponseGenerator</div><div class="agent-sub">NL summary · chart · follow-ups</div><div class="stream-out"><div class="stream-body" id="so-rg"></div></div></div>
+      <div class="agent-card" id="ag-ll" onclick="toggleAgent('ag-ll')"><div class="stage-num">AGENT</div><div class="agent-name">LearningLoop</div><div class="agent-sub">feedback → training pairs</div><div class="stream-out"><div class="stream-body" id="so-ll"></div></div></div>
+    </div>
+    <div class="badges">
+      <span class="badge b-dk"><span class="bdot"></span>DuckDB<span class="btip">in-memory cross-source JOIN<br>data never leaves environment</span></span>
+      <span class="badge b-lg"><span class="bdot"></span>LangGraph<span class="btip">supervisor orchestrator<br>QueryOrchestrator class</span></span>
+      <span class="badge b-llm"><span class="bdot"></span>LiteLLM<span class="btip">NL summary generation<br>follow-up question generation</span></span>
+      <span class="badge b-qd"><span class="bdot"></span>Qdrant<span class="btip">NL→SQL training pair store<br>thumbs-up → auto-indexed</span></span>
+    </div>
+  </div>
+
+  <div class="footer">
+    <a href="/app" class="footer-link">App</a><span class="footer-dot">◆</span>
+    <a href="https://github.com/sqlagent/sqlagent" target="_blank" rel="noopener" class="footer-link">GitHub</a><span class="footer-dot">◆</span>
+    <a href="/guide" target="_blank" rel="noopener" class="footer-link">Docs</a><span class="footer-dot">◆</span>
+    <a href="https://pypi.org/project/ora-sql/" target="_blank" rel="noopener" class="footer-link">PyPI</a>
+  </div>
+
+</div>
+
+<script>
+/* ── Nav wordmark typewriter ─────────────────────────────── */
+(function navType() {
+  const el = document.getElementById('navWordmark');
+  if (!el) return;
+  const full = 'Ora';
+  let chars = 0, deleting = false, pause = 0;
+  const cursor = '<span class="nav-cursor"></span>';
+  function tick() {
+    if (pause > 0) { pause--; setTimeout(tick, 90); return; }
+    if (!deleting) {
+      if (chars <= full.length) {
+        el.innerHTML = full.slice(0, chars) + cursor;
+        chars++;
+        setTimeout(tick, chars <= 1 ? 180 : 220 + Math.random() * 80);
+      } else {
+        // Fully typed — blink cursor, then delete
+        pause = 22;
+        deleting = true;
+        setTimeout(tick, 90);
+      }
+    } else {
+      if (chars > 0) {
+        chars--;
+        el.innerHTML = full.slice(0, chars) + cursor;
+        setTimeout(tick, 100 + Math.random() * 50);
+      } else {
+        pause = 8;
+        deleting = false;
+        setTimeout(tick, 90);
+      }
+    }
+  }
+  setTimeout(tick, 400);
+})();
+
+/* ── Canvas: pencil graph-paper grid ────────────────────── */
+const canvas = document.getElementById('bg');
+const ctx = canvas.getContext('2d');
+function resize(){ canvas.width=window.innerWidth; canvas.height=window.innerHeight; drawGrid(); }
+function drawGrid(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  // Very light pencil grid lines
+  const sp = 36;
+  ctx.lineWidth = 0.6;
+  // Horizontal
+  ctx.strokeStyle = 'rgba(20,14,4,.07)';
+  for(let y=0;y<canvas.height;y+=sp){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(canvas.width,y); ctx.stroke(); }
+  // Vertical
+  for(let x=0;x<canvas.width;x+=sp){ ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,canvas.height); ctx.stroke(); }
+  // Warm vignette
+  const vign = ctx.createRadialGradient(canvas.width*.5,canvas.height*.5,canvas.height*.1,canvas.width*.5,canvas.height*.5,canvas.width*.7);
+  vign.addColorStop(0,'rgba(0,0,0,0)'); vign.addColorStop(1,'rgba(30,20,4,.08)');
+  ctx.fillStyle=vign; ctx.fillRect(0,0,canvas.width,canvas.height);
+}
+resize(); window.addEventListener('resize',resize);
+
+/* ── Particles: thin pencil-trace lines ─────────────────── */
+const PARTS=[
+  {t:0.0, sp:0.00026,c:[30,20,8],sz:2.8},
+  {t:0.38,sp:0.00021,c:[40,28,10],sz:2.4},
+  {t:0.72,sp:0.00031,c:[22,15,5],sz:2.6},
+];
+function getPath(){
+  const ids=['card-data','card-schema','card-orch','card-agents'];
+  const rects=ids.map(id=>{ const el=document.getElementById(id); return el?el.getBoundingClientRect():null; });
+  if(rects.some(r=>!r)) return null;
+  const cx=window.innerWidth/2;
+  const pts=[];
+  for(let i=0;i<rects.length;i++){
+    const r=rects[i];
+    pts.push({x:cx,y:r.top+r.height*.5});
+    if(i<rects.length-1) pts.push({x:cx,y:r.bottom+(rects[i+1].top-r.bottom)*.5});
+  }
+  return pts;
+}
+function sample(path,t){
+  if(!path||path.length<2) return{x:0,y:0};
+  const tot=path.length-1,sc=t*tot,i=Math.min(Math.floor(sc),tot-1),f=sc-i;
+  return{x:path[i].x+(path[i+1].x-path[i].x)*f,y:path[i].y+(path[i+1].y-path[i].y)*f};
+}
+let fp=null;
+function drawParticles(){
+  if(!fp) fp=getPath();
+  if(!fp) return;
+  PARTS.forEach(p=>{
+    p.t=(p.t+p.sp)%1;
+    const pos=sample(fp,p.t);
+    const[r,g,b]=p.c;
+    // Trail
+    for(let i=6;i>=0;i--){
+      const tp=sample(fp,((p.t-i*.005+1)%1));
+      const a=(1-i/6)*0.22*(1-i/6);
+      ctx.beginPath(); ctx.arc(tp.x,tp.y,p.sz*(1-i/7)*.55,0,Math.PI*2);
+      ctx.fillStyle=`rgba(${r},${g},${b},${a})`; ctx.fill();
+    }
+    // Core
+    ctx.beginPath(); ctx.arc(pos.x,pos.y,p.sz,0,Math.PI*2);
+    ctx.fillStyle=`rgba(${r},${g},${b},0.65)`; ctx.fill();
+  });
+}
+function frame(){ drawGrid(); drawParticles(); requestAnimationFrame(frame); }
+setTimeout(()=>{ fp=getPath(); frame(); },120);
+window.addEventListener('resize',()=>{ fp=null; });
+
+/* ── Streaming text ─────────────────────────────────────── */
+const STREAM_TEXT={
+  'so-di':['↳ connecting to postgresql://...','↳ reflecting 12 tables, 87 columns','↳ 8 FK relationships detected','↳ cardinality sampled (row counts)','↳ SchemaSnapshot serialized ✓'],
+  'so-kg':['↳ building knowledge graph...','↳ 12 table nodes · 87 col nodes','↳ 8 FK edges + 6 semantic edges','↳ 3 entity-group layers formed','↳ KnowledgeGraph ready ✓'],
+  'so-tp':['↳ pass 1 exact name match: 5 links','↳ pass 2 semantic (embed): 2 links','↳ pass 3 statistical (corr): 1 link','↳ Merkle hash: a3f7b2c9e1d4...','↳ topology finalized ✓'],
+  'so-vi':['↳ serializing to M-Schema format','↳ 87 cols → 1,240 tokens (3.8× saving)','↳ embedding 247 NL→SQL pairs...','↳ indexed to Qdrant in-process','↳ VectorIndex ready ✓'],
+  'so-sl':['↳ query: "revenue per employee"','↳ LSH candidates: 87 columns','↳ top-8: stores.name, sales.total,','   staff.emp_id, sales.store_id...','↳ schema context: 91% pruned ✓'],
+  'so-sg':['↳ [fewshot]   SELECT s.store_name,','   SUM(sl.total)/COUNT(e.id) AS rpe','↳ [plan]      decompose → join → agg','↳ [decompose] 2 sub-queries + JOIN','↳ pairwise rank → fewshot wins ✓'],
+  'so-sc':['↳ layer 1 syntax: sqlglot parse OK','↳ layer 2 schema: all cols verified','↳ layer 3 execute: 10 rows returned','↳ layer 4 semantic: coherent ✓','↳ 0 corrections needed ✓'],
+  'so-rs':['↳ 10 rows · 1.2s · $0.004','↳ chart: horizontal bar suggested','↳ NL: "Lotus Korat leads at $2,284','   revenue per employee..."','↳ 3 follow-ups generated ✓'],
+  'so-da':['↳ cross-source query detected','↳ plan: sales (postgres) + staff (csv)','↳ sub-A: SELECT store_id, SUM(total)','↳ sub-B: SELECT store_id, headcount','↳ DecompositionPlan DAG built ✓'],
+  'so-sa':['↳ sub-A result: 284 rows loaded','↳ sub-B result: 284 rows loaded','↳ DuckDB: CREATE TABLE tmp_a...','↳ JOIN on store_id → 284 rows','↳ synthesis complete in 40ms ✓'],
+  'so-rg':['↳ result validated (non-empty, sane)','↳ generating NL summary via LLM...','↳ "Lotus Korat leads with $2,284','   revenue per employee, followed','   by Lotus Chiang Mai ($2,207)" ✓'],
+  'so-ll':['↳ thumbs-up received for QRY-48','↳ NL+SQL pair extracted','↳ embedding via fastembed...','↳ stored in Qdrant collection','↳ training pairs: 247 → 248 ✓'],
+};
+/* ── Flow connector popover toggle ──────────────────────── */
+function toggleFlowPop(id) {
+  const el = document.getElementById(id);
+  const node = el.querySelector('.flow-node');
+  // Ripple effect
+  const ripple = document.createElement('div');
+  ripple.className = 'flow-node-ripple';
+  node.appendChild(ripple);
+  setTimeout(() => ripple.remove(), 520);
+  // Toggle popover
+  const isOpen = el.classList.contains('pop-open');
+  document.querySelectorAll('.flow-connector').forEach(fc => fc.classList.remove('pop-open'));
+  if (!isOpen) el.classList.add('pop-open');
+  // Close when clicking elsewhere
+  if (!isOpen) {
+    setTimeout(() => {
+      document.addEventListener('click', function close(e) {
+        if (!e.target.closest('.flow-connector')) {
+          document.querySelectorAll('.flow-connector').forEach(fc => fc.classList.remove('pop-open'));
+        }
+        document.removeEventListener('click', close);
+      });
+    }, 10);
+  }
+}
+
+let activeEl=null,streamTimer=null,streamState={};
+function stopStream(outId){ if(streamTimer){clearTimeout(streamTimer);streamTimer=null;} streamState[outId]=null; }
+function startStream(outId){
+  const lines=STREAM_TEXT[outId]; if(!lines) return;
+  const el=document.getElementById(outId); if(!el) return;
+  el.innerHTML='<span class="s-cursor"></span>';
+  let li=0,ci=0,content='';
+  function tick(){
+    if(!streamState[outId]) return;
+    if(li>=lines.length){ el.innerHTML=content.replace(/\n/g,'<br>'); return; }
+    const line=lines[li];
+    if(ci<line.length){ ci++; el.innerHTML=(content+(content?'\n':'')+line.slice(0,ci)).replace(/\n/g,'<br>')+'<span class="s-cursor"></span>'; streamTimer=setTimeout(tick,16+Math.random()*10); }
+    else{ content+=(content?'\n':'')+line; li++; ci=0; el.innerHTML=content.replace(/\n/g,'<br>')+(li<lines.length?'<span class="s-cursor"></span>':''); streamTimer=setTimeout(tick,55); }
+  }
+  streamState[outId]=true; tick();
+}
+function toggleStage(id){
+  const el=document.getElementById(id);
+  const outId='so-'+id.split('-')[1];
+  if(activeEl&&activeEl!==el){ stopStream('so-'+activeEl.id.split('-')[1]); activeEl.classList.remove('active'); }
+  if(el.classList.contains('active')){ stopStream(outId); el.classList.remove('active'); activeEl=null; }
+  else{ el.classList.add('active'); activeEl=el; startStream(outId); }
+}
+function toggleAgent(id){
+  const el=document.getElementById(id);
+  const outId='so-'+id.split('-')[1];
+  if(activeEl&&activeEl!==el){ const prevOut='so-'+activeEl.id.split('-')[1]; stopStream(prevOut); activeEl.classList.remove('active'); }
+  if(el.classList.contains('active')){ stopStream(outId); el.classList.remove('active'); activeEl=null; }
+  else{ el.classList.add('active'); activeEl=el; startStream(outId); }
+}
+
+/* ── Workspace picker ────────────────────────────────────── */
+const WP_SUGGESTIONS = [
+  'Monthly active users trend',
+  'Average order value over time',
+  'Inventory turnover by category',
+  'Which products have declining sales?',
+  'Top customers by lifetime value',
+  'Revenue by region this quarter',
+];
+
+const CODE_HTML = {
+  quick: `<span style="color:#7c3aed">import</span> <span style="color:#1e40af;font-weight:600">ora</span>
+<span style="color:#44403c">db = </span><span style="color:#1e40af">ora</span><span style="color:#78716c">.</span><span style="color:#047857;font-weight:500">connect</span><span style="color:#78716c">(</span><span style="color:#92400e">"postgresql://localhost/mydb"</span><span style="color:#78716c">)</span>
+<span style="color:#44403c">result = db.</span><span style="color:#047857;font-weight:500">query</span><span style="color:#78716c">(</span><span style="color:#92400e">"Show me top 10 customers by revenue"</span><span style="color:#78716c">)</span>
+<hr class="wp-code-divider"/>
+<span style="color:#047857;font-size:10.5px">✓&nbsp; DataFrame · 1.2s · $0.003 · BIRD 65%+</span><button class="wp-code-copy" onclick="navigator.clipboard?.writeText('import ora\\ndb = ora.connect(\\'postgresql://localhost/mydb\\')\\nresult = db.query(\\'Show me top 10 customers by revenue\\')');this.textContent='✓'">Copy</button>`,
+  multi: `<span style="color:#a0917d;font-size:10px;font-style:italic"># 3 sources · zero manual joins</span>
+<span style="color:#7c3aed">with</span> <span style="color:#1e40af;font-weight:600">ora</span><span style="color:#78716c">.</span><span style="color:#047857;font-weight:500">connect</span><span style="color:#78716c">(</span>
+&nbsp;&nbsp;sales=<span style="color:#92400e">"postgresql://prod/sales"</span>,
+&nbsp;&nbsp;inventory=<span style="color:#92400e">"snowflake://warehouse/inventory"</span>,
+&nbsp;&nbsp;staff=<span style="color:#92400e">"headcount.csv"</span>,
+<span style="color:#78716c">) as db:</span>
+&nbsp;&nbsp;result = db.<span style="color:#047857;font-weight:500">ask</span><span style="color:#78716c">(</span><span style="color:#92400e">"revenue per employee by store?"</span><span style="color:#78716c">)</span>
+<hr class="wp-code-divider"/>
+<span style="color:#047857;font-size:10.5px">✓&nbsp; One DataFrame · 3 sources · data never left env</span>`,
+};
+
+function setCodeTab(tab, btn) {
+  document.querySelectorAll('.wp-tab').forEach(t => t.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('wpCodeBody').innerHTML = CODE_HTML[tab];
+}
+
+// Init chips + code
+(function init() {
+  const chips = document.getElementById('wpChips');
+  if (chips) {
+    const picks = [...WP_SUGGESTIONS].sort(() => Math.random() - .5).slice(0, 4);
+    picks.forEach(s => {
+      const b = document.createElement('button');
+      b.className = 'wp-chip'; b.textContent = s;
+      b.onclick = () => { document.getElementById('wpQuery').value = s; document.getElementById('wpQuery').focus(); };
+      chips.appendChild(b);
+    });
+  }
+  const cb = document.getElementById('wpCodeBody');
+  if (cb) cb.innerHTML = CODE_HTML.quick;
+})();
+
+// Load workspaces from API
+async function loadWorkspaces() {
+  const list = document.getElementById('wpList');
+  if (!list) return;
+  try {
+    const r = await fetch('/workspaces');
+    const data = await r.json();
+    const ws = Array.isArray(data) ? data : (data.workspaces || []);
+    if (ws.length === 0) {
+      list.innerHTML = '<div class="wp-ws-empty">No workspaces yet. Create one to get started.</div>';
+      return;
+    }
+    list.innerHTML = '';
+    ws.forEach(w => {
+      const card = document.createElement('div');
+      card.className = 'wp-ws-card';
+      const isSetup = w.status === 'setup';
+      const sources = (w.sources?.length || 0);
+      const qCount = (w.query_count || 0);
+      const meta = isSetup ? 'Continue setup →'
+        : `${sources} source${sources !== 1 ? 's' : ''} · ${qCount} quer${qCount !== 1 ? 'ies' : 'y'}`;
+      card.innerHTML = `
+        <div style="flex:1;min-width:0">
+          <div class="wp-ws-name">${escHtml(w.name || 'Workspace')}</div>
+          <div class="wp-ws-meta">${meta}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          ${w.status === 'ready' ? '<div class="wp-ws-dot"></div>' : ''}
+          ${isSetup ? '<span class="wp-ws-setup">setup</span>' : ''}
+          <button class="wp-ws-del" title="Delete">×</button>
+        </div>`;
+      card.querySelector('.wp-ws-del').onclick = ev => deleteWs(ev, w.workspace_id);
+      card.onclick = ev => { if (ev.target.closest('.wp-ws-del')) return; openWorkspace(w.workspace_id, isSetup); };
+      list.appendChild(card);
+    });
+  } catch(e) {
+    list.innerHTML = '<div class="wp-ws-empty">Could not connect to server.</div>';
+  }
+}
+
+function escHtml(s) { const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
+
+async function deleteWs(ev, id) {
+  ev.stopPropagation();
+  if (!confirm('Delete this workspace?')) return;
+  await fetch('/workspaces/' + id, { method: 'DELETE' });
+  loadWorkspaces();
+}
+
+function openWorkspace(id, isSetup) {
+  const q = document.getElementById('wpQuery')?.value?.trim();
+  if (q) localStorage.setItem('ora_pending_query', q);
+  window.location.href = '/app?ws=' + id + (isSetup ? '&create=1' : '');
+}
+
+function createWorkspace() {
+  window.location.href = '/app?create=1';
+}
+
+async function handleQuery() {
+  const q = document.getElementById('wpQuery')?.value?.trim();
+  if (q) localStorage.setItem('ora_pending_query', q);
+  // Find a ready workspace to jump into directly
+  try {
+    const r = await fetch('/workspaces');
+    const data = await r.json();
+    const ws = Array.isArray(data) ? data : (data.workspaces || []);
+    const ready = ws.find(w => w.status === 'ready');
+    if (ready) {
+      window.location.href = '/app?ws=' + ready.workspace_id;
+    } else if (ws.length > 0) {
+      // Has a workspace but not ready — continue setup
+      window.location.href = '/app?ws=' + ws[0].workspace_id + '&create=1';
+    } else {
+      window.location.href = '/app?create=1';
+    }
+  } catch(e) {
+    window.location.href = '/app?create=1';
+  }
+}
+
+/* ── Placeholder typewriter on wp-input ─────────────────── */
+(function placeholderTyper() {
+  const input = document.getElementById('wpQuery');
+  if (!input) return;
+  const QUERIES = [
+    'which stores have the highest revenue per employee?',
+    'show top 10 customers by lifetime value',
+    'compare Q1 vs Q2 sales across all regions',
+    'which products had the most returns last month?',
+    'monthly active users trend over the past 6 months',
+  ];
+  let qi = 0, ci = 0, deleting = false, pause = 0;
+  function step() {
+    if (document.activeElement === input) { setTimeout(step, 300); return; }
+    if (pause > 0) { pause--; setTimeout(step, 80); return; }
+    const q = QUERIES[qi];
+    if (!deleting) {
+      if (ci < q.length) {
+        ci++;
+        input.setAttribute('placeholder', q.slice(0, ci) + '▍');
+        setTimeout(step, 38 + Math.random() * 24);
+      } else {
+        pause = 30;
+        deleting = true;
+        setTimeout(step, 80);
+      }
+    } else {
+      if (ci > 0) {
+        ci--;
+        input.setAttribute('placeholder', q.slice(0, ci) + (ci > 0 ? '▍' : ''));
+        setTimeout(step, 18 + Math.random() * 10);
+      } else {
+        qi = (qi + 1) % QUERIES.length;
+        deleting = false;
+        pause = 6;
+        setTimeout(step, 80);
+      }
+    }
+  }
+  setTimeout(step, 800);
+})();
+
+loadWorkspaces();
+</script>
+</body>
+</html>

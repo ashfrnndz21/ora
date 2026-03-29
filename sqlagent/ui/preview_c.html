@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Option C — Ink on Paper</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  /* Option C: very slightly warmer — aged paper tone */
+  background: #faf8f3;
+  min-height: 100vh;
+  overflow: hidden;
+  font-family: 'Inter', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+canvas {
+  position: fixed; inset: 0;
+  width: 100%; height: 100%;
+  z-index: 0; pointer-events: none;
+}
+.overlay {
+  position: relative; z-index: 1;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  height: 100vh; pointer-events: none;
+}
+.wordmark {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 94px; font-weight: 400;
+  letter-spacing: 0.32em;
+  /* Slightly warmer black — matches ink on paper feel */
+  color: #1a1208;
+  line-height: 1;
+}
+.tagline {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px; color: #b8aa98;
+  letter-spacing: 0.09em; margin-top: 14px;
+}
+.badge {
+  font-size: 10px; color: rgba(139,100,60,0.7);
+  border: 1px solid rgba(139,100,60,0.28);
+  border-radius: 3px; padding: 2px 9px;
+  margin-top: 16px; letter-spacing: 0.06em;
+  font-family: 'Inter', sans-serif; font-weight: 500;
+}
+.option-label {
+  position: fixed; bottom: 28px; left: 50%;
+  transform: translateX(-50%);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px; color: rgba(30,14,0,0.28);
+  letter-spacing: 0.12em; z-index: 2;
+  text-transform: uppercase;
+}
+</style>
+</head>
+<body>
+<canvas id="bp"></canvas>
+<div class="overlay">
+  <div class="wordmark">ORA</div>
+  <div class="tagline">LLM-agnostic &nbsp;·&nbsp; any database &nbsp;·&nbsp; 3 lines of code</div>
+  <div class="badge">alpha</div>
+</div>
+<div class="option-label">Option C &nbsp;—&nbsp; Ink on aged paper</div>
+
+<script>
+const canvas = document.getElementById('bp');
+const ctx = canvas.getContext('2d');
+const dpr = window.devicePixelRatio || 1;
+let W, H;
+
+function resize() {
+  W = window.innerWidth; H = window.innerHeight;
+  canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
+  canvas.style.width = W+'px'; canvas.style.height = H+'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+window.addEventListener('resize', resize); resize();
+
+/* ── Option C: Warm sepia-tinted ink (rgba(26,14,0,...)) ─────────────── */
+/* Every "black" has a warm brown undertone — feels like a fountain pen   */
+/* Option C — warm sepia ink: every "black" has a brown undertone */
+const C = {
+  grid:    'rgba(26,14,0,0.10)',
+  line:    '#5a4a38',          /* warm brown-black  */
+  lineDim: 'rgba(60,40,10,0.28)',
+  fill:    'rgba(26,14,0,0.05)',
+  text:    '#4a3820',          /* warm dark brown   */
+  textDim: 'rgba(60,40,10,0.40)',
+};
+
+/* ── Timing ──────────────────────────────────────────────────────────── */
+const TOTAL = 100; // instant for screenshot; set to 5200 to see animation
+let elapsed = 0, lastT = null;
+
+function ease(t) { return t < .5 ? 2*t*t : -1+(4-2*t)*t; }
+function clamp(v,lo,hi) { return Math.max(lo,Math.min(hi,v)); }
+function prog(s,d,t) { return ease(clamp((t-s)/d,0,1)); }
+
+/* ── Primitives ──────────────────────────────────────────────────────── */
+function lineP(x1,y1,x2,y2,p) {
+  if(p<=0) return;
+  ctx.beginPath(); ctx.moveTo(x1,y1);
+  ctx.lineTo(x1+(x2-x1)*p, y1+(y2-y1)*p); ctx.stroke();
+}
+
+function rectP(x,y,w,h,p) {
+  if(p<=0) return;
+  const per=2*(w+h), dr=per*p;
+  ctx.beginPath(); ctx.moveTo(x,y);
+  if     (dr<=w)       ctx.lineTo(x+dr,y);
+  else if(dr<=w+h)     { ctx.lineTo(x+w,y); ctx.lineTo(x+w,y+(dr-w)); }
+  else if(dr<=2*w+h)   { ctx.lineTo(x+w,y); ctx.lineTo(x+w,y+h); ctx.lineTo(x+w-(dr-w-h),y+h); }
+  else                 { ctx.lineTo(x+w,y); ctx.lineTo(x+w,y+h); ctx.lineTo(x,y+h); ctx.lineTo(x,y+h-(dr-2*w-h)); }
+  ctx.stroke();
+  if(p>=1) { ctx.fillStyle=C.fill; ctx.fillRect(x,y,w,h); }
+}
+
+function circP(x,y,r,p) {
+  if(p<=0) return;
+  ctx.beginPath(); ctx.arc(x,y,r,-Math.PI/2,-Math.PI/2+Math.PI*2*p); ctx.stroke();
+}
+
+function lbl(txt,x,y,alpha,align,size) {
+  if(alpha<=0) return;
+  ctx.save(); ctx.globalAlpha=Math.min(1,alpha);
+  ctx.fillStyle=C.text; ctx.font=`${size||8}px 'JetBrains Mono',monospace`;
+  ctx.textAlign=align||'left'; ctx.textBaseline='middle';
+  ctx.fillText(txt,x,y); ctx.restore();
+}
+
+function dimTick(x1,y1,x2,y2,p) {
+  if(p<=0) return;
+  ctx.save(); ctx.strokeStyle=C.lineDim; ctx.lineWidth=1.2;
+  lineP(x1,y1,x2,y2,p);
+  if(p>=1) {
+    const ang=Math.atan2(y2-y1,x2-x1), pr=ang+Math.PI/2, ts=4;
+    [[x1,y1],[x2,y2]].forEach(([ex,ey])=>{
+      ctx.beginPath();
+      ctx.moveTo(ex+Math.cos(pr)*ts,ey+Math.sin(pr)*ts);
+      ctx.lineTo(ex-Math.cos(pr)*ts,ey-Math.sin(pr)*ts); ctx.stroke();
+    });
+  }
+  ctx.restore();
+}
+
+/* ── Subtle paper texture overlay ─────────────────────────────────────
+   Option C gets a very faint noise grain to evoke aged paper              */
+function drawGrain() {
+  ctx.save();
+  ctx.globalAlpha = 0.018;
+  // Simple repeating crosshatch at 45° — creates slight texture feel
+  ctx.strokeStyle = 'rgba(26,14,0,1)';
+  ctx.lineWidth = 0.3;
+  const step = 18;
+  for(let i = -H; i < W+H; i += step) {
+    ctx.beginPath(); ctx.moveTo(i,0); ctx.lineTo(i+H,H); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+/* ── Main draw ───────────────────────────────────────────────────────── */
+function draw(t) {
+  ctx.clearRect(0,0,W,H);
+  const cx=W/2;
+  const PAD=Math.max(64,W*0.065);
+  const span=W-PAD*2.4;
+
+  /* Paper grain (always present in Option C) */
+  drawGrain();
+
+  /* Grid — warmer tone, slightly more open spacing */
+  const gp=prog(0,0.06,t);
+  if(gp>0){
+    ctx.save(); ctx.strokeStyle=C.grid; ctx.lineWidth=1.0; ctx.globalAlpha=gp;
+    const gs=36;
+    for(let x=0;x<W;x+=gs){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke();}
+    for(let y=0;y<H;y+=gs){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();}
+    ctx.restore();
+  }
+
+  ctx.strokeStyle=C.line; ctx.lineWidth=2.5;
+
+  /* ── Outer border ─────────────────────────────────────────────────── */
+  rectP(18,18,W-36,H-36, prog(0.02,0.12,t));
+
+  /* Layer Y positions (same as Option A) */
+  const Y0=H*0.84, Y2=H*0.65, Y3=H*0.46, Y4=H*0.28, Y5=H*0.12;
+
+  /* ── L0: DB circles ──────────────────────────────────────────────── */
+  const dbs=['PostgreSQL','Snowflake','BigQuery','DuckDB','MySQL','CSV / XLSX'];
+  const dbR=17;
+  dbs.forEach((d,i)=>{
+    const p=prog(0.08+i*0.035,0.07,t);
+    const x=PAD+span*(i/(dbs.length-1));
+    ctx.strokeStyle=C.line; ctx.lineWidth=2.5;
+    circP(x,Y0,dbR,p);
+    lbl(d,x,Y0+dbR+11,prog(0.15+i*0.035,0.06,t)*0.75,'center',7.5);
+  });
+  lbl('L0  ·  DATA SOURCES',PAD,Y0-dbR-20,prog(0.08,0.05,t)*0.45,'left',7);
+
+  /* ── Feed lines → bus → L2 ───────────────────────────────────────── */
+  dbs.forEach((_,i)=>{
+    const p=prog(0.30+i*0.015,0.08,t);
+    const x=PAD+span*(i/(dbs.length-1));
+    ctx.strokeStyle=C.lineDim; ctx.lineWidth=1.2;
+    lineP(x,Y0-dbR-2,x,Y2+18,p);
+  });
+  ctx.strokeStyle=C.lineDim; ctx.lineWidth=1.2;
+  lineP(PAD,Y2+18,PAD+span,Y2+18,prog(0.42,0.07,t));
+
+  /* L2 box */
+  const l2w=span*0.65, l2x=cx-l2w/2;
+  ctx.strokeStyle=C.line; ctx.lineWidth=2.5;
+  rectP(l2x,Y2-15,l2w,30,prog(0.46,0.09,t));
+  lbl('L2  ·  INFERENCE  ·  litellm unified router  (OpenAI · Anthropic · Bedrock · Ollama)',
+      cx,Y2,prog(0.55,0.05,t)*0.6,'center',7.5);
+
+  /* ── L3: Pipeline stages ─────────────────────────────────────────── */
+  const stages=[['Schema','Linker'],['SQL','Generator'],['ReFoRCE','Corrector'],['Response','Formatter']];
+  const bw=130,bh=48;
+  const bspan=span*0.86, boff=cx-bspan/2;
+  stages.forEach((s,i)=>{
+    const p=prog(0.36+i*0.04,0.08,t);
+    const bx=boff+bspan*(i/(stages.length-1))-bw/2;
+    const by=Y3-bh/2;
+    ctx.strokeStyle=C.line; ctx.lineWidth=2.5;
+    rectP(bx,by,bw,bh,p);
+    ctx.strokeStyle=C.lineDim; ctx.lineWidth=1.2;
+    lineP(bx+bw/2,by+bh,bx+bw/2,Y2-15,prog(0.44+i*0.025,0.06,t));
+    if(p>0.85){
+      s.forEach((ln,li)=>lbl(ln,bx+bw/2,by+bh/2+(li-.5)*(s.length>1?9:0),(p-.85)*7*0.65,'center',8.5));
+    }
+  });
+  lbl('L3  ·  FRAMEWORK  ·  pipeline orchestration',PAD,Y3-bh/2-14,prog(0.36,0.05,t)*0.45,'left',7);
+
+  /* Stage arrows */
+  for(let i=0;i<stages.length-1;i++){
+    const p=prog(0.56+i*0.025,0.07,t);
+    const x1=boff+bspan*(i/(stages.length-1))+bw/2;
+    const x2=boff+bspan*((i+1)/(stages.length-1))-bw/2;
+    ctx.strokeStyle=C.lineDim; ctx.lineWidth=1.2;
+    lineP(x1,Y3,x2,Y3,p);
+    if(p>=1){
+      ctx.save(); ctx.strokeStyle=C.lineDim; ctx.lineWidth=1.2;
+      ctx.beginPath(); ctx.moveTo(x2-6,Y3-3); ctx.lineTo(x2,Y3); ctx.lineTo(x2-6,Y3+3); ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  /* ── L4: Runtime ─────────────────────────────────────────────────── */
+  const r4w=span*0.72, r4x=cx-r4w/2;
+  ctx.strokeStyle=C.line; ctx.lineWidth=2.5;
+  rectP(r4x,Y4-20,r4w,40,prog(0.60,0.10,t));
+  lbl('L4  ·  RUNTIME  ·  QuerySession · 3-tier Memory · PolicyGateway · SOUL · Checkpoint',
+      cx,Y4,prog(0.70,0.05,t)*0.55,'center',7.5);
+  ctx.strokeStyle=C.lineDim; ctx.lineWidth=1.2;
+  lineP(cx,Y3-bh/2,cx,Y4+20,prog(0.62,0.06,t));
+
+  /* ── L5: UI box ──────────────────────────────────────────────────── */
+  const r5w=span*0.45, r5x=cx-r5w/2;
+  ctx.strokeStyle=C.line; ctx.lineWidth=2.5;
+  rectP(r5x,Y5-16,r5w,32,prog(0.70,0.09,t));
+  lbl('L5  ·  WORKSPACE UI  ·  React 18 UMD  ·  Beam.ai design  ·  app.html',
+      cx,Y5,prog(0.79,0.05,t)*0.52,'center',7.5);
+  ctx.strokeStyle=C.lineDim; ctx.lineWidth=1.2;
+  lineP(cx,Y4-20,cx,Y5+16,prog(0.72,0.06,t));
+
+  /* ── Dimension lines ─────────────────────────────────────────────── */
+  const dp=prog(0.76,0.09,t);
+  const dlx=PAD-32;
+  ctx.strokeStyle=C.lineDim; ctx.lineWidth=1.2;
+  dimTick(dlx,Y5,dlx,Y4,dp); dimTick(dlx,Y4,dlx,Y3,dp);
+  dimTick(dlx,Y3,dlx,Y2,dp); dimTick(dlx,Y2,dlx,Y0,dp);
+  ['L5','L4','L3','L2','L1/L0'].forEach((l,i)=>{
+    const ys=[Y5,Y4,Y3,Y2,Y2], ye=[Y4,Y3,Y2,Y0,Y0];
+    lbl(l,dlx-14,(ys[i]+ye[i])/2,dp*0.48,'center',6.5);
+  });
+
+  /* ── Dashed separators ───────────────────────────────────────────── */
+  const sp=prog(0.80,0.07,t);
+  if(sp>0){
+    ctx.save(); ctx.strokeStyle=C.lineDim; ctx.lineWidth=1.0;
+    ctx.setLineDash([4,9]); ctx.globalAlpha=sp*0.55;
+    [Y4+20,Y3+bh/2+8,Y2+15,Y0-dbR-28].forEach(y=>{
+      ctx.beginPath(); ctx.moveTo(PAD,y); ctx.lineTo(W-PAD,y); ctx.stroke();
+    });
+    ctx.setLineDash([]); ctx.restore();
+  }
+
+  /* ── Annotation circles ──────────────────────────────────────────── */
+  const ap=prog(0.78,0.10,t);
+  const notes=[
+    {x:boff,         n:'①',t:'CHESS LSH  ·  500→8 cols'},
+    {x:boff+bspan/3, n:'②',t:'3-generator ensemble  ·  parallel'},
+    {x:boff+bspan*2/3,n:'③',t:'ReFoRCE  ·  3-stage correction'},
+    {x:boff+bspan,   n:'④',t:'M-Schema  ·  3-5× token savings'},
+  ];
+  ctx.strokeStyle=C.lineDim; ctx.lineWidth=1.2;
+  notes.forEach(n=>{
+    circP(n.x,Y3-bh/2-22,9,ap);
+    lbl(n.n,n.x,Y3-bh/2-22,ap*0.65,'center',7);
+    lineP(n.x,Y3-bh/2-13,n.x,Y3-bh/2-2,ap*0.8);
+    lbl(n.t,n.x,Y3-bh/2-36,ap*0.38,'center',6.5);
+  });
+
+  /* ── Title block ─────────────────────────────────────────────────── */
+  const tp=prog(0.84,0.09,t);
+  if(tp>0){
+    const tx=W-PAD-196, ty=H-58, tw=196, th=44;
+    ctx.save(); ctx.globalAlpha=tp;
+    ctx.strokeStyle=C.line; ctx.lineWidth=2.5;
+    rectP(tx,ty,tw,th,1);
+    ctx.strokeStyle=C.lineDim; ctx.lineWidth=1.0;
+    lineP(tx,ty+15,tx+tw,ty+15,1); lineP(tx,ty+29,tx+tw,ty+29,1);
+    ctx.restore();
+    lbl('sqlagent  ·  Architecture Overview',tx+tw/2,ty+8,tp*0.48,'center',7);
+    lbl('v1.0  ·  2026  ·  Apache 2.0',tx+tw/2,ty+22,tp*0.4,'center',6.5);
+    lbl('~7,000 lines  ·  ~30 modules  ·  113 tests',tx+tw/2,ty+37,tp*0.36,'center',6.5);
+  }
+
+  /* ── Corner cross marks ──────────────────────────────────────────── */
+  const cp=prog(0.02,0.08,t);
+  if(cp>0){
+    ctx.save(); ctx.strokeStyle=C.lineDim; ctx.lineWidth=1.0; ctx.globalAlpha=cp;
+    [[32,32],[W-32,32],[32,H-32],[W-32,H-32]].forEach(([x,y])=>{
+      const s=8;
+      ctx.beginPath(); ctx.moveTo(x-s,y); ctx.lineTo(x+s,y); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x,y-s); ctx.lineTo(x,y+s); ctx.stroke();
+      circP(x,y,3,1);
+    });
+    ctx.restore();
+  }
+
+  /* ── Option C exclusive: a few "hand" imperfection hints ────────────
+     Slightly varied line weights to evoke ink pen strokes               */
+  if(t>0.9){
+    ctx.save(); ctx.globalAlpha=(t-0.9)*5*0.06; ctx.strokeStyle=C.lineDim;
+    // One slightly thicker accent line under the pipeline row
+    ctx.lineWidth=2.5;
+    ctx.beginPath(); ctx.moveTo(boff-bw/2-8,Y3+bh/2+4); ctx.lineTo(boff+bspan+bw/2+8,Y3+bh/2+4); ctx.stroke();
+    ctx.restore();
+  }
+}
+
+// Draw final state immediately for screenshots
+// To see animation, change draw(1) to: requestAnimationFrame(frame);
+// function frame(now) { if(!lastT) lastT=now; const dt=Math.min(now-lastT,50); lastT=now; elapsed=Math.min(elapsed+dt,TOTAL*1.05); draw(elapsed/TOTAL); requestAnimationFrame(frame); }
+draw(1);
+</script>
+</body>
+</html>

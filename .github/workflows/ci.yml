@@ -1,0 +1,100 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Run tests
+        run: pytest tests/ -q --tb=short --cov=sqlagent --cov=ora --cov-report=xml
+        env:
+          # Use dummy keys for tests — real calls are mocked
+          OPENAI_API_KEY: sk-test-dummy
+          ANTHROPIC_API_KEY: sk-ant-test-dummy
+
+      - name: Upload coverage
+        if: matrix.python-version == '3.12'
+        uses: codecov/codecov-action@v4
+        with:
+          file: coverage.xml
+          fail_ci_if_error: false
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install ruff
+      - name: Ruff lint
+        run: ruff check sqlagent/ ora/ --output-format=github
+      - name: Ruff format check
+        run: ruff format sqlagent/ ora/ --check
+
+  security:
+    name: Security scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install bandit[toml] pip-audit
+      - name: Bandit SAST scan
+        run: bandit -r sqlagent/ ora/ -ll -x sqlagent/ui/ --format json -o bandit-report.json || true
+      - name: pip-audit dependency scan
+        run: pip-audit --requirement <(pip freeze) --format json -o pip-audit-report.json || true
+      - name: Upload security reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: security-reports
+          path: |
+            bandit-report.json
+            pip-audit-report.json
+
+  docker:
+    name: Docker build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Docker image
+        run: docker build --build-arg EXTRAS="postgres,mysql" -t ora:ci .
+      - name: Smoke test container
+        run: |
+          docker run -d --name ora-test -p 8080:8080 \
+            -e OPENAI_API_KEY=sk-test \
+            ora:ci
+          sleep 5
+          curl -f http://localhost:8080/health || (docker logs ora-test && exit 1)
+          docker stop ora-test

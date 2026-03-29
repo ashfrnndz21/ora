@@ -1,0 +1,45 @@
+*.pyc
+__pycache__/
+*.egg-info/
+.venv/
+dist/
+build/
+.eggs/
+*.db
+.sqlagent/
+.claude/
+CLAUDE.md
+
+# ── Secrets & environment ────────────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+.env.production
+.env.staging
+secrets/
+*.pem
+*.key
+*.p12
+*.pfx
+.jwt_secret
+
+# ── OS / editor ──────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/settings.json
+*.iml
+
+# ── Coverage & test artifacts ────────────────────────────────────────────────
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+coverage.xml
+
+# ── Build artifacts ───────────────────────────────────────────────────────────
+*.so
+*.dylib
+__pypackages__/
