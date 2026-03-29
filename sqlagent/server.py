@@ -1809,3 +1809,6 @@ async def _get_or_create_agent(workspace_id: str, user_id: str) -> Any:
 
     _state.setdefault("agents", {})[key] = agent
     return agent
+
+# Module-level app instance for uvicorn/gunicorn: 'uvicorn sqlagent.server:app'
+app = create_app()
