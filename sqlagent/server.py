@@ -134,10 +134,24 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
         # Shutdown (cleanup if needed)
 
     app = FastAPI(
-        title="sqlagent",
-        description="The NL2SQL Agentic Runtime",
+        title="ora",
+        description="The NL2SQL Agentic Runtime — connect any database, ask in plain English.",
         version="2.0.0",
         lifespan=lifespan,
+        docs_url=None,      # We serve a custom dark-themed /docs
+        redoc_url=None,     # Replaced by /docs
+        openapi_tags=[
+            {"name": "query", "description": "Run natural language queries against databases"},
+            {"name": "schema", "description": "Schema introspection, pruning, and knowledge graph"},
+            {"name": "train", "description": "Training feedback and learning"},
+            {"name": "workspaces", "description": "Workspace management"},
+            {"name": "auth", "description": "Authentication"},
+            {"name": "tasks", "description": "Query execution history and traces"},
+            {"name": "hub", "description": "QueryHub community training packs"},
+            {"name": "soul", "description": "SOUL user mental model"},
+            {"name": "observability", "description": "Health, metrics, and debug"},
+            {"name": "settings", "description": "Configuration and API keys"},
+        ],
     )
 
     # CORS — env var overrides config; wildcard + credentials is an XSS vector so
@@ -1751,6 +1765,570 @@ Be playful, unexpected, warm.\
 
     if os.path.exists(_ui_dir):
         app.mount("/ui", StaticFiles(directory=_ui_dir), name="ui")
+
+    # ── Custom API docs — cream + sketch aesthetic (matches landing page) ─────
+    @app.get("/docs", include_in_schema=False)
+    async def custom_swagger_ui():
+        from fastapi.responses import HTMLResponse
+        html = """<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>ora — API Reference</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5.11.0/swagger-ui.css"/>
+  <style>
+    /* ── Fonts ───────────────────────────────────────────────── */
+    @font-face {
+      font-family: 'DynaPuff';
+      src: url('/ui/DynaPuff-Variable.ttf') format('truetype');
+      font-weight: 100 900; font-style: normal; font-display: swap;
+    }
+    @font-face {
+      font-family: 'DynaPuff';
+      src: url('/ui/DynaPuff-Regular.ttf') format('truetype');
+      font-weight: 400; font-style: normal; font-display: swap;
+    }
+
+    /* ── Reset & Canvas ──────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      background: #f5f2ec;
+      color: #1e160a;
+      font-family: 'Inter', -apple-system, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      min-height: 100vh;
+    }
+    /* Subtle paper texture via repeating gradient */
+    body::before {
+      content: '';
+      position: fixed; inset: 0; pointer-events: none; z-index: 0;
+      background-image:
+        radial-gradient(ellipse at 20% 10%, rgba(91,138,240,.05) 0%, transparent 55%),
+        radial-gradient(ellipse at 80% 90%, rgba(59,95,192,.03) 0%, transparent 45%);
+    }
+
+    /* ── Scrollbar ───────────────────────────────────────────── */
+    ::-webkit-scrollbar { width: 7px; height: 7px; }
+    ::-webkit-scrollbar-track { background: #ede9e0; }
+    ::-webkit-scrollbar-thumb { background: rgba(20,14,4,.18); border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(20,14,4,.30); }
+
+    /* ── Top nav ─────────────────────────────────────────────── */
+    #ora-nav {
+      position: sticky; top: 0; z-index: 200;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 36px;
+      height: 52px;
+      background: rgba(245,242,236,.96);
+      border-bottom: 1.5px solid rgba(20,14,4,.14);
+      backdrop-filter: blur(10px);
+    }
+    .nav-brand {
+      display: flex; align-items: center; gap: 10px;
+      text-decoration: none;
+    }
+    .nav-wordmark {
+      font-family: 'DynaPuff', 'JetBrains Mono', monospace;
+      font-size: 22px; font-weight: 400; letter-spacing: .02em;
+      background: linear-gradient(135deg, #1a2d6b 0%, #3b5fc0 55%, #1e160a 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text;
+      filter: drop-shadow(0 1px 2px rgba(59,95,192,.10));
+    }
+    .nav-cursor {
+      display: inline-block; width: 2px; height: .7em;
+      background: #3b5fc0; border-radius: 1px; margin-left: 1px;
+      animation: blink .8s ease-in-out infinite; vertical-align: middle;
+    }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+    .nav-badge-ref {
+      font-size: 9px; font-weight: 600; letter-spacing: .12em;
+      color: rgba(59,95,192,.78); border: 1px solid rgba(59,95,192,.28);
+      border-radius: 3px; padding: 2px 7px;
+      font-family: 'JetBrains Mono', monospace;
+      background: rgba(59,95,192,.06); text-transform: uppercase;
+    }
+    .nav-links { display: flex; align-items: center; gap: 2px; }
+    .nav-links a {
+      font-size: 12.5px; font-weight: 500; color: rgba(20,14,4,.45);
+      text-decoration: none; padding: 5px 12px; border-radius: 6px;
+      transition: all .12s ease; font-family: 'Inter', sans-serif;
+    }
+    .nav-links a:hover { color: rgba(20,14,4,.80); background: rgba(20,14,4,.05); }
+    .nav-links a.active {
+      color: rgba(59,95,192,.90);
+      background: rgba(59,95,192,.08);
+      border: 1px solid rgba(59,95,192,.18);
+    }
+
+    /* ── Page layout ─────────────────────────────────────────── */
+    #page-wrap {
+      position: relative; z-index: 1;
+      max-width: 1060px; margin: 0 auto;
+      padding: 36px 32px 80px;
+    }
+
+    /* ── Hero header ─────────────────────────────────────────── */
+    .docs-hero {
+      border: 1.5px solid rgba(20,14,4,.24);
+      border-radius: 12px;
+      padding: 28px 32px 24px;
+      background: rgba(255,252,242,.60);
+      position: relative;
+      box-shadow: 3px 4px 0 rgba(20,14,4,.06), 6px 8px 0 rgba(20,14,4,.03);
+      margin-bottom: 28px;
+    }
+    /* Corner sketch marks */
+    .docs-hero::after {
+      content: ''; position: absolute; top: 7px; left: 7px;
+      width: 14px; height: 14px;
+      border-top: 1.5px solid rgba(20,14,4,.22);
+      border-left: 1.5px solid rgba(20,14,4,.22);
+    }
+    .docs-hero::before {
+      content: ''; position: absolute; bottom: 7px; right: 7px;
+      width: 14px; height: 14px;
+      border-bottom: 1.5px solid rgba(20,14,4,.22);
+      border-right: 1.5px solid rgba(20,14,4,.22);
+    }
+    .hero-title {
+      font-family: 'Caveat', cursive;
+      font-size: 34px; font-weight: 600; letter-spacing: -.2px;
+      color: #1e160a; line-height: 1.1; margin-bottom: 8px;
+    }
+    .hero-title .hl {
+      color: #3b5fc0;
+      text-decoration: underline; text-decoration-color: rgba(59,95,192,.35);
+      text-underline-offset: 3px;
+    }
+    .hero-desc {
+      font-size: 13.5px; color: rgba(20,14,4,.52); line-height: 1.6;
+      max-width: 560px; margin-bottom: 16px;
+    }
+    .hero-pills { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .hero-pill {
+      font-size: 10.5px; font-family: 'JetBrains Mono', monospace;
+      padding: 4px 12px; border-radius: 100px;
+      background: rgba(255,252,244,.80); border: 1px solid rgba(20,14,4,.18);
+      color: rgba(20,14,4,.52);
+    }
+    .hero-pill.blue {
+      background: rgba(59,95,192,.08); border-color: rgba(59,95,192,.22);
+      color: rgba(40,72,180,.78);
+    }
+    .hero-pill.green {
+      background: rgba(34,164,74,.08); border-color: rgba(34,164,74,.22);
+      color: rgba(20,130,55,.80);
+    }
+
+    /* ── Swagger UI global resets ────────────────────────────── */
+    .swagger-ui {
+      font-family: 'Inter', -apple-system, sans-serif !important;
+      color: #1e160a !important;
+    }
+    .swagger-ui *, .swagger-ui *::before, .swagger-ui *::after {
+      font-family: 'Inter', -apple-system, sans-serif;
+    }
+    /* Hide swagger default topbar & info block (we have our own header) */
+    .swagger-ui .topbar { display: none !important; }
+    .swagger-ui .information-container { display: none !important; }
+    .swagger-ui .scheme-container {
+      background: rgba(255,252,244,.70) !important;
+      border: 1.5px solid rgba(20,14,4,.18) !important;
+      border-radius: 9px; padding: 10px 18px; margin: 0 0 20px;
+      box-shadow: 2px 3px 0 rgba(20,14,4,.05);
+    }
+    .swagger-ui .scheme-container .schemes > label {
+      color: rgba(20,14,4,.45) !important; font-size: 11px; font-weight: 600;
+      letter-spacing: .06em; text-transform: uppercase;
+    }
+    .swagger-ui select {
+      background: rgba(255,252,244,.90) !important;
+      border: 1px solid rgba(20,14,4,.20) !important;
+      color: rgba(20,14,4,.75) !important;
+      border-radius: 6px; padding: 5px 10px;
+      font-family: 'JetBrains Mono', monospace; font-size: 12px;
+      box-shadow: 1px 2px 0 rgba(20,14,4,.05);
+    }
+
+    /* ── Tag / group headers ─────────────────────────────────── */
+    .swagger-ui .opblock-tag {
+      border-bottom: 1.5px solid rgba(20,14,4,.18) !important;
+      color: #1e160a !important;
+      font-size: 15px; font-weight: 600;
+      font-family: 'Caveat', cursive !important;
+      letter-spacing: .01em;
+      padding: 14px 0 10px !important;
+      margin-top: 12px;
+    }
+    .swagger-ui .opblock-tag:hover { background: transparent !important; }
+    .swagger-ui .opblock-tag a, .swagger-ui .opblock-tag a:visited {
+      color: #1e160a !important;
+      font-family: 'Caveat', cursive !important;
+      font-size: 18px; font-weight: 600;
+    }
+    .swagger-ui .opblock-tag small {
+      color: rgba(20,14,4,.42) !important; font-size: 12px; font-weight: 400;
+      font-family: 'Inter', sans-serif !important;
+    }
+    .swagger-ui .opblock-tag svg { fill: rgba(20,14,4,.30) !important; }
+
+    /* ── Endpoint blocks ─────────────────────────────────────── */
+    .swagger-ui .opblock {
+      border-radius: 9px !important;
+      border: 1.5px solid rgba(20,14,4,.20) !important;
+      background: rgba(255,252,242,.55) !important;
+      margin: 5px 0 !important;
+      box-shadow: 2px 3px 0 rgba(20,14,4,.05), 4px 6px 0 rgba(20,14,4,.025) !important;
+      overflow: hidden;
+      transition: box-shadow .12s ease, transform .12s ease;
+    }
+    .swagger-ui .opblock:hover {
+      border-color: rgba(20,14,4,.32) !important;
+      box-shadow: 3px 5px 0 rgba(20,14,4,.08), 6px 10px 0 rgba(20,14,4,.03) !important;
+    }
+
+    /* Method colors — left accent bars */
+    .swagger-ui .opblock.opblock-get  { border-left: 3px solid #22a44a !important; }
+    .swagger-ui .opblock.opblock-post { border-left: 3px solid #3b5fc0 !important; }
+    .swagger-ui .opblock.opblock-put  { border-left: 3px solid #c04a00 !important; }
+    .swagger-ui .opblock.opblock-delete { border-left: 3px solid #b91c1c !important; }
+    .swagger-ui .opblock.opblock-patch  { border-left: 3px solid #7c3aed !important; }
+
+    /* Summary row */
+    .swagger-ui .opblock .opblock-summary {
+      background: transparent !important;
+      border: none !important; padding: 9px 14px !important;
+    }
+    .swagger-ui .opblock .opblock-summary:hover {
+      background: rgba(20,14,4,.03) !important;
+    }
+    .swagger-ui .opblock-summary-method {
+      border-radius: 4px !important;
+      font-family: 'JetBrains Mono', monospace !important;
+      font-size: 10.5px !important; font-weight: 700 !important;
+      min-width: 58px !important; text-align: center !important;
+      padding: 3px 7px !important; letter-spacing: .04em;
+    }
+    .swagger-ui .opblock.opblock-get .opblock-summary-method
+      { background: rgba(34,164,74,.12) !important; color: #1a7a3a !important; }
+    .swagger-ui .opblock.opblock-post .opblock-summary-method
+      { background: rgba(59,95,192,.12) !important; color: #2040a0 !important; }
+    .swagger-ui .opblock.opblock-put .opblock-summary-method
+      { background: rgba(192,74,0,.10) !important; color: #a03800 !important; }
+    .swagger-ui .opblock.opblock-delete .opblock-summary-method
+      { background: rgba(185,28,28,.10) !important; color: #991b1b !important; }
+    .swagger-ui .opblock.opblock-patch .opblock-summary-method
+      { background: rgba(124,58,237,.10) !important; color: #5b21b6 !important; }
+
+    .swagger-ui .opblock-summary-path {
+      color: rgba(20,14,4,.82) !important;
+      font-family: 'JetBrains Mono', monospace !important;
+      font-size: 13px !important; font-weight: 500 !important;
+    }
+    .swagger-ui .opblock-summary-path .nostyle { color: rgba(20,14,4,.82) !important; }
+    .swagger-ui .opblock-summary-path b { color: #3b5fc0 !important; font-weight: 600; }
+    .swagger-ui .opblock-summary-description {
+      color: rgba(20,14,4,.45) !important; font-size: 12.5px !important;
+    }
+    .swagger-ui .opblock-summary-control svg { fill: rgba(20,14,4,.28) !important; }
+    .swagger-ui .opblock-summary-control:hover svg { fill: rgba(20,14,4,.55) !important; }
+
+    /* ── Expanded body ───────────────────────────────────────── */
+    .swagger-ui .opblock-body {
+      background: rgba(245,240,228,.50) !important;
+      border-top: 1.5px solid rgba(20,14,4,.12) !important;
+    }
+    .swagger-ui .opblock-section-header {
+      background: rgba(228,222,210,.55) !important;
+      border-bottom: 1px solid rgba(20,14,4,.10) !important;
+    }
+    .swagger-ui .opblock-section-header h4 {
+      color: rgba(20,14,4,.45) !important; font-size: 10.5px !important;
+      font-weight: 700 !important; letter-spacing: .55px !important;
+      text-transform: uppercase !important; font-family: 'JetBrains Mono', monospace !important;
+    }
+    .swagger-ui .opblock-description-wrapper p {
+      color: rgba(20,14,4,.55) !important; font-size: 13px;
+    }
+
+    /* ── Parameter tables ────────────────────────────────────── */
+    .swagger-ui table { background: transparent !important; width: 100%; border-collapse: collapse; }
+    .swagger-ui table thead tr th {
+      background: rgba(228,222,210,.55) !important;
+      border-bottom: 1.5px solid rgba(20,14,4,.12) !important;
+      color: rgba(20,14,4,.40) !important; font-size: 10.5px !important;
+      font-weight: 700 !important; letter-spacing: .5px; text-transform: uppercase;
+      padding: 9px 16px !important; font-family: 'JetBrains Mono', monospace !important;
+    }
+    .swagger-ui table tbody tr td {
+      border-bottom: 1px solid rgba(20,14,4,.07) !important;
+      padding: 9px 16px !important; color: rgba(20,14,4,.80) !important;
+      background: transparent !important;
+    }
+    .swagger-ui table tbody tr:last-child td { border-bottom: none !important; }
+    .swagger-ui .parameter__name {
+      color: rgba(20,14,4,.82) !important; font-family: 'JetBrains Mono', monospace;
+      font-size: 12.5px; font-weight: 500;
+    }
+    .swagger-ui .parameter__name.required::after { color: #b91c1c; }
+    .swagger-ui .parameter__type { color: #3b5fc0 !important; font-family: 'JetBrains Mono', monospace; font-size: 11.5px; }
+    .swagger-ui .parameter__in { color: rgba(20,14,4,.35) !important; font-size: 10.5px; font-family: 'JetBrains Mono', monospace; }
+
+    /* ── Inputs ──────────────────────────────────────────────── */
+    .swagger-ui input[type=text],
+    .swagger-ui input[type=password],
+    .swagger-ui input[type=email],
+    .swagger-ui textarea {
+      background: rgba(255,252,244,.90) !important;
+      border: 1.5px solid rgba(20,14,4,.22) !important;
+      border-radius: 7px !important;
+      color: rgba(20,14,4,.82) !important;
+      font-family: 'JetBrains Mono', monospace !important;
+      font-size: 12.5px !important; padding: 7px 11px !important;
+      box-shadow: 1px 2px 0 rgba(20,14,4,.05);
+    }
+    .swagger-ui input[type=text]:focus,
+    .swagger-ui textarea:focus {
+      border-color: rgba(59,95,192,.50) !important;
+      outline: none !important;
+      box-shadow: 0 0 0 3px rgba(59,95,192,.08), 1px 2px 0 rgba(20,14,4,.04) !important;
+    }
+    .swagger-ui input[type=text]::placeholder,
+    .swagger-ui textarea::placeholder { color: rgba(20,14,4,.28) !important; }
+
+    /* ── Buttons ─────────────────────────────────────────────── */
+    .swagger-ui .btn {
+      border-radius: 7px !important;
+      font-family: 'Inter', sans-serif !important;
+      font-size: 12.5px !important; font-weight: 600 !important;
+      padding: 7px 15px !important; cursor: pointer;
+      transition: all .12s ease;
+      box-shadow: 1px 2px 0 rgba(20,14,4,.10) !important;
+    }
+    .swagger-ui .btn.execute {
+      background: #3b5fc0 !important;
+      border: 1.5px solid #2a4aaa !important;
+      color: #fff !important;
+      box-shadow: 2px 3px 0 rgba(20,14,4,.15) !important;
+    }
+    .swagger-ui .btn.execute:hover {
+      background: #2a4aaa !important;
+      box-shadow: 3px 4px 0 rgba(20,14,4,.18) !important;
+      transform: translateY(-1px);
+    }
+    .swagger-ui .btn.btn-clear {
+      background: rgba(255,252,244,.90) !important;
+      border: 1.5px solid rgba(20,14,4,.22) !important;
+      color: rgba(20,14,4,.55) !important;
+    }
+    .swagger-ui .btn.btn-clear:hover {
+      background: rgba(255,252,244,1) !important; color: rgba(20,14,4,.80) !important;
+    }
+    .swagger-ui .btn.authorize {
+      background: rgba(34,164,74,.10) !important;
+      border: 1.5px solid rgba(34,164,74,.28) !important;
+      color: #1a7a3a !important;
+    }
+    .swagger-ui .btn.authorize svg { fill: #1a7a3a !important; }
+    .swagger-ui .try-out__btn {
+      background: rgba(59,95,192,.10) !important;
+      border: 1.5px solid rgba(59,95,192,.28) !important;
+      color: #2040a0 !important;
+    }
+
+    /* ── Responses ───────────────────────────────────────────── */
+    .swagger-ui .responses-wrapper { padding: 14px !important; }
+    .swagger-ui .response-col_status {
+      color: rgba(20,14,4,.80) !important; font-family: 'JetBrains Mono', monospace; font-size: 12.5px;
+    }
+    .swagger-ui .response-col_description { color: rgba(20,14,4,.50) !important; font-size: 12.5px; }
+    .swagger-ui .responses-inner h4, .swagger-ui .responses-inner h5 {
+      color: rgba(20,14,4,.40) !important; font-size: 10.5px; font-weight: 700;
+      letter-spacing: .5px; text-transform: uppercase;
+      font-family: 'JetBrains Mono', monospace !important;
+    }
+
+    /* ── Code / JSON ─────────────────────────────────────────── */
+    .swagger-ui .highlight-code, .swagger-ui pre.microlight,
+    .swagger-ui pre, .swagger-ui code {
+      background: rgba(228,222,210,.65) !important;
+      border: 1.5px solid rgba(20,14,4,.16) !important;
+      border-radius: 7px !important;
+      font-family: 'JetBrains Mono', monospace !important;
+      font-size: 11.5px !important;
+      color: rgba(20,14,4,.78) !important;
+      padding: 10px 14px !important;
+      box-shadow: 1px 2px 0 rgba(20,14,4,.04) !important;
+    }
+    .swagger-ui .microlight .number { color: #7c3aed !important; }
+    .swagger-ui .microlight .string { color: #1a7a3a !important; }
+    .swagger-ui .microlight .key    { color: #2040a0 !important; }
+    .swagger-ui .microlight .boolean { color: #c04a00 !important; }
+    .swagger-ui .microlight .null   { color: #b91c1c !important; }
+    .swagger-ui .copy-to-clipboard {
+      background: rgba(255,252,244,.85) !important; border-radius: 5px !important;
+      border: 1px solid rgba(20,14,4,.16) !important;
+    }
+
+    /* ── Schema / Models ─────────────────────────────────────── */
+    .swagger-ui section.models {
+      border: 1.5px solid rgba(20,14,4,.20) !important;
+      border-radius: 10px !important; overflow: hidden;
+      background: rgba(255,252,242,.55) !important;
+      margin-top: 28px;
+      box-shadow: 2px 3px 0 rgba(20,14,4,.05), 4px 6px 0 rgba(20,14,4,.025);
+    }
+    .swagger-ui section.models h4 {
+      color: rgba(20,14,4,.80) !important; font-size: 15px; font-weight: 600;
+      font-family: 'Caveat', cursive !important;
+      padding: 14px 20px; margin: 0;
+      border-bottom: 1.5px solid rgba(20,14,4,.12);
+      background: rgba(228,222,210,.45);
+    }
+    .swagger-ui .model-container {
+      background: rgba(255,252,244,.70) !important;
+      border-radius: 7px !important; margin: 8px;
+      border: 1px solid rgba(20,14,4,.14) !important;
+    }
+    .swagger-ui .model-title { color: rgba(20,14,4,.80) !important; font-size: 13px; }
+    .swagger-ui .model { color: rgba(20,14,4,.60) !important; font-family: 'JetBrains Mono', monospace; font-size: 11.5px; }
+    .swagger-ui .model .property { color: #2040a0 !important; }
+    .swagger-ui .model .property.primitive { color: #1a7a3a !important; }
+    .swagger-ui .prop-type { color: #7c3aed !important; }
+    .swagger-ui .prop-format { color: #c04a00 !important; }
+
+    /* ── Auth modal ──────────────────────────────────────────── */
+    .swagger-ui .dialog-ux .modal-ux {
+      background: #f5f2ec !important;
+      border: 1.5px solid rgba(20,14,4,.24) !important;
+      border-radius: 12px !important;
+      box-shadow: 4px 8px 0 rgba(20,14,4,.10), 8px 16px 0 rgba(20,14,4,.05) !important;
+    }
+    .swagger-ui .dialog-ux .modal-ux-header {
+      background: rgba(228,222,210,.55) !important;
+      border-bottom: 1.5px solid rgba(20,14,4,.14) !important;
+    }
+    .swagger-ui .dialog-ux .modal-ux-header h3 {
+      color: #1e160a !important; font-family: 'Caveat', cursive !important;
+      font-size: 20px; font-weight: 600;
+    }
+    .swagger-ui .dialog-ux .modal-ux-content p { color: rgba(20,14,4,.58) !important; font-size: 13px; }
+    .swagger-ui .dialog-ux .modal-ux-content label {
+      color: rgba(20,14,4,.45) !important; font-size: 10.5px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: .5px;
+      font-family: 'JetBrains Mono', monospace !important;
+    }
+    .swagger-ui .dialog-ux .close-modal { color: rgba(20,14,4,.28) !important; }
+    .swagger-ui .dialog-ux .close-modal:hover { color: rgba(20,14,4,.60) !important; }
+
+    /* ── Links ───────────────────────────────────────────────── */
+    .swagger-ui a, .swagger-ui a:visited { color: #3b5fc0 !important; }
+    .swagger-ui a:hover { color: #2040a0 !important; }
+
+    /* ── Markdown in descriptions ────────────────────────────── */
+    .swagger-ui .renderedMarkdown p { color: rgba(20,14,4,.55) !important; font-size: 13px; line-height: 1.6; }
+    .swagger-ui .renderedMarkdown code {
+      background: rgba(59,95,192,.09) !important;
+      color: #2040a0 !important; border: none !important;
+      padding: 2px 6px !important; border-radius: 4px; font-size: 11.5px;
+      font-family: 'JetBrains Mono', monospace !important;
+    }
+
+    /* ── SVGs / icons ────────────────────────────────────────── */
+    .swagger-ui svg.arrow { fill: rgba(20,14,4,.28) !important; }
+    .swagger-ui .expand-methods svg, .swagger-ui .expand-operation svg { fill: rgba(20,14,4,.30) !important; }
+
+    /* ── Filter bar ──────────────────────────────────────────── */
+    .swagger-ui .filter .operation-filter-input {
+      background: rgba(255,252,244,.90) !important;
+      border: 1.5px solid rgba(20,14,4,.20) !important;
+      border-radius: 7px !important; color: rgba(20,14,4,.82) !important;
+      box-shadow: 1px 2px 0 rgba(20,14,4,.05);
+    }
+
+    /* ── Required ────────────────────────────────────────────── */
+    .swagger-ui .required { color: #b91c1c !important; }
+
+    /* ── Misc ────────────────────────────────────────────────── */
+    .swagger-ui hr { border-color: rgba(20,14,4,.12) !important; }
+    .swagger-ui .wrapper { max-width: none !important; padding: 0 !important; }
+    .swagger-ui .block { max-width: none !important; }
+    .swagger-ui h2, .swagger-ui h3 { color: #1e160a !important; }
+    .swagger-ui h4, .swagger-ui h5 { color: rgba(20,14,4,.55) !important; }
+    .swagger-ui .request-url {
+      background: rgba(228,222,210,.65) !important; border-radius: 7px;
+      padding: 7px 12px; border: 1px solid rgba(20,14,4,.14) !important;
+    }
+    .swagger-ui .request-url span { color: rgba(20,14,4,.60) !important; font-family: 'JetBrains Mono', monospace; font-size: 12px; }
+    .swagger-ui .loading-container { background: transparent !important; }
+    .swagger-ui .loading-container .loading::after { border-top-color: #3b5fc0 !important; }
+  </style>
+</head>
+<body>
+  <!-- ── Nav ────────────────────────────────────────────────── -->
+  <nav id="ora-nav">
+    <a href="/" class="nav-brand">
+      <span class="nav-wordmark">ora<span class="nav-cursor"></span></span>
+      <span class="nav-badge-ref">API REF</span>
+    </a>
+    <div class="nav-links">
+      <a href="/guide">Guide</a>
+      <a href="/app">Workspace</a>
+      <a href="/docs" class="active">API Docs</a>
+    </div>
+  </nav>
+
+  <div id="page-wrap">
+    <!-- ── Hero ───────────────────────────────────────────────── -->
+    <div class="docs-hero">
+      <div class="hero-title">
+        ora <span class="hl">API Reference</span>
+      </div>
+      <p class="hero-desc">
+        Connect any database. Ask in plain English. Full REST API for queries, schema, training, auth, and more.
+      </p>
+      <div class="hero-pills">
+        <span class="hero-pill blue">v2.0.0</span>
+        <span class="hero-pill">REST + SSE</span>
+        <span class="hero-pill green">60+ endpoints</span>
+        <span class="hero-pill">OpenAPI 3.1</span>
+        <span class="hero-pill">Bearer Auth</span>
+      </div>
+    </div>
+
+    <!-- ── Swagger UI ─────────────────────────────────────────── -->
+    <div id="swagger-ui"></div>
+  </div>
+
+  <script src="https://unpkg.com/swagger-ui-dist@5.11.0/swagger-ui-bundle.js"></script>
+  <script src="https://unpkg.com/swagger-ui-dist@5.11.0/swagger-ui-standalone-preset.js"></script>
+  <script>
+    window.onload = function() {
+      SwaggerUIBundle({
+        url: "/openapi.json",
+        dom_id: '#swagger-ui',
+        deepLinking: true,
+        presets: [SwaggerUIBundle.presets.apis, SwaggerUIStandalonePreset],
+        layout: "BaseLayout",
+        tryItOutEnabled: true,
+        persistAuthorization: true,
+        displayRequestDuration: true,
+        defaultModelsExpandDepth: 0,
+        defaultModelExpandDepth: 2,
+        docExpansion: "list",
+        filter: true,
+        syntaxHighlight: { activate: true, theme: "idea" }
+      })
+    }
+  </script>
+</body>
+</html>"""
+        return HTMLResponse(content=html)
 
     return app
 
