@@ -211,7 +211,7 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
 
     # ── Auth routes ───────────────────────────────────────────────────────────
 
-    @app.post("/auth/magic-link")
+    @app.post("/auth/magic-link", tags=["auth"])
     async def auth_magic_link(request: Request):
         body = await request.json()
         email = body.get("email", "").strip()
@@ -223,7 +223,7 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
         # For local dev without an email provider, check server logs at DEBUG level.
         return {"message": "If that address is registered, a code is on its way."}
 
-    @app.post("/auth/magic-link/verify")
+    @app.post("/auth/magic-link/verify", tags=["auth"])
     async def auth_verify_magic(request: Request):
         body = await request.json()
         email = body.get("email", "").strip()
@@ -235,19 +235,19 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
         token = create_token(user.user_id, cfg.auth_jwt_secret)
         return {"token": token, "user": {"user_id": user.user_id, "email": user.email, "display_name": user.display_name}}
 
-    @app.get("/auth/me")
+    @app.get("/auth/me", tags=["auth"])
     async def auth_me(user=Depends(get_current_user)):
         return {"user_id": user.user_id, "email": user.email, "display_name": user.display_name, "avatar_url": user.avatar_url}
 
     # ── Workspace routes ──────────────────────────────────────────────────────
 
 
-    @app.post("/workspaces")
+    @app.post("/workspaces", tags=["workspaces"])
     async def create_workspace(name: str = Body(...), description: str = Body(""), user=Depends(get_current_user)):
         ws = await _state["workspace_store"].create(name, user.user_id, description)
         return {"workspace_id": ws.workspace_id, "name": ws.name, "status": ws.status.value}
 
-    @app.get("/workspaces")
+    @app.get("/workspaces", tags=["workspaces"])
     async def list_workspaces(user=Depends(get_current_user)):
         workspaces = await _state["workspace_store"].list_for_user(user.user_id)
         return [
@@ -257,7 +257,7 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
             for w in workspaces
         ]
 
-    @app.get("/workspaces/{workspace_id}")
+    @app.get("/workspaces/{workspace_id}", tags=["workspaces"])
     async def get_workspace(workspace_id: str, user=Depends(get_current_user)):
         from sqlagent.exceptions import WorkspaceNotFound
         try:
@@ -267,7 +267,7 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
         return {"workspace_id": ws.workspace_id, "name": ws.name, "status": ws.status.value,
                 "sources": ws.sources, "query_count": ws.query_count}
 
-    @app.delete("/workspaces/{workspace_id}")
+    @app.delete("/workspaces/{workspace_id}", tags=["workspaces"])
     async def delete_workspace(workspace_id: str, user=Depends(get_current_user)):
         await _state["workspace_store"].delete(workspace_id)
         # Clean ALL cached state for this workspace
@@ -282,7 +282,7 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
             shutil.rmtree(uploads_dir, ignore_errors=True)
         return {"deleted": workspace_id}
 
-    @app.put("/workspaces/{workspace_id}")
+    @app.put("/workspaces/{workspace_id}", tags=["workspaces"])
     async def update_workspace(workspace_id: str, request: Request, user=Depends(get_current_user)):
         body = await request.json()
         ws = await _state["workspace_store"].update(workspace_id, **body)
@@ -291,7 +291,7 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
     # ── Query routes ──────────────────────────────────────────────────────────
 
 
-    @app.post("/query")
+    @app.post("/query", tags=["query"])
     async def run_query(request: Request, user=Depends(get_current_user)):
         body = await request.json()
         query = body.get("query", "")
@@ -315,7 +315,7 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
             "trace": result.trace.to_dict() if result.trace else None,
         }
 
-    @app.post("/query/stream")
+    @app.post("/query/stream", tags=["query"])
     async def stream_query(request: Request, user=Depends(get_current_user)):
         """True SSE streaming — trace nodes appear one-by-one as each LangGraph node completes."""
         body = await request.json()
@@ -385,7 +385,7 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
 
     # ── Schema routes ─────────────────────────────────────────────────────────
 
-    @app.get("/schema")
+    @app.get("/schema", tags=["schema"])
     async def get_schema(workspace_id: str = "", user=Depends(get_current_user)):
         agent = await _get_or_create_agent(workspace_id, user.user_id)
         if not agent.services:
@@ -406,7 +406,7 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
                 logger.debug("server.operation_failed", error=str(exc))
         return {"sources": schemas}
 
-    @app.get("/schema/graph")
+    @app.get("/schema/graph", tags=["schema"])
     async def get_schema_graph(workspace_id: str = "", user=Depends(get_current_user)):
         """Return the knowledge graph if it exists, otherwise return raw schema with FK edges."""
         agent = await _get_or_create_agent(workspace_id, user.user_id)
@@ -461,7 +461,7 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
 
         return {"nodes": nodes, "edges": edges, "layers": [], "analyzed": False}
 
-    @app.post("/schema/analyze")
+    @app.post("/schema/analyze", tags=["schema"])
     async def run_schema_analysis(request: Request, workspace_id: str = "", user=Depends(get_current_user)):
         """Trigger the SchemaAgent LLM analysis pipeline. Returns the knowledge graph."""
         try:
@@ -517,7 +517,7 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
 
         return {**kg.to_dict(), "analyzed": True}
 
-    @app.post("/schema/chat")
+    @app.post("/schema/chat", tags=["schema"])
     async def schema_chat(request: Request, workspace_id: str = "", user=Depends(get_current_user)):
         """Chat with the Schema Agent about the data schema. Q&As feed into SQL Agent context."""
         import re as _re
@@ -661,12 +661,12 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
 
     # ── Task routes ───────────────────────────────────────────────────────────
 
-    @app.get("/workspaces/{workspace_id}/tasks")
+    @app.get("/workspaces/{workspace_id}/tasks", tags=["tasks"])
     async def list_tasks(workspace_id: str, limit: int = 50, user=Depends(get_current_user)):
         traces = await _state["trace_store"].list_for_workspace(workspace_id, limit=limit)
         return {"tasks": traces, "total": len(traces)}
 
-    @app.get("/workspaces/{workspace_id}/tasks/{trace_id}")
+    @app.get("/workspaces/{workspace_id}/tasks/{trace_id}", tags=["tasks"])
     async def get_task(workspace_id: str, trace_id: str, user=Depends(get_current_user)):
         trace = await _state["trace_store"].get(trace_id)
         if not trace:
@@ -676,7 +676,7 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
     # ── Training routes ───────────────────────────────────────────────────────
 
 
-    @app.post("/train/sql")
+    @app.post("/train/sql", tags=["train"])
     async def train_sql(request: Request, user=Depends(get_current_user)):
         body = await request.json()
         workspace_id = body.get("workspace_id", "")
@@ -782,7 +782,7 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
             logger.info("training.saved", source=source)
             return {"example_id": example_id, "message": "Training pair saved"}
 
-    @app.post("/learn/regenerate")
+    @app.post("/learn/regenerate", tags=["train"])
     async def learn_regenerate(request: Request, user=Depends(get_current_user)):
         """
         Learn Agent — runs the correction through the LearnGraph (LangGraph).
@@ -848,12 +848,12 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
         }
 
 
-    @app.get("/hub/packs")
+    @app.get("/hub/packs", tags=["hub"])
     async def list_hub_packs():
         from sqlagent.hub import list_packs
         return {"packs": list_packs()}
 
-    @app.post("/hub/install")
+    @app.post("/hub/install", tags=["hub"])
     async def install_hub_pack(request: Request, user=Depends(get_current_user)):
         body = await request.json()
         agent = await _get_or_create_agent("", user.user_id)
@@ -864,7 +864,7 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
 
     # ── Feedback ──────────────────────────────────────────────────────────────
 
-    @app.post("/api/feedback")
+    @app.post("/api/feedback", tags=["train"])
     async def submit_feedback(request: Request, user=Depends(get_current_user)):
         body = await request.json()
         agent = await _get_or_create_agent("", user.user_id)
@@ -878,7 +878,7 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
             return {"message": "Corrected training pair saved"}
         return {"message": "Feedback recorded"}
 
-    @app.get("/api/learn/status")
+    @app.get("/api/learn/status", tags=["train"])
     async def get_learn_status(workspace_id: str = "", user=Depends(get_current_user)):
         """Live Learn Agent status: training pairs, auto-learn activity, SOUL progress."""
         agent = None
@@ -959,14 +959,14 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
             "lesson_records":    lesson_records,       # full chain, shown as Lesson Cards in UI
         }
 
-    @app.get("/api/learning/stats")
+    @app.get("/api/learning/stats", tags=["train"])
     async def api_learning_stats(workspace_id: str = "", user=Depends(get_current_user)):
         """Alias at /api/learning/stats — matches the path expected by the Home dashboard UI."""
         return await get_learn_status(workspace_id=workspace_id, user=user)
 
     # ── Flat task endpoints (workspace-agnostic, for UI convenience) ──────────
 
-    @app.get("/api/tasks")
+    @app.get("/api/tasks", tags=["tasks"])
     async def list_all_tasks(limit: int = 50, workspace_id: str = "", user=Depends(get_current_user)):
         """Flat task list across all workspaces (or filtered by workspace_id query param).
         Convenience wrapper around /workspaces/{id}/tasks for the Tasks view."""
@@ -986,7 +986,7 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
             traces = []
         return {"tasks": traces, "total": len(traces)}
 
-    @app.get("/api/tasks/{trace_id}")
+    @app.get("/api/tasks/{trace_id}", tags=["tasks"])
     async def get_task_by_id(trace_id: str, user=Depends(get_current_user)):
         """Get a single task by trace_id (workspace-agnostic). Used by TaskDetail view."""
         trace = await _state["trace_store"].get(trace_id)
@@ -996,19 +996,19 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
 
     # ── Learn Agent — lesson management ───────────────────────────────────────
 
-    @app.get("/api/learn/lessons")
+    @app.get("/api/learn/lessons", tags=["train"])
     async def list_lessons(workspace_id: str = "", user=Depends(get_current_user)):
         """List all lesson records for a workspace (the Correction Log in UI)."""
         records = await _state["lesson_store"].list_for_workspace(workspace_id, limit=50)
         return {"lessons": records, "total": len(records)}
 
-    @app.delete("/api/learn/lessons/{lesson_id}")
+    @app.delete("/api/learn/lessons/{lesson_id}", tags=["train"])
     async def delete_lesson(lesson_id: str, user=Depends(get_current_user)):
         """Remove a lesson record (does NOT remove the training pair from vector store)."""
         await _state["lesson_store"].delete(lesson_id)
         return {"deleted": lesson_id}
 
-    @app.delete("/api/learn/context-notes/{idx}")
+    @app.delete("/api/learn/context-notes/{idx}", tags=["train"])
     async def delete_context_note(idx: int, workspace_id: str = "", user=Depends(get_current_user)):
         """Remove a learned context rule by index."""
         try:
@@ -1043,7 +1043,7 @@ Every run must feel completely different — different tone, feature, metaphor, 
 Be playful, unexpected, warm.\
 """
 
-    @app.post("/workspaces/{workspace_id}/setup/greet")
+    @app.post("/workspaces/{workspace_id}/setup/greet", tags=["workspaces"])
     async def setup_greet(workspace_id: str, request: Request, user=Depends(get_current_user)):
         """Stream an LLM-generated greeting — always uses a fast model for low TTFT."""
         body = await request.json()
@@ -1098,7 +1098,7 @@ Be playful, unexpected, warm.\
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
-    @app.post("/workspaces/{workspace_id}/setup/chat")
+    @app.post("/workspaces/{workspace_id}/setup/chat", tags=["workspaces"])
     async def setup_chat(workspace_id: str, request: Request, user=Depends(get_current_user)):
         body = await request.json()
         # Persist SetupAgent per workspace so conversation history is maintained
@@ -1134,7 +1134,7 @@ Be playful, unexpected, warm.\
 
     # ── File Upload ────────────────────────────────────────────────────────────
 
-    @app.post("/api/upload")
+    @app.post("/api/upload", tags=["settings"])
     async def upload_file(file: UploadFile = File(...), workspace_id: str = Form(""), user=Depends(get_current_user)):
         """Upload CSV/XLSX/Parquet file → save to workspace uploads dir, return metadata."""
         import shutil
@@ -1260,7 +1260,7 @@ Be playful, unexpected, warm.\
 
     # ── Settings ───────────────────────────────────────────────────────────────
 
-    @app.get("/api/settings")
+    @app.get("/api/settings", tags=["settings"])
     async def get_settings(user=Depends(get_current_user)):
         import os as _os
         stored = dict(_state.get("user_settings", {}))
@@ -1269,7 +1269,7 @@ Be playful, unexpected, warm.\
         stored["_env_openai"] = bool(_os.environ.get("OPENAI_API_KEY", "").strip())
         return stored
 
-    @app.post("/api/settings")
+    @app.post("/api/settings", tags=["settings"])
     async def save_settings(request: Request, user=Depends(get_current_user)):
         body = await request.json()
         # Merge into existing settings so partial saves don't wipe unrelated keys
@@ -1303,7 +1303,7 @@ Be playful, unexpected, warm.\
             _state["setup_agents"] = {}  # setup agents also cache the LLM provider
         return {"saved": True, "model": selected_model}
 
-    @app.post("/api/test-key")
+    @app.post("/api/test-key", tags=["settings"])
     async def test_api_key(request: Request):
         """Validate an API key by making a minimal LLM call. No auth required for onboarding."""
         body = await request.json()
@@ -1330,7 +1330,7 @@ Be playful, unexpected, warm.\
             # Unexpected error (rate limit, etc.) — still return valid=True as the key likely works
             return {"valid": True, "warning": str(exc)[:80]}
 
-    @app.get("/api/current-model")
+    @app.get("/api/current-model", tags=["settings"])
     async def get_current_model(workspace_id: str = "", user=Depends(get_current_user)):
         """Return the currently active model for this workspace."""
         user_settings = _state.get("user_settings", {})
@@ -1347,7 +1347,7 @@ Be playful, unexpected, warm.\
                 provider = "local"
         return {"model": model, "provider": provider, "startup_model": startup_model}
 
-    @app.get("/api/model-stats")
+    @app.get("/api/model-stats", tags=["settings"])
     async def get_model_stats(workspace_id: str = "", user=Depends(get_current_user)):
         """Per-model observability: query counts, tokens, cost, avg latency."""
         traces = await _state["trace_store"].list_for_workspace(workspace_id or "", limit=2000)
@@ -1381,7 +1381,7 @@ Be playful, unexpected, warm.\
         result.sort(key=lambda x: -x["queries"])
         return {"models": result}
 
-    @app.post("/api/settings/verify-key")
+    @app.post("/api/settings/verify-key", tags=["settings"])
     async def verify_api_key(request: Request, user=Depends(get_current_user)):
         import os as _os
         body = await request.json()
@@ -1438,7 +1438,7 @@ Be playful, unexpected, warm.\
 
     # ── Observability ─────────────────────────────────────────────────────────
 
-    @app.get("/health")
+    @app.get("/health", tags=["observability"])
     async def health():
         # Check whether any LLM key is available (env or saved settings)
         user_settings = _state.get("user_settings", {})
@@ -1460,11 +1460,11 @@ Be playful, unexpected, warm.\
             },
         }
 
-    @app.get("/ready")
+    @app.get("/ready", tags=["observability"])
     async def ready():
         return {"ready": True}
 
-    @app.get("/api/status")
+    @app.get("/api/status", tags=["observability"])
     async def api_status(user=Depends(get_current_user)):
         """System status summary used by the sidebar and Home dashboard."""
         user_settings = _state.get("user_settings", {})
@@ -1478,7 +1478,7 @@ Be playful, unexpected, warm.\
             "auth_required": cfg.auth_enabled,
         }
 
-    @app.get("/api/connections")
+    @app.get("/api/connections", tags=["observability"])
     async def api_connections(user=Depends(get_current_user)):
         """Return all workspaces as connection entries (used by Home dashboard)."""
         try:
@@ -1496,24 +1496,24 @@ Be playful, unexpected, warm.\
             logger.debug("api_connections.failed", error=str(exc))
             return []
 
-    @app.get("/metrics")
+    @app.get("/metrics", tags=["observability"])
     async def metrics():
         from sqlagent.telemetry import get_prometheus_metrics, get_prometheus_content_type
         return Response(content=get_prometheus_metrics(), media_type=get_prometheus_content_type())
 
-    @app.get("/debug/traces")
+    @app.get("/debug/traces", tags=["observability"])
     async def debug_traces(user=Depends(get_current_user)):
         from sqlagent.telemetry import get_recent_traces
         return {"traces": get_recent_traces()}
 
-    @app.get("/debug/audit")
+    @app.get("/debug/audit", tags=["observability"])
     async def debug_audit(user=Depends(get_current_user)):
         records = await _state["audit_log"].recent(50)
         return {"records": records}
 
     # ── Aggregate history stats (Home dashboard KPIs) ─────────────────────────
 
-    @app.get("/api/history/stats")
+    @app.get("/api/history/stats", tags=["observability"])
     async def api_history_stats(workspace_id: str = "", user=Depends(get_current_user)):
         """Aggregate query stats for the Home dashboard KPI cards."""
         from datetime import timedelta
@@ -1555,7 +1555,7 @@ Be playful, unexpected, warm.\
 
     # ── Chat sessions ──────────────────────────────────────────────────────────
 
-    @app.get("/api/chat/sessions")
+    @app.get("/api/chat/sessions", tags=["settings"])
     async def list_chat_sessions(workspace_id: str = "", limit: int = 20, user=Depends(get_current_user)):
         """Return recent sessions (one per unique session_id in trace store)."""
         try:
@@ -1580,7 +1580,7 @@ Be playful, unexpected, warm.\
         sessions = list(seen.values())[:limit]
         return {"sessions": sessions, "total": len(sessions)}
 
-    @app.get("/api/chat/messages")
+    @app.get("/api/chat/messages", tags=["settings"])
     async def get_chat_messages(session_id: str = "", workspace_id: str = "", user=Depends(get_current_user)):
         """Return all trace entries for a given session (used to restore chat history)."""
         if not session_id:
@@ -1612,7 +1612,7 @@ Be playful, unexpected, warm.\
 
     # ── Schema refresh / validate-link / diff ─────────────────────────────────
 
-    @app.post("/schema/refresh")
+    @app.post("/schema/refresh", tags=["schema"])
     async def schema_refresh(workspace_id: str = "", user=Depends(get_current_user)):
         """Force re-introspect all connectors for a workspace."""
         try:
@@ -1630,7 +1630,7 @@ Be playful, unexpected, warm.\
         except Exception as exc:
             raise HTTPException(500, f"Schema refresh failed: {exc}")
 
-    @app.post("/schema/validate-link")
+    @app.post("/schema/validate-link", tags=["schema"])
     async def schema_validate_link(request: Request, user=Depends(get_current_user)):
         """Confirm or reject an inferred FK relationship."""
         body = await request.json()
@@ -1661,7 +1661,7 @@ Be playful, unexpected, warm.\
             logger.debug("validate_link.store_failed", error=str(exc))
         return {"status": "saved", "link": link}
 
-    @app.get("/schema/diff")
+    @app.get("/schema/diff", tags=["schema"])
     async def schema_diff(workspace_id: str = "", user=Depends(get_current_user)):
         """Return schema changes since last introspect (placeholder — returns empty diff if no prior snapshot)."""
         try:
@@ -1689,7 +1689,7 @@ Be playful, unexpected, warm.\
 
     # ── SOUL ──────────────────────────────────────────────────────────────────
 
-    @app.get("/soul/{user_id}")
+    @app.get("/soul/{user_id}", tags=["soul"])
     async def get_soul(user_id: str):
         from sqlagent.soul import UserSOUL
         soul = UserSOUL()
@@ -1703,7 +1703,7 @@ Be playful, unexpected, warm.\
             "version": profile.version,
         }
 
-    @app.get("/soul/{user_id}/md")
+    @app.get("/soul/{user_id}/md", tags=["soul"])
     async def get_soul_md(user_id: str):
         from sqlagent.soul import UserSOUL
         soul = UserSOUL()
