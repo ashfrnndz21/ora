@@ -75,7 +75,7 @@ jobs:
       - name: pip-audit dependency scan
         run: pip-audit --requirement <(pip freeze) --format json -o pip-audit-report.json || true
       - name: Upload security reports
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: security-reports
