@@ -29,13 +29,6 @@ classifiers = [
     "Natural Language :: English",
     "Typing :: Typed",
 ]
-
-[project.urls]
-Homepage = "https://github.com/ora-ai/ora"
-Repository = "https://github.com/ora-ai/ora"
-Documentation = "https://ora-sql.ai/docs"
-"Bug Tracker" = "https://github.com/ora-ai/ora/issues"
-Changelog = "https://github.com/ora-ai/ora/blob/main/CHANGELOG.md"
 dependencies = [
     # LangGraph orchestration
     "langgraph>=0.2",
@@ -84,6 +77,13 @@ dependencies = [
     "rich>=13.0",
     "aiofiles>=23.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/ashfrnndz21/ora"
+Repository = "https://github.com/ashfrnndz21/ora"
+Documentation = "https://github.com/ashfrnndz21/ora#readme"
+"Bug Tracker" = "https://github.com/ashfrnndz21/ora/issues"
+Changelog = "https://github.com/ashfrnndz21/ora/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 postgres = ["asyncpg>=0.29"]
