@@ -625,12 +625,13 @@ function ToastContainer({toasts, onRemove}) {
    ═══════════════════════════════════════════════════════════════════════════ */
 
 const MODEL_OPTIONS = [
+  // ── Anthropic ──────────────────────────────────────────────────────────
   {
-    id: 'claude-sonnet-4-5',
-    name: 'Claude Sonnet 4.5',
+    id: 'claude-opus-4-5',
+    name: 'Claude Opus 4.5',
     provider: 'Anthropic',
-    desc: 'Best balance of speed and accuracy. Excellent at complex SQL and reasoning.',
-    badge: 'Recommended',
+    desc: 'Most powerful Claude. Best accuracy on complex multi-table queries.',
+    badge: 'Most Capable',
     badgeColor: 'var(--blue-soft)',
     badgeText: 'var(--blue-text)',
     keyField: 'anthropic_key',
@@ -638,11 +639,48 @@ const MODEL_OPTIONS = [
     keyLabel: 'Anthropic API Key',
   },
   {
+    id: 'claude-sonnet-4-5',
+    name: 'Claude Sonnet 4.5',
+    provider: 'Anthropic',
+    desc: 'Best speed/accuracy balance. Recommended for most NL2SQL workloads.',
+    badge: 'Recommended',
+    badgeColor: 'var(--green-soft)',
+    badgeText: 'var(--green-text)',
+    keyField: 'anthropic_key',
+    keyPlaceholder: 'sk-ant-api03-...',
+    keyLabel: 'Anthropic API Key',
+  },
+  {
+    id: 'claude-haiku-4-5',
+    name: 'Claude Haiku 4.5',
+    provider: 'Anthropic',
+    desc: 'Fastest Claude. For high-volume or latency-sensitive workloads.',
+    badge: 'Fast',
+    badgeColor: 'var(--glass)',
+    badgeText: 'var(--text-secondary)',
+    keyField: 'anthropic_key',
+    keyPlaceholder: 'sk-ant-api03-...',
+    keyLabel: 'Anthropic API Key',
+  },
+  // ── OpenAI ─────────────────────────────────────────────────────────────
+  {
+    id: 'gpt-4.5-preview',
+    name: 'GPT-4.5',
+    provider: 'OpenAI',
+    desc: "OpenAI's most advanced model. Strongest reasoning and SQL generation.",
+    badge: 'Most Capable',
+    badgeColor: 'var(--blue-soft)',
+    badgeText: 'var(--blue-text)',
+    keyField: 'openai_key',
+    keyPlaceholder: 'sk-...',
+    keyLabel: 'OpenAI API Key',
+  },
+  {
     id: 'gpt-4o',
     name: 'GPT-4o',
     provider: 'OpenAI',
-    desc: 'Fast and capable. Great for straightforward queries and high throughput.',
-    badge: 'Popular',
+    desc: 'Best balance of speed and accuracy for SQL. Recommended for most teams.',
+    badge: 'Recommended',
     badgeColor: 'var(--green-soft)',
     badgeText: 'var(--green-text)',
     keyField: 'openai_key',
@@ -653,25 +691,13 @@ const MODEL_OPTIONS = [
     id: 'gpt-4o-mini',
     name: 'GPT-4o mini',
     provider: 'OpenAI',
-    desc: 'Cheapest option. Good for simple queries with tight cost budgets.',
-    badge: 'Budget',
-    badgeColor: 'var(--amber-soft)',
-    badgeText: 'var(--amber-text)',
-    keyField: 'openai_key',
-    keyPlaceholder: 'sk-...',
-    keyLabel: 'OpenAI API Key',
-  },
-  {
-    id: 'claude-haiku-3-5',
-    name: 'Claude Haiku 3.5',
-    provider: 'Anthropic',
-    desc: 'Ultra-fast Claude model. Ideal for high-volume or latency-sensitive workloads.',
+    desc: 'Faster and cheaper. Good for simple queries and high throughput.',
     badge: 'Fast',
     badgeColor: 'var(--glass)',
     badgeText: 'var(--text-secondary)',
-    keyField: 'anthropic_key',
-    keyPlaceholder: 'sk-ant-api03-...',
-    keyLabel: 'Anthropic API Key',
+    keyField: 'openai_key',
+    keyPlaceholder: 'sk-...',
+    keyLabel: 'OpenAI API Key',
   },
 ];
 
@@ -4436,7 +4462,7 @@ function SetupChat({workspace, onReady, onBack, user, hasLlmKey, onLlmKeyAdded})
   const [keyProvider, setKeyProvider] = useState('anthropic'); // 'anthropic' | 'openai'
   const [keyInput, setKeyInput] = useState('');
   const [keyStatus, setKeyStatus] = useState('idle'); // 'idle'|'testing'|'ok'|'fail'
-  const [chosenModel, setChosenModel] = useState('claude-sonnet-4-5'); // model selected during setup
+  const [chosenModel, setChosenModel] = useState('claude-sonnet-4-5'); // default: best Anthropic balance model
   const [greetingTriggered, setGreetingTriggered] = useState(false);
   // Track whether the USER has personally completed key setup — per workspace.
   // Each new workspace always shows the API key step so the user can confirm
@@ -4713,7 +4739,7 @@ function SetupChat({workspace, onReady, onBack, user, hasLlmKey, onLlmKeyAdded})
               setKeyProvider(p);
               setKeyInput('');
               setKeyStatus('idle');
-              // Auto-select default model for this provider
+              // Auto-select the Recommended model for this provider
               setChosenModel(p === 'anthropic' ? 'claude-sonnet-4-5' : 'gpt-4o');
             },
             style:{
