@@ -1057,7 +1057,7 @@ Be playful, warm, and a little unexpected.\
         openai_key = user_settings.get("openai_key") or os.environ.get("OPENAI_API_KEY", "")
 
         if anthropic_key:
-            greet_model = "claude-3-haiku-20240307"
+            greet_model = configured_model if "claude" in configured_model.lower() else "claude-haiku-4-5"
             api_key = anthropic_key
         elif openai_key:
             greet_model = "gpt-4o-mini"
@@ -1313,7 +1313,7 @@ Be playful, warm, and a little unexpected.\
             return {"valid": False, "error": "No key provided"}
         try:
             import litellm
-            model_id = "claude-3-haiku-20240307" if provider == "anthropic" else "gpt-4o-mini"
+            model_id = "claude-haiku-4-5" if provider == "anthropic" else "gpt-4o-mini"
             # litellm.completion is sync — run in a thread so we don't block the event loop
             resp = await asyncio.to_thread(
                 litellm.completion,
@@ -1400,7 +1400,7 @@ Be playful, warm, and a little unexpected.\
         try:
             import litellm
             if provider == "anthropic":
-                model = "claude-3-haiku-20240307"
+                model = "claude-haiku-4-5"
                 resp = await asyncio.to_thread(
                     litellm.completion,
                     model=model,
