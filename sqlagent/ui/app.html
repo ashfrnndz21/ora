@@ -296,6 +296,13 @@ body {
 
 .result-sql     { background: var(--canvas); border: 1.5px solid var(--glass-border); border-radius: var(--radius-md); padding: 16px; overflow-x: auto; }
 .result-sql pre { font-family: var(--font-mono); font-size: 12px; line-height: 1.6; color: var(--text-secondary); white-space: pre-wrap; }
+.sql-kw   { color: #7aa2f7; font-weight: 600; }   /* SELECT FROM WHERE JOIN ON GROUP BY ORDER */
+.sql-fn   { color: #7dcfff; }                       /* AVG SUM COUNT MAX MIN COALESCE */
+.sql-str  { color: #9ece6a; }                       /* 'string literals' */
+.sql-num  { color: #ff9e64; }                       /* numbers */
+.sql-cmt  { color: #565f89; font-style: italic; }   /* -- comments */
+.sql-op   { color: #bb9af7; }                       /* * = <> != >= <= */
+.sql-alias{ color: #e0af68; }                       /* AS alias names */
 
 .result-table    { width: 100%; border-collapse: collapse; font-size: 13px; }
 .result-table th { text-align: left; padding: 9px 12px; border-bottom: 2px solid var(--glass-border); color: var(--text-secondary); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; background: var(--canvas); }
@@ -489,6 +496,106 @@ function md(text) {
   }
   return out.join('');
 }
+/* SQL syntax highlighter — tokenises into colored spans, returns HTML string */
+function highlightSql(sql) {
+  if (!sql) return '';
+  const KEYWORDS = /\b(SELECT|DISTINCT|FROM|WHERE|AND|OR|NOT|IN|LIKE|ILIKE|BETWEEN|IS|NULL|AS|JOIN|LEFT|RIGHT|FULL|INNER|OUTER|CROSS|ON|USING|GROUP\s+BY|ORDER\s+BY|HAVING|LIMIT|OFFSET|UNION|ALL|INTERSECT|EXCEPT|INSERT|INTO|VALUES|UPDATE|SET|DELETE|CREATE|TABLE|VIEW|INDEX|DROP|ALTER|ADD|COLUMN|PRIMARY|KEY|FOREIGN|REFERENCES|CASE|WHEN|THEN|ELSE|END|WITH|RECURSIVE|EXISTS|ANY|SOME|LATERAL|OVER|PARTITION\s+BY|WINDOW|ROWS|RANGE|UNBOUNDED|PRECEDING|FOLLOWING|CURRENT\s+ROW|ASC|DESC|NULLS\s+FIRST|NULLS\s+LAST|TRUE|FALSE|IF|THEN|DO|BEGIN|COMMIT|ROLLBACK|EXPLAIN|ANALYZE)\b/gi;
+  const FUNCTIONS = /\b(AVG|SUM|COUNT|MAX|MIN|COALESCE|NULLIF|IFNULL|NVL|CAST|CONVERT|TO_DATE|TO_TIMESTAMP|TO_NUMBER|TO_CHAR|DATE_TRUNC|DATE_PART|EXTRACT|NOW|CURRENT_DATE|CURRENT_TIMESTAMP|DATEADD|DATEDIFF|ROUND|FLOOR|CEIL|CEILING|ABS|MOD|POWER|SQRT|CONCAT|SUBSTRING|SUBSTR|LENGTH|TRIM|LTRIM|RTRIM|UPPER|LOWER|REPLACE|REGEXP_LIKE|REGEXP_REPLACE|SPLIT_PART|STRING_AGG|LISTAGG|GROUP_CONCAT|ARRAY_AGG|JSON_AGG|RANK|DENSE_RANK|ROW_NUMBER|NTILE|LAG|LEAD|FIRST_VALUE|LAST_VALUE|PERCENTILE_CONT|PERCENTILE_DISC|STDDEV|VARIANCE|CORR|REGR_SLOPE)\s*(?=\()/gi;
+
+  // Tokenise left-to-right — order matters: comments first, then strings, then tokens
+  const tokens = [];
+  let i = 0;
+  while (i < sql.length) {
+    // Line comment  -- ...
+    if (sql[i] === '-' && sql[i+1] === '-') {
+      const end = sql.indexOf('\n', i);
+      const chunk = end === -1 ? sql.slice(i) : sql.slice(i, end);
+      tokens.push({type:'cmt', val: chunk});
+      i += chunk.length;
+    // Block comment /* ... */
+    } else if (sql[i] === '/' && sql[i+1] === '*') {
+      const end = sql.indexOf('*/', i + 2);
+      const chunk = end === -1 ? sql.slice(i) : sql.slice(i, end + 2);
+      tokens.push({type:'cmt', val: chunk});
+      i += chunk.length;
+    // String literal  '...' (handles escaped '')
+    } else if (sql[i] === "'") {
+      let j = i + 1;
+      while (j < sql.length) {
+        if (sql[j] === "'" && sql[j+1] === "'") { j += 2; }
+        else if (sql[j] === "'") { j++; break; }
+        else { j++; }
+      }
+      tokens.push({type:'str', val: sql.slice(i, j)});
+      i = j;
+    // Double-quoted identifier  "..."
+    } else if (sql[i] === '"') {
+      let j = i + 1;
+      while (j < sql.length && sql[j] !== '"') j++;
+      tokens.push({type:'id', val: sql.slice(i, j+1)});
+      i = j + 1;
+    // Back-tick identifier  `...`
+    } else if (sql[i] === '`') {
+      let j = i + 1;
+      while (j < sql.length && sql[j] !== '`') j++;
+      tokens.push({type:'id', val: sql.slice(i, j+1)});
+      i = j + 1;
+    // Number literal
+    } else if (/\d/.test(sql[i]) || (sql[i] === '.' && /\d/.test(sql[i+1]||''))) {
+      let j = i;
+      while (j < sql.length && /[\d._eE+\-]/.test(sql[j])) j++;
+      tokens.push({type:'num', val: sql.slice(i, j)});
+      i = j;
+    // Word token (keyword, function name, identifier)
+    } else if (/[a-zA-Z_]/.test(sql[i])) {
+      let j = i;
+      while (j < sql.length && /[\w]/.test(sql[j])) j++;
+      tokens.push({type:'word', val: sql.slice(i, j)});
+      i = j;
+    // Operator chars
+    } else if (/[=<>!*\/+\-]/.test(sql[i])) {
+      let j = i;
+      while (j < sql.length && /[=<>!*\/+\-]/.test(sql[j])) j++;
+      tokens.push({type:'op', val: sql.slice(i, j)});
+      i = j;
+    // Whitespace + punctuation — pass through as plain
+    } else {
+      tokens.push({type:'plain', val: sql[i]});
+      i++;
+    }
+  }
+
+  // Second pass — classify word tokens as keyword / function / plain
+  const KW_SET = new Set('SELECT,DISTINCT,FROM,WHERE,AND,OR,NOT,IN,LIKE,ILIKE,BETWEEN,IS,NULL,AS,JOIN,LEFT,RIGHT,FULL,INNER,OUTER,CROSS,ON,USING,HAVING,LIMIT,OFFSET,UNION,ALL,INTERSECT,EXCEPT,INSERT,INTO,VALUES,UPDATE,SET,DELETE,CREATE,TABLE,VIEW,INDEX,DROP,ALTER,ADD,COLUMN,PRIMARY,KEY,FOREIGN,REFERENCES,CASE,WHEN,THEN,ELSE,END,WITH,RECURSIVE,EXISTS,ANY,SOME,LATERAL,OVER,WINDOW,ROWS,RANGE,UNBOUNDED,PRECEDING,FOLLOWING,ASC,DESC,TRUE,FALSE,IF,DO,BEGIN,COMMIT,ROLLBACK,EXPLAIN,ANALYZE,BY,PARTITION,CURRENT,FIRST,LAST,NULLS'.split(','));
+  const FN_SET = new Set('AVG,SUM,COUNT,MAX,MIN,COALESCE,NULLIF,IFNULL,NVL,CAST,CONVERT,TO_DATE,TO_TIMESTAMP,TO_NUMBER,TO_CHAR,DATE_TRUNC,DATE_PART,EXTRACT,NOW,CURRENT_DATE,CURRENT_TIMESTAMP,DATEADD,DATEDIFF,ROUND,FLOOR,CEIL,CEILING,ABS,MOD,POWER,SQRT,CONCAT,SUBSTRING,SUBSTR,LENGTH,TRIM,LTRIM,RTRIM,UPPER,LOWER,REPLACE,REGEXP_LIKE,REGEXP_REPLACE,SPLIT_PART,STRING_AGG,LISTAGG,GROUP_CONCAT,ARRAY_AGG,JSON_AGG,RANK,DENSE_RANK,ROW_NUMBER,NTILE,LAG,LEAD,FIRST_VALUE,LAST_VALUE,PERCENTILE_CONT,PERCENTILE_DISC,STDDEV,VARIANCE,CORR,REGR_SLOPE'.split(','));
+
+  // Look-ahead: if next non-whitespace token starts with '(', treat word as function
+  function nextIsParen(idx) {
+    for (let k = idx+1; k < tokens.length; k++) {
+      if (tokens[k].type === 'plain' && tokens[k].val === '(') return true;
+      if (!/^\s+$/.test(tokens[k].val)) return false;
+    }
+    return false;
+  }
+
+  const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const parts = tokens.map((tok, idx) => {
+    if (tok.type === 'cmt')  return `<span class="sql-cmt">${esc(tok.val)}</span>`;
+    if (tok.type === 'str')  return `<span class="sql-str">${esc(tok.val)}</span>`;
+    if (tok.type === 'num')  return `<span class="sql-num">${esc(tok.val)}</span>`;
+    if (tok.type === 'op')   return `<span class="sql-op">${esc(tok.val)}</span>`;
+    if (tok.type === 'id')   return `<span class="sql-alias">${esc(tok.val)}</span>`;
+    if (tok.type === 'word') {
+      const up = tok.val.toUpperCase();
+      if (FN_SET.has(up) || nextIsParen(idx)) return `<span class="sql-fn">${esc(tok.val)}</span>`;
+      if (KW_SET.has(up)) return `<span class="sql-kw">${esc(tok.val)}</span>`;
+      return esc(tok.val);
+    }
+    return esc(tok.val);
+  });
+  return parts.join('');
+}
+
 const api = {
   _tokensen: localStorage.getItem('ora_tokensen') || '',
   _headers() { const h = {'Content-Type':'application/json'}; if(this._tokensen) h['Authorization']='Bearer '+this._tokensen; return h; },
@@ -1377,9 +1484,17 @@ function HomeView({workspace, onNavigate}) {
         )
       )
     ),
-    e('div', {className:'card card-static', style:{padding:'14px 16px',marginBottom:16}},
-      e(PipelineFlowCanvas, { workspace, onNavigate }),
-    ),
+    (workspace?.sources?.length > 0)
+      ? e('div', {className:'card card-static', style:{padding:'14px 16px',marginBottom:16}},
+          e(PipelineFlowCanvas, { workspace, onNavigate }),
+        )
+      : e('div', {className:'card card-static', style:{padding:'20px 24px',marginBottom:16,display:'flex',alignItems:'center',justifyContent:'space-between',cursor:'pointer'}, onClick:()=>onNavigate('ask')},
+          e('div', null,
+            e('div', {style:{fontSize:14,fontWeight:600,marginBottom:4}}, 'Connect your first data source'),
+            e('div', {style:{fontSize:12,color:'var(--text-secondary)'}}, 'Upload a CSV, XLSX, or Parquet file — or connect a database URL'),
+          ),
+          e('div', {style:{fontSize:20,opacity:0.4}}, '→'),
+        ),
     // Recent tasks
     tasks.length > 0 && e('div', null,
       e('h3', {style:{fontSize:14,fontWeight:600,marginBottom:8}}, 'Recent Queries'),
@@ -1701,7 +1816,7 @@ function ResultBlock({data: d, addToast, setQuery, workspace}) {
             t==='sql'?'SQL':t==='table'?'Table'+(d.row_count?' · '+d.row_count:''):'Chart')
         ),
       ),
-      tab==='sql' && d.sql && e('div', {className:'result-sql'}, e('pre', null, d.sql)),
+      tab==='sql' && d.sql && e('div', {className:'result-sql'}, e('pre', {dangerouslySetInnerHTML:{__html: highlightSql(d.sql)}})),
       tab==='table' && d.rows && d.rows.length>0 && e('table', {className:'result-table'},
         e('thead', null, e('tr', null, (d.columns||Object.keys(d.rows[0])).map(c => e('th',{key:c},c)))),
         e('tbody', null, d.rows.slice(0,50).map((row,ri) =>
@@ -3557,10 +3672,9 @@ function TrainHistoryList({tasks, addToast, refreshLearnStatus, workspace}) {
               extractQuestion(t.nl_query)
             ),
             e('div', {style:{display:'flex',alignItems:'center',gap:6,marginTop:2}},
-              e('div', {style:{fontSize:11,color:'var(--text-muted)',fontFamily:'var(--font-mono)',
-                overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',flex:1}},
-                (t.sql||'').substring(0,60) + ((t.sql||'').length > 60 ? '…' : ''),
-              ),
+              e('div', {style:{fontSize:11,fontFamily:'var(--font-mono)',
+                overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',flex:1},
+                dangerouslySetInnerHTML:{__html: highlightSql((t.sql||'').substring(0,60)) + ((t.sql||'').length > 60 ? '<span style="color:var(--text-muted)">…</span>' : '')}}),
               modelLabel && e('span', {style:{fontSize:10,padding:'1px 6px',borderRadius:8,
                 background:'rgba(255,255,255,0.04)',border:'1px solid rgba(255,255,255,0.07)',
                 color:modelColor,flexShrink:0,fontFamily:'var(--font-mono)'}}, modelLabel),
@@ -3948,9 +4062,9 @@ function LearnView({addToast, workspace, setView}) {
                         fontSize:11,fontFamily:'var(--font-mono)',
                         padding:'8px 10px',borderRadius:6,margin:0,
                         background:'rgba(239,68,68,0.04)',border:'1px solid rgba(239,68,68,0.12)',
-                        color:'var(--text-muted)',overflow:'auto',maxHeight:120,
+                        overflow:'auto',maxHeight:120,
                         textDecoration:'line-through',opacity:0.7,
-                      }}, (lesson.original_sql||'').substring(0,300)),
+                      }, dangerouslySetInnerHTML:{__html: highlightSql((lesson.original_sql||'').substring(0,300))}}),
                     ),
                     // Corrected
                     e('div', null,
@@ -3959,8 +4073,8 @@ function LearnView({addToast, workspace, setView}) {
                         fontSize:11,fontFamily:'var(--font-mono)',
                         padding:'8px 10px',borderRadius:6,margin:0,
                         background:'rgba(34,197,94,0.04)',border:'1px solid rgba(34,197,94,0.12)',
-                        color:'var(--text-secondary)',overflow:'auto',maxHeight:120,
-                      }}, (lesson.corrected_sql||'').substring(0,300)),
+                        overflow:'auto',maxHeight:120,
+                      }, dangerouslySetInnerHTML:{__html: highlightSql((lesson.corrected_sql||'').substring(0,300))}}),
                     ),
                   ),
 
