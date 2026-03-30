@@ -897,40 +897,10 @@ def make_fan_out_node(services: Any):
                 return {"sub_query_id": sq["id"], "succeeded": False, "error": f"No connector: {source_id}"}
 
             snap = await conn.introspect()
-
-            # Enrich schema with sample values so LLM can map domain terms correctly
-            # (e.g. "MY" → iso_code="MYS", "Malaysia" → country="Malaysia")
-            sample_values: dict[str, dict[str, list]] = {}  # table → col → [vals]
-            try:
-                for t in snap.tables:
-                    if hasattr(conn, 'sample'):
-                        sd = await conn.sample(t.name, n=5)
-                        col_samples: dict[str, list] = {}
-                        for col_name, stats in (sd.column_stats or {}).items():
-                            if stats.sample_values:
-                                col_samples[col_name] = stats.sample_values[:8]
-                        # Also grab sample rows to surface actual values
-                        if sd.sample_rows:
-                            for row in sd.sample_rows[:3]:
-                                for k, v in row.items():
-                                    if k not in col_samples and v is not None:
-                                        col_samples.setdefault(k, []).append(str(v)[:30])
-                        sample_values[t.name] = col_samples
-            except Exception:
-                pass  # sampling is best-effort
-
-            schema_lines = []
-            for t in snap.tables:
-                col_parts = []
-                for c in t.columns:
-                    col_str = f"{c.name} {c.data_type}"
-                    sv = (sample_values.get(t.name) or {}).get(c.name, [])
-                    if sv:
-                        ex = ", ".join(f'"{str(v)}"' for v in sv[:6])
-                        col_str += f" [e.g. {ex}]"
-                    col_parts.append(col_str)
-                schema_lines.append(f"  {t.name}({', '.join(col_parts)})")
-            schema_text = "\n".join(schema_lines)
+            schema_text = "\n".join(
+                f"  {t.name}({', '.join(c.name + ' ' + c.data_type for c in t.columns)})"
+                for t in snap.tables
+            )
 
             def _extract_sql(text: str) -> str:
                 text = text.strip()
@@ -943,38 +913,62 @@ def make_fan_out_node(services: Any):
             def _exec_result(result):
                 import pandas as _pd
                 if isinstance(result, _pd.DataFrame):
-                    # Replace NaN/Inf with None so sub-query rows are JSON-serializable
                     result = result.where(result.notna(), other=None)
                     return result.to_dict("records"), list(result.columns), len(result)
                 rows = list(getattr(result, "rows", []))
                 cols = list(getattr(result, "columns", []))
                 return rows, cols, len(rows)
 
+            SYSTEM = (
+                "You are a SQL agent. You reason step-by-step before writing SQL.\n\n"
+                "If you are unsure about column values, table structure, or how terms in "
+                "the question map to the schema, write an EXPLORATORY query first "
+                "(e.g. SELECT DISTINCT col FROM table LIMIT 20, or DESCRIBE table). "
+                "You will see the result and can then write the final answer SQL.\n\n"
+                "When you have enough context, write the final SQL that directly answers "
+                "the question. Return ONLY valid SQL — no explanation, no markdown."
+            )
+
+            # Agentic conversation — agent reasons, explores, then answers
+            # Each round: agent writes SQL → we execute → feed result back → agent decides next step
+            messages = [
+                {"role": "system", "content": SYSTEM},
+                {"role": "user", "content": f"Schema:\n{schema_text}\n\nQuestion: {nl}"},
+            ]
             sql = ""
             last_error = ""
-            # Generate → execute → reflect loop (up to 3 rounds)
-            for attempt in range(3):
-                if attempt == 0:
-                    prompt = (
-                        f"Schema:\n{schema_text}\n\n"
-                        f"Question: {nl}\n\n"
-                        "Write SQL to answer this question exactly. Return ONLY valid SQL, no explanation."
-                    )
-                else:
-                    prompt = (
-                        f"Schema:\n{schema_text}\n\n"
-                        f"Question: {nl}\n\n"
-                        f"Previous SQL (attempt {attempt}):\n```sql\n{sql}\n```\n"
-                        f"Execution error: {last_error}\n\n"
-                        "The SQL above failed. Reason through the error, identify the root cause, "
-                        "then write corrected SQL. Return ONLY valid SQL, no explanation."
-                    )
-                resp = await services.llm.complete([{"role": "user", "content": prompt}])
+            final_rows, final_cols, final_count = [], [], 0
+
+            for attempt in range(5):  # up to 5 turns (explore + answer + 3 corrections)
+                resp = await services.llm.complete(messages)
                 sql = _extract_sql(resp.content)
+                messages.append({"role": "assistant", "content": resp.content})
 
                 try:
                     result = await conn.execute(sql)
                     rows, columns, row_count = _exec_result(result)
+
+                    # If this looks exploratory (few rows, single column) AND we haven't
+                    # answered yet, feed the result back so the agent can write the real SQL
+                    is_exploratory = (
+                        row_count <= 30 and len(columns) <= 3
+                        and attempt < 4
+                        and any(kw in sql.upper() for kw in ("DISTINCT", "DESCRIBE", "SHOW", "PRAGMA", "INFORMATION_SCHEMA"))
+                    )
+
+                    if is_exploratory:
+                        import json as _json
+                        messages.append({
+                            "role": "user",
+                            "content": (
+                                f"Exploration result ({row_count} rows):\n"
+                                f"{_json.dumps(rows[:20], default=str)}\n\n"
+                                "Now write the final SQL that answers the original question."
+                            )
+                        })
+                        continue  # let agent use this to write the real SQL
+
+                    # Non-exploratory result — this is the answer
                     return {
                         "sub_query_id": sq["id"],
                         "source_id": source_id,
@@ -988,17 +982,24 @@ def make_fan_out_node(services: Any):
                     }
                 except Exception as e:
                     last_error = str(e)
+                    messages.append({
+                        "role": "user",
+                        "content": (
+                            f"That SQL failed with: {last_error}\n\n"
+                            "Reason through what went wrong and write corrected SQL."
+                        )
+                    })
 
             return {
                 "sub_query_id": sq["id"],
                 "source_id": source_id,
                 "sql": sql,
                 "succeeded": False,
-                "error": f"Failed after 3 attempts. Last error: {last_error}",
+                "error": f"Failed after {len(messages)//2} attempts. Last error: {last_error}",
                 "rows": [],
                 "columns": [],
                 "row_count": 0,
-                "attempts": 3,
+                "attempts": 5,
             }
 
         # Run all sub-queries in parallel
