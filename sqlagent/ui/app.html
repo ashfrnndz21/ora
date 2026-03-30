@@ -4437,11 +4437,13 @@ function SetupChat({workspace, onReady, onBack, user, hasLlmKey, onLlmKeyAdded})
   const [keyInput, setKeyInput] = useState('');
   const [keyStatus, setKeyStatus] = useState('idle'); // 'idle'|'testing'|'ok'|'fail'
   const [greetingTriggered, setGreetingTriggered] = useState(false);
-  // Track whether the USER has personally completed key setup (localStorage flag).
-  // This is separate from the server env key — even if the server has a key
-  // baked in, we still prompt the user to acknowledge / enter their own key.
+  // Track whether the USER has personally completed key setup — per workspace.
+  // Each new workspace always shows the API key step so the user can confirm
+  // or enter their own key. Flag is keyed by workspace_id so returning to an
+  // existing workspace skips the step but a fresh workspace always shows it.
+  const _keyFlagKey = 'sqlagent_key_setup_done_' + (workspace?.workspace_id || 'default');
   const [keySetupDone, setKeySetupDone] = useState(
-    () => localStorage.getItem('sqlagent_key_setup_done') === '1'
+    () => localStorage.getItem(_keyFlagKey) === '1'
   );
 
   // Stream the LLM greeting — called on mount (if key exists) or after key saved
@@ -4527,7 +4529,7 @@ function SetupChat({workspace, onReady, onBack, user, hasLlmKey, onLlmKeyAdded})
         await api.post('/api/settings', settings);
         setKeyStatus('ok');
         // Mark user as having completed key setup
-        localStorage.setItem('sqlagent_key_setup_done', '1');
+        localStorage.setItem(_keyFlagKey, '1');
         setKeySetupDone(true);
         // Notify parent so it updates hasLlmKey state, which will trigger greeting
         if (onLlmKeyAdded) onLlmKeyAdded();
@@ -4751,7 +4753,7 @@ function SetupChat({workspace, onReady, onBack, user, hasLlmKey, onLlmKeyAdded})
       // Show "Use Server Key" shortcut when a server env key is already present
       hasLlmKey === true && e('button', {
         onClick: () => {
-          localStorage.setItem('sqlagent_key_setup_done', '1');
+          localStorage.setItem(_keyFlagKey, '1');
           setKeySetupDone(true);
         },
         style:{
