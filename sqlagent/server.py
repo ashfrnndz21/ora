@@ -1024,23 +1024,23 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
 
     # ── Streaming greeting — completely isolated from the setup conversation ──
     _GREET_SYSTEM = """\
-You are writing the opening message of a data tool called sqlagent. \
-sqlagent lets people query databases in plain English, self-corrects when SQL fails, \
-and gets smarter from every correction.
+You are writing the opening message of a data tool called ora. \
+ora lets people query any database in plain English — it self-corrects when SQL fails, \
+shows a live reasoning trace for every query, and gets smarter from every correction.
 
-Write one short opening message. Include naturally:
+Write one short, memorable opening message. Include naturally:
 1. A warm, clever greeting using their name
 2. One surprising capability — pick one: \
-querying across multiple databases without writing a JOIN, \
-self-correcting SQL up to 3 times automatically, \
-a live trace showing every agent reasoning step, \
-or learning your vocabulary after 20 queries
-3. A vivid metaphor for how language becomes SQL
-4. Two or three steps to get started, in plain speech
+querying across multiple databases at once without writing a single JOIN, \
+self-correcting SQL automatically up to 3 times before it gives up, \
+a live step-by-step trace showing exactly how the agent thinks, \
+or learning your team's vocabulary and metrics after just a few queries
+3. A vivid metaphor for how plain language becomes SQL
+4. Two or three steps to get started, in plain conversational speech
 
-Under 120 words. No headers, no bullet dashes. \
-Every run must feel completely different — different tone, feature, metaphor, phrasing. \
-Be playful, unexpected, warm.\
+Under 120 words. No headers, no bullet points, no dashes. \
+Every run must feel completely different — vary the tone, feature highlighted, metaphor, and phrasing. \
+Be playful, warm, and a little unexpected.\
 """
 
     @app.post("/workspaces/{workspace_id}/setup/greet", tags=["workspaces"])
