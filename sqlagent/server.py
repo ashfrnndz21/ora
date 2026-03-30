@@ -1715,27 +1715,8 @@ Be playful, unexpected, warm.\
     _ui_dir = os.path.join(os.path.dirname(__file__), "ui")
 
     @app.get("/")
-    async def serve_landing():
-        """Landing page — blueprint architecture + workspace picker."""
-        bp_path = os.path.join(_ui_dir, "preview_bp.html")
-        if os.path.exists(bp_path):
-            return FileResponse(
-                bp_path,
-                headers={
-                    "Cache-Control": "no-cache, no-store, must-revalidate",
-                    "Pragma": "no-cache",
-                    "Expires": "0",
-                },
-            )
-        # Fallback to app.html if blueprint doesn't exist
-        html_path = os.path.join(_ui_dir, "app.html")
-        if os.path.exists(html_path):
-            return FileResponse(html_path, headers={"Cache-Control": "no-cache"})
-        return {"message": "sqlagent API", "docs": "/docs", "guide": "/guide", "version": "2.0.0"}
-
-    @app.get("/app")
     async def serve_workspace_app():
-        """Full workspace app — auth + workspace management + query UI."""
+        """Full workspace app — the main UI."""
         html_path = os.path.join(_ui_dir, "app.html")
         if os.path.exists(html_path):
             return FileResponse(
@@ -1746,7 +1727,22 @@ Be playful, unexpected, warm.\
                     "Expires": "0",
                 },
             )
-        return {"message": "Workspace app not found"}
+        return {"message": "sqlagent API", "docs": "/docs", "guide": "/guide", "version": "2.0.0"}
+
+    @app.get("/landing")
+    async def serve_landing():
+        """Marketing landing page."""
+        bp_path = os.path.join(_ui_dir, "preview_bp.html")
+        if os.path.exists(bp_path):
+            return FileResponse(
+                bp_path,
+                headers={
+                    "Cache-Control": "no-cache, no-store, must-revalidate",
+                    "Pragma": "no-cache",
+                    "Expires": "0",
+                },
+            )
+        return {"message": "Landing page not found"}
 
     @app.get("/guide")
     async def serve_docs():
