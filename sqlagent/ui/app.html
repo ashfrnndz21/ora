@@ -3516,7 +3516,7 @@ function _traceNodeType(node) {
    LEARN VIEW
    ═══════════════════════════════════════════════════════════════════════════ */
 /* Individual row in the train-from-history list — manages its own trained state */
-function TrainHistoryList({tasks, addToast, refreshLearnStatus}) {
+function TrainHistoryList({tasks, addToast, refreshLearnStatus, workspace}) {
   const [trainedMap, setTrainedMap] = useState({}); // trace_id → {sql, nl_query}
   const [trainingMap, setTrainingMap] = useState({}); // trace_id → bool
 
@@ -3525,7 +3525,7 @@ function TrainHistoryList({tasks, addToast, refreshLearnStatus}) {
     if (trainedMap[tid] || trainingMap[tid]) return;
     setTrainingMap(m => ({...m, [tid]: true}));
     try {
-      await api.post('/train/sql', {nl_query: t.nl_query, sql: t.sql, source: 'history'});
+      await api.post('/train/sql', {nl_query: t.nl_query, sql: t.sql, source: 'history', workspace_id: workspace?.workspace_id || ''});
       setTrainedMap(m => ({...m, [tid]: {nl_query: t.nl_query, sql: t.sql}}));
       if (addToast) addToast('Registered: "' + extractQuestion(t.nl_query).substring(0,40) + '…"', 'success');
       if (refreshLearnStatus) refreshLearnStatus();
@@ -3753,7 +3753,7 @@ function LearnView({addToast, workspace, setView}) {
     if(!trainNl.trim() || !trainSql.trim() || trainSaving) return;
     setTrainSaving(true); setTrainSaved(false);
     try {
-      await api.post('/train/sql', {nl_query:trainNl, sql:trainSql});
+      await api.post('/train/sql', {nl_query:trainNl, sql:trainSql, workspace_id: wsId});
       setTrainSaved(true);
       if(addToast) addToast('Training pair saved','success');
       setTrainNl(''); setTrainSql('');
@@ -3985,7 +3985,7 @@ function LearnView({addToast, workspace, setView}) {
       ),
       e('p', {style:{fontSize:12,color:'var(--text-secondary)',marginBottom:12}},
         'Thumbs-up saves a pair as user-verified (priority 2). These are retrieved during generation.'),
-      e(TrainHistoryList, {tasks:succeeded.slice(0,10), addToast, refreshLearnStatus}),
+      e(TrainHistoryList, {tasks:succeeded.slice(0,10), addToast, refreshLearnStatus, workspace}),
     ),
 
     // ── SECTION 5: Manual add + QueryHub ─────────────────────────────────────
