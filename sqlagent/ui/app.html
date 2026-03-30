@@ -5889,25 +5889,21 @@ function App() {
   useEffect(() => {
     fetch(API + '/health').then(r => r.json()).then(h => {
       const authRequired = h.auth_required === true;  // false by default (open-source mode)
-      // Capture LLM key status so SetupChat can decide whether to stream a greeting
       setHasLlmKey(h.has_llm_key === true);
 
       if (!authRequired) {
-        // No auth — set local user immediately, skip all login screens
         const savedName = localStorage.getItem('ora_username') || 'You';
         setUser({user_id:'local', display_name: savedName, email:'local@localhost'});
         setAuthChecked(true);
         return;
       }
 
-      // Auth is enabled — check if we have a valid session token
       api.get('/auth/me').then(u => {
         if (u.user_id) setUser(u);
         setAuthChecked(true);
       }).catch(() => setAuthChecked(true));
 
     }).catch(() => {
-      // Server unreachable — still mark checked so we don't spin forever
       setHasLlmKey(false);
       setAuthChecked(true);
     });
@@ -5950,35 +5946,8 @@ function App() {
     );
   }
 
-  // No workspace selected → check if any ready workspaces exist
-  // If none exist, skip the picker entirely and go straight to setup
+  // No workspace selected → picker
   if (!workspace) {
-    if (!workspaceChecked) {
-      // Fetch workspaces once to decide whether to show picker or auto-create
-      api.get('/workspaces').then(wsList => {
-        const list = Array.isArray(wsList) ? wsList : [];
-        const ready = list.filter(w => w.status === 'ready');
-        setWorkspaceChecked(true);
-        if (ready.length === 0) {
-          // No ready workspaces — go straight to setup
-          api.post('/workspaces', {name:'New Workspace', description:'Setting up via agent'})
-            .then(ws => setSetupWorkspace(ws))
-            .catch(() => setWorkspaceChecked(true));
-        }
-      }).catch(() => setWorkspaceChecked(true));
-      // Show spinner while checking
-      return e('div', {style:{
-        minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center',
-        background:'#faf9f6',
-      }},
-        e('div', {style:{display:'flex',flexDirection:'column',alignItems:'center',gap:12,color:'#aaa'}},
-          e('div', {style:{width:24,height:24,border:'2px solid #4f7df9',borderTopColor:'transparent',borderRadius:'50%',animation:'spin 0.8s linear infinite'}}),
-          e('div', {style:{fontSize:13,fontFamily:'var(--font-ui)'}}, 'Loading…')
-        )
-      );
-    }
-
-    // Has ready workspaces → show picker so user can choose
     return e('div', null,
       e(WorkspacePicker, {
         user,

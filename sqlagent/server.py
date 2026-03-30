@@ -1715,23 +1715,8 @@ Be playful, warm, and a little unexpected.\
     _ui_dir = os.path.join(os.path.dirname(__file__), "ui")
 
     @app.get("/")
-    async def serve_workspace_app():
-        """Workspace app — main entry point."""
-        html_path = os.path.join(_ui_dir, "app.html")
-        if os.path.exists(html_path):
-            return FileResponse(
-                html_path,
-                headers={
-                    "Cache-Control": "no-cache, no-store, must-revalidate",
-                    "Pragma": "no-cache",
-                    "Expires": "0",
-                },
-            )
-        return {"message": "sqlagent API", "docs": "/docs", "guide": "/guide", "version": "2.0.0"}
-
-    @app.get("/landing")
-    async def serve_landing_page():
-        """Marketing landing page."""
+    async def serve_landing():
+        """Landing page — the main home for all users."""
         bp_path = os.path.join(_ui_dir, "preview_bp.html")
         if os.path.exists(bp_path):
             return FileResponse(
@@ -1742,7 +1727,25 @@ Be playful, warm, and a little unexpected.\
                     "Expires": "0",
                 },
             )
-        return {"message": "Landing page not found"}
+        html_path = os.path.join(_ui_dir, "app.html")
+        if os.path.exists(html_path):
+            return FileResponse(html_path, headers={"Cache-Control": "no-cache"})
+        return {"message": "sqlagent API", "docs": "/docs", "guide": "/guide", "version": "2.0.0"}
+
+    @app.get("/app")
+    async def serve_workspace_app():
+        """Workspace app — entered via + New Workspace on the landing page."""
+        html_path = os.path.join(_ui_dir, "app.html")
+        if os.path.exists(html_path):
+            return FileResponse(
+                html_path,
+                headers={
+                    "Cache-Control": "no-cache, no-store, must-revalidate",
+                    "Pragma": "no-cache",
+                    "Expires": "0",
+                },
+            )
+        return {"message": "Workspace app not found"}
 
     @app.get("/guide")
     async def serve_docs():
