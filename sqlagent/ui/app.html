@@ -5834,6 +5834,7 @@ function App() {
   const [cmdkOpen, setCmdkOpen] = useState(false);
   const [cmdkSchema, setCmdkSchema] = useState(null);
   const [cmdkQuery, setCmdkQuery] = useState(null); // pending query from Cmd+K
+  const [workspaceChecked, setWorkspaceChecked] = useState(false); // true after initial WS check
 
   // Global Cmd+K / Ctrl+K keyboard handler
   useEffect(() => {
@@ -5949,14 +5950,40 @@ function App() {
     );
   }
 
-  // No workspace selected → picker
+  // No workspace selected → check if any ready workspaces exist
+  // If none exist, skip the picker entirely and go straight to setup
   if (!workspace) {
+    if (!workspaceChecked) {
+      // Fetch workspaces once to decide whether to show picker or auto-create
+      api.get('/workspaces').then(wsList => {
+        const list = Array.isArray(wsList) ? wsList : [];
+        const ready = list.filter(w => w.status === 'ready');
+        setWorkspaceChecked(true);
+        if (ready.length === 0) {
+          // No ready workspaces — go straight to setup
+          api.post('/workspaces', {name:'New Workspace', description:'Setting up via agent'})
+            .then(ws => setSetupWorkspace(ws))
+            .catch(() => setWorkspaceChecked(true));
+        }
+      }).catch(() => setWorkspaceChecked(true));
+      // Show spinner while checking
+      return e('div', {style:{
+        minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center',
+        background:'#faf9f6',
+      }},
+        e('div', {style:{display:'flex',flexDirection:'column',alignItems:'center',gap:12,color:'#aaa'}},
+          e('div', {style:{width:24,height:24,border:'2px solid #4f7df9',borderTopColor:'transparent',borderRadius:'50%',animation:'spin 0.8s linear infinite'}}),
+          e('div', {style:{fontSize:13,fontFamily:'var(--font-ui)'}}, 'Loading…')
+        )
+      );
+    }
+
+    // Has ready workspaces → show picker so user can choose
     return e('div', null,
       e(WorkspacePicker, {
         user,
         onSelect: ws => {
           setWorkspace(ws);
-          // If user typed a query on the picker, pre-load it into Ask view
           const pending = localStorage.getItem('ora_pending_query');
           if (pending) {
             localStorage.removeItem('ora_pending_query');
