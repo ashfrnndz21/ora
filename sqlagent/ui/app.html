@@ -5004,16 +5004,9 @@ function PipelineFlowCanvas({ workspace, onNavigate }) {
     { label:'Results',  desc:'NL summary · chart · follow-up suggestions' },
   ];
 
-  const SRC_COLORS = {
-    pg:'#4a90d9',postgres:'#4a90d9',postgresql:'#4a90d9',
-    sqlite:'#7c5cbf',mysql:'#00c49f',snowflake:'#29b5e8',
-    bigquery:'#4285f4',redshift:'#e05577',
-    csv:'#2d9d6a',xlsx:'#2d9d6a',parquet:'#d4940a',
-    duckdb:'#9b6cf9',json:'#d4940a',
-  };
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
+  // ── NEW HTML/CSS IMPLEMENTATION BELOW (old canvas code removed) ──
+  if (false) { // dead block — never executes, kept for merge safety
+  const _dead = null;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     let raf, W = 0, H = 140;
@@ -5221,14 +5214,7 @@ function PipelineFlowCanvas({ workspace, onNavigate }) {
     const onMv = ev => { mouseX=ev.clientX; mouseY=ev.clientY; };
     window.addEventListener('mousemove', onMv);
 
-    return () => {
-      cancelAnimationFrame(raf);
-      ro.disconnect();
-      window.removeEventListener('mousemove', onMv);
-    };
-  }, []);  // run once — layout() reads sourcesRef.current on each frame
-
-  const tip = hovIdx >= 0 ? STAGES[hovIdx] : null;
+  } // end dead block
 
   const sources = (workspace?.sources || []).map(s => ({
     label: (s.filename || s.source_id || 'source').split(/[/\\]/).pop().replace(/\.\w+$/, '').substring(0, 10),
@@ -6034,8 +6020,20 @@ function WorkspacePicker({user, onSelect, onCreate, onLogout}) {
    ═══════════════════════════════════════════════════════════════════════════ */
 function App() {
   const [user, setUser] = useState(null);
-  const [workspace, setWorkspace] = useState(null);
-  const [view, setView] = useState('home');
+
+  // Restore workspace + view from localStorage so state survives page refresh / navigation
+  const [workspace, _setWorkspace] = useState(() => {
+    try { const w = localStorage.getItem('ora_active_workspace'); return w ? JSON.parse(w) : null; } catch(e) { return null; }
+  });
+  const setWorkspace = (ws) => {
+    _setWorkspace(ws);
+    if (ws) localStorage.setItem('ora_active_workspace', JSON.stringify(ws));
+    else localStorage.removeItem('ora_active_workspace');
+  };
+
+  const [view, _setView] = useState(() => localStorage.getItem('ora_active_view') || 'home');
+  const setView = (v) => { _setView(v); localStorage.setItem('ora_active_view', v); };
+
   const [toasts, setToasts] = useState([]);
   const [authChecked, setAuthChecked] = useState(false);
   const [setupWorkspace, setSetupWorkspace] = useState(null); // workspace being set up
@@ -6205,7 +6203,7 @@ function App() {
 
   const fullBleed = view === 'data' || view === 'ask';
   return e('div', {className:'layout'},
-    e(Sidebar, {view, setView, workspace, user, onBack:()=>{setWorkspace(null);setChatMessages([])}}),
+    e(Sidebar, {view, setView, workspace, user, onBack:()=>{setWorkspace(null);setView('home');setChatMessages([])}}),
     e('div', {className: fullBleed ? 'main-full' : 'main'}, views[view] || views.home),
     e(ToastContainer, {toasts, onRemove:()=>{}}),
     cmdkOpen && e(CmdKSearch, {
