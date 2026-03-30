@@ -897,10 +897,40 @@ def make_fan_out_node(services: Any):
                 return {"sub_query_id": sq["id"], "succeeded": False, "error": f"No connector: {source_id}"}
 
             snap = await conn.introspect()
-            schema_text = "\n".join(
-                f"  {t.name}({', '.join(c.name + ' ' + c.data_type for c in t.columns)})"
-                for t in snap.tables
-            )
+
+            # Enrich schema with sample values so LLM can map domain terms correctly
+            # (e.g. "MY" → iso_code="MYS", "Malaysia" → country="Malaysia")
+            sample_values: dict[str, dict[str, list]] = {}  # table → col → [vals]
+            try:
+                for t in snap.tables:
+                    if hasattr(conn, 'sample'):
+                        sd = await conn.sample(t.name, n=5)
+                        col_samples: dict[str, list] = {}
+                        for col_name, stats in (sd.column_stats or {}).items():
+                            if stats.sample_values:
+                                col_samples[col_name] = stats.sample_values[:8]
+                        # Also grab sample rows to surface actual values
+                        if sd.sample_rows:
+                            for row in sd.sample_rows[:3]:
+                                for k, v in row.items():
+                                    if k not in col_samples and v is not None:
+                                        col_samples.setdefault(k, []).append(str(v)[:30])
+                        sample_values[t.name] = col_samples
+            except Exception:
+                pass  # sampling is best-effort
+
+            schema_lines = []
+            for t in snap.tables:
+                col_parts = []
+                for c in t.columns:
+                    col_str = f"{c.name} {c.data_type}"
+                    sv = (sample_values.get(t.name) or {}).get(c.name, [])
+                    if sv:
+                        ex = ", ".join(f'"{str(v)}"' for v in sv[:6])
+                        col_str += f" [e.g. {ex}]"
+                    col_parts.append(col_str)
+                schema_lines.append(f"  {t.name}({', '.join(col_parts)})")
+            schema_text = "\n".join(schema_lines)
 
             def _extract_sql(text: str) -> str:
                 text = text.strip()

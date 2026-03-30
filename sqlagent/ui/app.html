@@ -4990,30 +4990,18 @@ const QUERY_SUGGESTIONS = [
 ];
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   PIPELINE FLOW CANVAS — home screen hero showing how sqlagent works
-   Your data sources → Schema → Retrieve → Plan → Generate → Execute → Results
-   Animated particles flow left-to-right through the real pipeline stages.
-   Hover a stage node for a tooltip. Click anywhere to open Ask view.
+   PIPELINE STRIP — glass-card pipeline showing connected sources → stages
+   Pure HTML/CSS, matches the app design language. No canvas.
    ═══════════════════════════════════════════════════════════════════════════ */
 function PipelineFlowCanvas({ workspace, onNavigate }) {
-  const canvasRef  = useRef(null);
-  const hovRef     = useRef(-1);
-  const sourcesRef = useRef([]);           // updated every render, read inside animation loop
-  const [hovIdx,  setHovIdx]  = useState(-1);
-
-  // Derive and cache source list for the animation loop via ref
-  sourcesRef.current = (workspace?.sources || []).map(s => ({
-    source_id: s.filename || s.source_id || 'data',
-    dialect:   (s.dialect || s.type || 'csv').toLowerCase(),
-  }));
+  const [hov, setHov] = useState(null);
 
   const STAGES = [
-    { label:'Intent',   color:'#4a90d9', desc:'Classifies query complexity — routes simple vs cross-source' },
-    { label:'Schema',   color:'#7c5cbf', desc:'CHESS LSH prunes 500 cols → ~8 relevant via RAG retrieval' },
-    { label:'Generate', color:'#d4940a', desc:'3 SQL candidates generated in parallel · pairwise LLM ranking' },
-    { label:'Correct',  color:'#2d9d6a', desc:'4-layer self-healing: syntax → schema → execution → semantic' },
-    { label:'Execute',  color:'#e05577', desc:'Best SQL runs against your live database · read-only enforced' },
-    { label:'Format',   color:'#3a7bc8', desc:'NL summary + chart recommendation + follow-up suggestions' },
+    { label:'Schema',   desc:'CHESS LSH pruning — 500 cols → ~8 relevant' },
+    { label:'Generate', desc:'3 SQL candidates generated in parallel' },
+    { label:'Correct',  desc:'Self-healing loop — up to 3 correction rounds' },
+    { label:'Execute',  desc:'Best candidate runs against your live data' },
+    { label:'Results',  desc:'NL summary · chart · follow-up suggestions' },
   ];
 
   const SRC_COLORS = {
@@ -5242,32 +5230,84 @@ function PipelineFlowCanvas({ workspace, onNavigate }) {
 
   const tip = hovIdx >= 0 ? STAGES[hovIdx] : null;
 
-  return e('div', {
-    style: { position:'relative', width:'100%', userSelect:'none' },
-    onClick: () => onNavigate && onNavigate('ask'),
-  },
-    // Section label
-    e('div', {style:{
-      fontSize:10, fontWeight:600, letterSpacing:'0.08em',
-      textTransform:'uppercase', color:'var(--text-muted)', marginBottom:8,
-    }}, 'How it works — click to run a query'),
+  const sources = (workspace?.sources || []).map(s => ({
+    label: (s.filename || s.source_id || 'source').split(/[/\\]/).pop().replace(/\.\w+$/, '').substring(0, 10),
+    badge: (s.dialect || s.type || 'csv').toUpperCase().substring(0, 3),
+  }));
 
-    // Canvas
-    e('canvas', {
-      ref: canvasRef,
-      style: { display:'block', cursor:'pointer', width:'100%', height:'140px' },
-    }),
+  const DIALECT_COLOR = { PG:'#4f7df9', SQL:'#7c5cbf', CSV:'#22c55e', XLS:'#22c55e',
+    PAR:'#f59e0b', DUC:'#9b6cf9', SQN:'#29b5e8', BIG:'#4285f4', RED:'#ef4444', MYS:'#00c49f' };
 
-    // Tooltip (appears below the hovered stage)
-    e('div', {style:{height:28, display:'flex', alignItems:'center', justifyContent:'center'}},
-      tip && e('div', {style:{
-        fontSize:11, color:'var(--text-secondary)',
-        background:'var(--canvas-elevated)',
-        border:'1.5px solid var(--glass-border)',
-        borderRadius:5, padding:'3px 12px',
-        boxShadow:'0 1px 4px rgba(0,0,0,.06)',
-        fontStyle:'italic',
-      }}, tip.desc),
+  return e('div', {style:{width:'100%'}},
+    e('div', {style:{fontSize:10,fontWeight:600,letterSpacing:'0.08em',textTransform:'uppercase',color:'var(--text-muted)',marginBottom:10}},
+      'Pipeline'),
+    e('div', {style:{display:'flex',alignItems:'center',gap:0,overflowX:'auto',paddingBottom:4}},
+
+      // Source badges
+      sources.length > 0 && e('div', {style:{display:'flex',flexDirection:'column',gap:6,marginRight:8,flexShrink:0}},
+        sources.map((s,i) => e('div', {key:i, style:{
+          display:'flex',alignItems:'center',gap:5,
+          padding:'4px 8px',borderRadius:6,
+          background:'var(--glass)',border:'1px solid var(--glass-border)',
+          fontSize:11,fontFamily:'var(--font-mono)',whiteSpace:'nowrap',
+        }},
+          e('span', {style:{
+            fontSize:9,fontWeight:700,padding:'1px 4px',borderRadius:3,
+            background: (DIALECT_COLOR[s.badge]||'#4f7df9')+'22',
+            color: DIALECT_COLOR[s.badge]||'#4f7df9',
+            border:'1px solid '+(DIALECT_COLOR[s.badge]||'#4f7df9')+'44',
+          }}, s.badge),
+          e('span', {style:{color:'var(--text-secondary)'}}, s.label),
+        ))
+      ),
+
+      // Arrow from sources
+      sources.length > 0 && e('div', {style:{color:'var(--text-muted)',fontSize:13,marginRight:8,flexShrink:0}}, '→'),
+
+      // Pipeline stage nodes
+      STAGES.map((st, i) =>
+        e(React.Fragment, {key:i},
+          e('div', {
+            style:{
+              position:'relative',
+              padding:'6px 12px',
+              borderRadius:8,
+              background: hov===i ? 'var(--glass-hover)' : 'var(--glass)',
+              border:'1px solid '+(hov===i ? 'rgba(79,125,249,0.35)' : 'var(--glass-border)'),
+              fontSize:12,fontWeight:500,
+              color: hov===i ? 'var(--text)' : 'var(--text-secondary)',
+              cursor:'default',
+              transition:'all 0.15s ease',
+              flexShrink:0,
+              whiteSpace:'nowrap',
+            },
+            onMouseEnter: () => setHov(i),
+            onMouseLeave: () => setHov(null),
+          },
+            st.label,
+            hov===i && e('div', {style:{
+              position:'absolute',bottom:'calc(100% + 6px)',left:'50%',
+              transform:'translateX(-50%)',
+              background:'var(--canvas-deep,#060a14)',
+              border:'1px solid var(--glass-border)',
+              borderRadius:6,padding:'5px 10px',
+              fontSize:11,color:'var(--text-secondary)',
+              whiteSpace:'nowrap',zIndex:10,
+              boxShadow:'0 4px 12px rgba(0,0,0,0.4)',
+            }}, st.desc),
+          ),
+          i < STAGES.length-1 && e('div', {style:{color:'var(--text-muted)',fontSize:11,margin:'0 4px',flexShrink:0}}, '→'),
+        )
+      ),
+
+      // Ask button
+      e('div', {style:{marginLeft:'auto',flexShrink:0,paddingLeft:12}},
+        e('button', {
+          className:'auth-btn auth-btn-primary',
+          style:{width:'auto',padding:'5px 14px',fontSize:12},
+          onClick: () => onNavigate && onNavigate('ask'),
+        }, '→ Ask'),
+      ),
     ),
   );
 }
