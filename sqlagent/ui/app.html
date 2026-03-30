@@ -4436,6 +4436,7 @@ function SetupChat({workspace, onReady, onBack, user, hasLlmKey, onLlmKeyAdded})
   const [keyProvider, setKeyProvider] = useState('anthropic'); // 'anthropic' | 'openai'
   const [keyInput, setKeyInput] = useState('');
   const [keyStatus, setKeyStatus] = useState('idle'); // 'idle'|'testing'|'ok'|'fail'
+  const [chosenModel, setChosenModel] = useState('claude-sonnet-4-5'); // model selected during setup
   const [greetingTriggered, setGreetingTriggered] = useState(false);
   // Track whether the USER has personally completed key setup — per workspace.
   // Each new workspace always shows the API key step so the user can confirm
@@ -4523,9 +4524,10 @@ function SetupChat({workspace, onReady, onBack, user, hasLlmKey, onLlmKeyAdded})
     try {
       const r = await api.post('/api/settings/verify-key', {provider: keyProvider, api_key: keyInput.trim()});
       if (r.valid) {
-        // Persist the key via settings endpoint
+        // Persist the key + chosen model via settings endpoint
         const settings = {};
         settings[keyProvider === 'anthropic' ? 'anthropic_key' : 'openai_key'] = keyInput.trim();
+        settings.model = chosenModel;
         await api.post('/api/settings', settings);
         setKeyStatus('ok');
         // Mark user as having completed key setup
@@ -4707,7 +4709,13 @@ function SetupChat({workspace, onReady, onBack, user, hasLlmKey, onLlmKeyAdded})
         ['anthropic','openai'].map(p =>
           e('button', {
             key:p,
-            onClick:()=>{setKeyProvider(p);setKeyInput('');setKeyStatus('idle');},
+            onClick:()=>{
+              setKeyProvider(p);
+              setKeyInput('');
+              setKeyStatus('idle');
+              // Auto-select default model for this provider
+              setChosenModel(p === 'anthropic' ? 'claude-sonnet-4-5' : 'gpt-4o');
+            },
             style:{
               padding:'5px 14px',borderRadius:100,fontSize:12,cursor:'pointer',fontFamily:'var(--font-ui)',
               border:'1px solid '+(keyProvider===p?'var(--blue)':'var(--glass-border)'),
@@ -4715,6 +4723,35 @@ function SetupChat({workspace, onReady, onBack, user, hasLlmKey, onLlmKeyAdded})
               color: keyProvider===p?'var(--blue-text)':'var(--text-secondary)',
             },
           }, p === 'anthropic' ? 'Anthropic (Claude)' : 'OpenAI (GPT)')
+        ),
+      ),
+      // Model selector — filtered by chosen provider
+      e('div', {style:{marginBottom:12}},
+        e('div', {style:{fontSize:11,color:'var(--text-muted)',marginBottom:6,fontWeight:500}}, 'Choose model'),
+        e('div', {style:{display:'flex',flexWrap:'wrap',gap:6}},
+          MODEL_OPTIONS
+            .filter(m => m.provider.toLowerCase() === keyProvider)
+            .map(m =>
+              e('button', {
+                key: m.id,
+                onClick: () => setChosenModel(m.id),
+                style:{
+                  padding:'5px 12px', borderRadius:100, fontSize:11.5, cursor:'pointer',
+                  fontFamily:'var(--font-ui)', transition:'all 150ms',
+                  border:'1px solid '+(chosenModel===m.id?'var(--blue)':'var(--glass-border)'),
+                  background: chosenModel===m.id?'var(--blue-soft)':'var(--glass)',
+                  color: chosenModel===m.id?'var(--blue-text)':'var(--text-secondary)',
+                  display:'flex', alignItems:'center', gap:5,
+                },
+              },
+                m.name,
+                m.badge && e('span', {style:{
+                  fontSize:9.5, padding:'1px 5px', borderRadius:100,
+                  background: chosenModel===m.id ? 'rgba(79,125,249,0.2)' : 'var(--glass-active)',
+                  color: chosenModel===m.id ? 'var(--blue-text)' : 'var(--text-muted)',
+                }}, m.badge)
+              )
+            )
         ),
       ),
       // Key input row
@@ -4753,6 +4790,8 @@ function SetupChat({workspace, onReady, onBack, user, hasLlmKey, onLlmKeyAdded})
       // Show "Use Server Key" shortcut when a server env key is already present
       hasLlmKey === true && e('button', {
         onClick: () => {
+          // Save chosen model before proceeding
+          api.post('/api/settings', {model: chosenModel}).catch(()=>{});
           localStorage.setItem(_keyFlagKey, '1');
           setKeySetupDone(true);
         },
