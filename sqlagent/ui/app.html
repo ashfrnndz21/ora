@@ -4621,16 +4621,7 @@ function SetupChat({workspace, onReady, onBack, user, hasLlmKey, onLlmKeyAdded})
     setMessages(m => [...m, {role:'user', text:msg}]);
 
     try {
-      // If sources are already connected and the user message looks like a casual acknowledgment
-      // (not a DB URL), just finalize immediately without hitting the LLM
       const isDbUrl = /^(postgresql|mysql|snowflake|bigquery|sqlite|redshift|duckdb):\/\//.test(msg.trim());
-      if (sources.length > 0 && !isDbUrl) {
-        // Auto-finalize — no LLM round-trip needed
-        setMessages(m => [...m, {role:'system', text:'✓ Workspace ready! Redirecting...'}]);
-        setTimeout(() => onReady({...workspace, name:wsName, sources}), 800);
-        setLoading(false);
-        return;
-      }
 
       // Include uploaded sources context so the agent knows what's already connected
       const context = sources.length > 0
