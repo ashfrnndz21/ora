@@ -34,8 +34,8 @@ dependencies = [
     "langgraph>=0.2",
     "langchain-core>=0.3",
 
-    # LLM routing
-    "litellm>=1.40",
+    # LLM routing — skip 1.82.7/1.82.8 (supply chain attack, March 2026)
+    "litellm>=1.40,!=1.82.7,!=1.82.8",
 
     # Observability (core, not optional)
     "opentelemetry-api>=1.24",
