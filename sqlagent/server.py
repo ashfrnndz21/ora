@@ -1995,7 +1995,7 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
             )
         html_path = os.path.join(_ui_dir, "app.html")
         if os.path.exists(html_path):
-            return FileResponse(html_path, headers={"Cache-Control": "no-cache"})
+            return FileResponse(html_path, headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache", "Expires": "0"})
         return {"message": "sqlagent API", "docs": "/docs", "guide": "/guide", "version": "2.0.0"}
 
     @app.get("/app")

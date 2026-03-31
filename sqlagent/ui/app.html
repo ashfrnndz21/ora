@@ -6512,14 +6512,18 @@ function WorkspacePicker({user, onSelect, onCreate, onLogout}) {
 
   function handleQuerySubmit() {
     if (!query.trim()) return;
-    // If one workspace exists and is ready, jump straight in with the query pre-loaded
+    // If a ready workspace exists, jump straight in with the query pre-loaded
     const readyWs = workspaces.find(w => w.status === 'ready');
     if (readyWs) {
       localStorage.setItem('ora_pending_query', query.trim());
       onSelect(readyWs);
-    } else {
-      onCreate();
+      return;
     }
+    // No ready workspace — save query for after setup, then scroll to workspace section
+    // so the user consciously creates one (don't silently create a DB record)
+    localStorage.setItem('ora_pending_query', query.trim());
+    const wsSection = document.getElementById('workspace-picker-section');
+    if (wsSection) wsSection.scrollIntoView({behavior:'smooth', block:'start'});
   }
 
   const firstName = (user?.display_name || user?.email?.split('@')[0] || 'there').split(' ')[0];
@@ -6795,7 +6799,7 @@ function WorkspacePicker({user, onSelect, onCreate, onLogout}) {
         ),
 
         // Workspaces
-        e('div', {style:{width:'100%'}},
+        e('div', {id:'workspace-picker-section', style:{width:'100%'}},
           e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}},
             e('span', {style:{fontSize:12,fontWeight:500,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.08em'}}, 'Your workspaces'),
             e('div', {style:{display:'flex',alignItems:'center',gap:8}},
