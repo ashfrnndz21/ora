@@ -16,7 +16,9 @@ def serve(
     auth: bool = typer.Option(False, help="Enable authentication"),
 ):
     """Start the sqlagent workspace server."""
-    import os, pathlib, uvicorn
+    import os
+    import pathlib
+    import uvicorn
     from sqlagent.config import AgentConfig
     from sqlagent.server import create_app
 
@@ -37,7 +39,7 @@ def serve(
     )
     app_instance = create_app(config, default_db=db)
 
-    typer.echo(f"\n  sqlagent workspace started")
+    typer.echo("\n  sqlagent workspace started")
     typer.echo(f"  Workspace    →  http://{host}:{port}")
     typer.echo(f"  REST API     →  http://{host}:{port}/docs")
     if db:
@@ -55,6 +57,7 @@ def hub(
     """Manage QueryHub training packs."""
     if action == "list":
         from sqlagent.hub import list_packs
+
         packs = list_packs()
         for p in packs:
             typer.echo(f"  {p['name']:25s} {p['description']}")

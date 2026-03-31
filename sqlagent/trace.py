@@ -9,7 +9,6 @@ from __future__ import annotations
 import json
 import uuid
 from datetime import datetime, timezone
-from typing import Any
 
 import structlog
 
@@ -21,6 +20,7 @@ logger = structlog.get_logger()
 # ═══════════════════════════════════════════════════════════════════════════════
 # TRACE COLLECTOR
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 class TraceCollector:
     """Builds a Trace tree from pipeline trace_events accumulated in QueryState.
@@ -39,10 +39,12 @@ class TraceCollector:
         children = []
         for i, event in enumerate(trace_events):
             node = TraceNode(
-                node_id=f"n{i+1}",
-                name=_node_name(event.get("node", "")),
+                node_id=f"n{i + 1}",
+                name=_node_name(event.get("node", ""), event),
                 agent=_agent_for_node(event.get("node", "")),
-                status=TraceStatus.COMPLETED if event.get("status") == "completed" else TraceStatus.FAILED,
+                status=TraceStatus.COMPLETED
+                if event.get("status") == "completed"
+                else TraceStatus.FAILED,
                 latency_ms=event.get("latency_ms", 0),
                 tokens=event.get("tokens", 0),
                 summary=event.get("summary", ""),
@@ -52,13 +54,17 @@ class TraceCollector:
             # Handle nested children (e.g., fan_out with sub-queries)
             if "children" in event:
                 for j, child_evt in enumerate(event["children"]):
-                    node.children.append(TraceNode(
-                        node_id=f"n{i+1}.{j+1}",
-                        name=child_evt.get("node", f"sub_{j}"),
-                        status=TraceStatus.COMPLETED if child_evt.get("status") == "completed" else TraceStatus.FAILED,
-                        summary=child_evt.get("summary", ""),
-                        parent_id=node.node_id,
-                    ))
+                    node.children.append(
+                        TraceNode(
+                            node_id=f"n{i + 1}.{j + 1}",
+                            name=child_evt.get("node", f"sub_{j}"),
+                            status=TraceStatus.COMPLETED
+                            if child_evt.get("status") == "completed"
+                            else TraceStatus.FAILED,
+                            summary=child_evt.get("summary", ""),
+                            parent_id=node.node_id,
+                        )
+                    )
 
             children.append(node)
 
@@ -86,8 +92,12 @@ class TraceCollector:
             nl_query=display_query,
             root=root,
             status=TraceStatus.COMPLETED if state.get("succeeded") else TraceStatus.FAILED,
-            started_at=datetime.fromisoformat(state["started_at"]) if state.get("started_at") else datetime.now(timezone.utc),
-            completed_at=datetime.fromisoformat(state["completed_at"]) if state.get("completed_at") else datetime.now(timezone.utc),
+            started_at=datetime.fromisoformat(state["started_at"])
+            if state.get("started_at")
+            else datetime.now(timezone.utc),
+            completed_at=datetime.fromisoformat(state["completed_at"])
+            if state.get("completed_at")
+            else datetime.now(timezone.utc),
             total_latency_ms=total_latency,
             total_tokens=total_tokens,
             total_cost_usd=total_cost,
@@ -100,53 +110,156 @@ class TraceCollector:
         )
 
 
-def _node_name(node_key: str) -> str:
-    """Convert graph node key to user-friendly display name."""
-    names = {
-        "understand": "Understanding your question",
-        "prune": "Finding relevant tables and columns",
-        "retrieve": "Looking for similar past queries",
-        "plan": "Planning the SQL approach",
-        "generate": "Writing SQL candidates",
-        "execute": "Running the query",
-        "correct": "Fixing and retrying",
-        "respond": "Generating your answer",
-        "learn": "Updating memory",
-        "decompose": "Breaking into sub-questions",
-        "fan_out": "Running sub-queries in parallel",
-        "synthesize": "Combining results",
-    }
-    return names.get(node_key, node_key.replace("_", " ").title())
+def _node_name(node_key: str, event: dict | None = None) -> str:
+    """Generate a natural, context-aware display name for a trace node.
+
+    Uses the event summary to vary the label based on what actually happened,
+    so users see meaningful, human phrasing — not the same static text every time.
+    """
+    import random as _random
+
+    summary = (event or {}).get("summary", "")
+
+    if node_key == "understand":
+        if "cross" in summary.lower() or "multi" in summary.lower():
+            return "Spans multiple datasets"
+        opts = [
+            "Figuring out what you need",
+            "Reading your question",
+            "Got it, thinking through this",
+        ]
+        return _random.choice(opts)
+
+    if node_key == "prune":
+        cols_after = (event or {}).get("columns_after", 0)
+        tables = (event or {}).get("selected_tables", [])
+        if cols_after and cols_after < 20:
+            return f"Focused on {cols_after} relevant columns"
+        if tables:
+            return f"Narrowed down to {len(tables)} table{'s' if len(tables) != 1 else ''}"
+        opts = ["Scanning the schema", "Finding what's relevant", "Cutting through the noise"]
+        return _random.choice(opts)
+
+    if node_key == "retrieve":
+        count = (event or {}).get("example_count") or (
+            int(summary.split()[0]) if summary and summary[0].isdigit() else 0
+        )
+        if count == 0:
+            return "No past examples — reasoning from scratch"
+        if count == 1:
+            return "Found a useful reference query"
+        return f"Found {count} helpful past {'queries' if count > 1 else 'query'}"
+
+    if node_key == "plan":
+        strategy = (event or {}).get("strategy", "")
+        if "join" in strategy or "join" in summary.lower():
+            return "Mapping out the joins"
+        if "subquery" in strategy or "window" in strategy:
+            return "Planning a multi-step approach"
+        if "direct" in strategy or "simple" in summary.lower():
+            return "Straightforward — going direct"
+        opts = [
+            "Thinking through the approach",
+            "Planning how to answer this",
+            "Mapping out the SQL",
+        ]
+        return _random.choice(opts)
+
+    if node_key == "generate":
+        if "3 candidates" in summary or "candidates" in summary:
+            n = summary.split()[0] if summary[0].isdigit() else "multiple"
+            return f"Wrote {n} SQL versions, picking the best"
+        opts = ["Writing the SQL", "Crafting the query", "Building the SQL"]
+        return _random.choice(opts)
+
+    if node_key == "execute":
+        rows = (event or {}).get("row_count", 0)
+        if "error" in summary.lower() or "fail" in summary.lower():
+            return "Hit an error — handing off to correction"
+        if rows:
+            return f"Got {rows:,} row{'s' if rows != 1 else ''} back"
+        opts = ["Running the query", "Executing against the database", "Querying the data"]
+        return _random.choice(opts)
+
+    if node_key == "correct":
+        stage = (event or {}).get("stage", "")
+        if "schema" in stage:
+            return "Rethinking with the full schema"
+        if "db_confirmed" in stage:
+            return "Trying a database-confirmed fix"
+        opts = ["Something was off — adjusting", "Fixing and retrying", "Revising the query"]
+        return _random.choice(opts)
+
+    if node_key == "respond":
+        if "context" in summary.lower():
+            return "Answering from our conversation"
+        if "chart" in summary.lower():
+            return "Writing the answer + chart"
+        opts = [
+            "Putting the answer together",
+            "Writing up the findings",
+            "Summarising what I found",
+        ]
+        return _random.choice(opts)
+
+    if node_key == "learn":
+        if "skipped" in summary.lower():
+            return "Nothing to save this time"
+        return "Saved to memory"
+
+    if node_key == "decompose":
+        n = (event or {}).get("sub_query_count", 0)
+        if n:
+            return f"Split into {n} parallel queries"
+        opts = ["Breaking this down", "Splitting across sources", "Decomposing the question"]
+        return _random.choice(opts)
+
+    if node_key == "fan_out":
+        n = (event or {}).get("sub_query_count", 0)
+        if n:
+            return f"Running {n} queries in parallel"
+        return "Running all sources at once"
+
+    if node_key == "synthesize":
+        rows = (event or {}).get("row_count", 0)
+        if rows:
+            return f"Joined results — {rows:,} rows"
+        opts = ["Bringing the results together", "Merging across sources", "Joining everything up"]
+        return _random.choice(opts)
+
+    return node_key.replace("_", " ").title()
 
 
 def _agent_for_node(node_key: str) -> str:
-    """Map node to responsible agent."""
+    """Map node to a short, readable agent label."""
     agents = {
-        "understand": "orchestrator",
-        "prune": "schema agent",
+        "understand": "",  # no badge needed — it's trivial routing
+        "prune": "schema",
         "retrieve": "memory",
         "plan": "planner",
-        "generate": "SQL writer",
-        "execute": "executor",
-        "correct": "self-correction",
-        "respond": "response agent",
-        "learn": "learn_agent",
-        "decompose": "decompose_agent",
-        "fan_out": "orchestrator",
-        "synthesize": "synthesis_agent",
+        "generate": "SQL agent",
+        "execute": "",  # no badge — mechanical
+        "correct": "self-heal",
+        "respond": "writer",
+        "learn": "memory",
+        "decompose": "planner",
+        "fan_out": "",
+        "synthesize": "DuckDB",
     }
-    return agents.get(node_key, "unknown")
+    return agents.get(node_key, "")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # TRACE STORE (SQLite persistence)
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class TraceStore:
     """Persists traces to SQLite for the Tasks view."""
 
     def __init__(self, db_path: str = ""):
         import os
+
         if not db_path:
             db_path = os.path.join(os.path.expanduser("~"), ".sqlagent", "traces.db")
         self._db_path = db_path
@@ -157,6 +270,7 @@ class TraceStore:
             return
         import os
         import aiosqlite
+
         os.makedirs(os.path.dirname(self._db_path), exist_ok=True)
         async with aiosqlite.connect(self._db_path) as db:
             await db.execute("""
@@ -198,15 +312,24 @@ class TraceStore:
     async def save(self, trace: Trace) -> None:
         await self.init()
         import aiosqlite
+
         async with aiosqlite.connect(self._db_path) as db:
             await db.execute(
                 "INSERT OR REPLACE INTO traces VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
-                    trace.trace_id, trace.workspace_id, trace.user_id,
-                    trace.nl_query, trace.sql, int(trace.succeeded),
-                    trace.row_count, trace.total_latency_ms, trace.total_tokens,
-                    trace.total_cost_usd, trace.winner_generator,
-                    trace.correction_rounds, trace.error,
+                    trace.trace_id,
+                    trace.workspace_id,
+                    trace.user_id,
+                    trace.nl_query,
+                    trace.sql,
+                    int(trace.succeeded),
+                    trace.row_count,
+                    trace.total_latency_ms,
+                    trace.total_tokens,
+                    trace.total_cost_usd,
+                    trace.winner_generator,
+                    trace.correction_rounds,
+                    trace.error,
                     json.dumps(trace.to_dict()),
                     trace.started_at.isoformat(),
                     trace.model_id,
@@ -219,6 +342,7 @@ class TraceStore:
     async def get(self, trace_id: str) -> Trace | None:
         await self.init()
         import aiosqlite
+
         async with aiosqlite.connect(self._db_path) as db:
             cursor = await db.execute(
                 "SELECT trace_json FROM traces WHERE trace_id = ?", (trace_id,)
@@ -229,11 +353,15 @@ class TraceStore:
             return _trace_from_json(json.loads(row[0]))
 
     async def list_for_workspace(
-        self, workspace_id: str, limit: int = 50, offset: int = 0,
+        self,
+        workspace_id: str,
+        limit: int = 50,
+        offset: int = 0,
     ) -> list[dict]:
         """List traces as summary dicts (for Tasks view table)."""
         await self.init()
         import aiosqlite
+
         async with aiosqlite.connect(self._db_path) as db:
             cursor = await db.execute(
                 "SELECT trace_id, nl_query, sql, succeeded, row_count, "
@@ -247,11 +375,17 @@ class TraceStore:
             rows = await cursor.fetchall()
             return [
                 {
-                    "trace_id": r[0], "nl_query": r[1], "sql": r[2],
-                    "succeeded": bool(r[3]), "row_count": r[4],
-                    "total_latency_ms": r[5], "total_cost_usd": r[6],
-                    "winner_generator": r[7], "correction_rounds": r[8],
-                    "error": r[9], "created_at": r[10],
+                    "trace_id": r[0],
+                    "nl_query": r[1],
+                    "sql": r[2],
+                    "succeeded": bool(r[3]),
+                    "row_count": r[4],
+                    "total_latency_ms": r[5],
+                    "total_cost_usd": r[6],
+                    "winner_generator": r[7],
+                    "correction_rounds": r[8],
+                    "error": r[9],
+                    "created_at": r[10],
                     "total_tokens": r[11] if len(r) > 11 else 0,
                     "model_id": r[12] if len(r) > 12 else "",
                     "tokens_input": r[13] if len(r) > 13 else 0,
@@ -263,6 +397,7 @@ class TraceStore:
     async def count(self, workspace_id: str) -> int:
         await self.init()
         import aiosqlite
+
         async with aiosqlite.connect(self._db_path) as db:
             cursor = await db.execute(
                 "SELECT COUNT(*) FROM traces WHERE workspace_id = ?", (workspace_id,)

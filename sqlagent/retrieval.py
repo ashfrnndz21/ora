@@ -7,7 +7,6 @@ Retrieves similar examples for few-shot prompting.
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass
 from typing import Protocol, runtime_checkable, Any
 
 import structlog
@@ -20,6 +19,7 @@ logger = structlog.get_logger()
 # ═══════════════════════════════════════════════════════════════════════════════
 # VECTOR STORE PROTOCOL
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 @runtime_checkable
 class VectorStore(Protocol):
@@ -34,6 +34,7 @@ class VectorStore(Protocol):
 # QDRANT VECTOR STORE (in-process)
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class QdrantVectorStore:
     """In-process Qdrant vector store — no external server needed."""
 
@@ -45,6 +46,7 @@ class QdrantVectorStore:
     def _ensure_client(self):
         if self._client is None:
             from qdrant_client import QdrantClient
+
             if self._path:
                 self._client = QdrantClient(path=self._path)
             else:
@@ -54,6 +56,7 @@ class QdrantVectorStore:
         self._ensure_client()
         collection = name or self._collection
         from qdrant_client.models import Distance, VectorParams
+
         try:
             self._client.get_collection(collection)
         except Exception as exc:
@@ -66,6 +69,7 @@ class QdrantVectorStore:
     async def upsert(self, id: str, vector: list[float], payload: dict) -> None:
         self._ensure_client()
         from qdrant_client.models import PointStruct
+
         self._client.upsert(
             collection_name=self._collection,
             points=[PointStruct(id=id, vector=vector, payload=payload)],
@@ -79,10 +83,7 @@ class QdrantVectorStore:
                 query_vector=vector,
                 limit=top_k,
             )
-            return [
-                {"payload": r.payload, "score": r.score, "id": r.id}
-                for r in results
-            ]
+            return [{"payload": r.payload, "score": r.score, "id": r.id} for r in results]
         except Exception as exc:
             logger.debug("retrieval.operation_failed", error=str(exc))
             return []
@@ -90,6 +91,7 @@ class QdrantVectorStore:
     async def delete(self, id: str) -> None:
         self._ensure_client()
         from qdrant_client.models import PointIdsList
+
         self._client.delete(
             collection_name=self._collection,
             points_selector=PointIdsList(points=[id]),
@@ -108,6 +110,7 @@ class QdrantVectorStore:
 # ═══════════════════════════════════════════════════════════════════════════════
 # EXAMPLE STORE (high-level: embed + store + search)
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 class ExampleStore:
     """High-level interface for NL→SQL training pair storage and retrieval.

@@ -6,7 +6,6 @@ No mocks, no templates, no hardcoded responses.
 
 from __future__ import annotations
 
-import asyncio
 import json
 import uuid
 from dataclasses import dataclass, field
@@ -16,9 +15,19 @@ from typing import Any, AsyncIterator
 import structlog
 
 from sqlagent.models import (
-    SchemaSnapshot, SchemaAnalysis, InferredRelationship, EntityGrouping,
-    ColumnSemantic, DataQualityIssue, KnowledgeGraph, KGNode, KGEdge, KGLayer,
-    EdgeType, SemanticEntry, SampleData,
+    SchemaSnapshot,
+    SchemaAnalysis,
+    InferredRelationship,
+    EntityGrouping,
+    ColumnSemantic,
+    DataQualityIssue,
+    KnowledgeGraph,
+    KGNode,
+    KGEdge,
+    KGLayer,
+    EdgeType,
+    SemanticEntry,
+    SampleData,
 )
 
 logger = structlog.get_logger()
@@ -35,12 +44,12 @@ def _salvage_truncated_json(raw: str) -> dict | None:
     for trunc in range(len(raw), max(len(raw) - 2000, 0), -1):
         candidate = raw[:trunc]
         # Count open braces/brackets to determine what needs closing
-        depth_brace = candidate.count('{') - candidate.count('}')
-        depth_bracket = candidate.count('[') - candidate.count(']')
+        depth_brace = candidate.count("{") - candidate.count("}")
+        depth_bracket = candidate.count("[") - candidate.count("]")
         if depth_brace < 0 or depth_bracket < 0:
             continue
         # Close any open structures
-        closing = ']' * depth_bracket + '}' * depth_brace
+        closing = "]" * depth_bracket + "}" * depth_brace
         try:
             return json.loads(candidate + closing)
         except json.JSONDecodeError:
@@ -52,9 +61,10 @@ def _salvage_truncated_json(raw: str) -> dict | None:
 # SCHEMA AGENT — builds knowledge graph from schema introspection + LLM analysis
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 @dataclass
 class SchemaAnalysisProgress:
-    phase: str = ""            # structural, sampling, llm_analysis, cross_source, assembly
+    phase: str = ""  # structural, sampling, llm_analysis, cross_source, assembly
     progress_pct: float = 0.0
     message: str = ""
     node_count: int = 0
@@ -93,62 +103,95 @@ class SchemaAgent:
 
         # Stage 1: Structural pass
         if on_progress:
-            await on_progress(SchemaAnalysisProgress(phase="structural", progress_pct=0.1, message="Extracting schema structure..."))
+            await on_progress(
+                SchemaAnalysisProgress(
+                    phase="structural", progress_pct=0.1, message="Extracting schema structure..."
+                )
+            )
 
         for source_id, snap in snapshots.items():
-            sources_meta.append({
-                "source_id": source_id, "dialect": snap.dialect,
-                "table_count": snap.table_count, "column_count": snap.column_count,
-            })
+            sources_meta.append(
+                {
+                    "source_id": source_id,
+                    "dialect": snap.dialect,
+                    "table_count": snap.table_count,
+                    "column_count": snap.column_count,
+                }
+            )
             # Add source node
-            nodes.append(KGNode(
-                id=f"src:{source_id}", type="source", source_id=source_id,
-                name=source_id, properties={"dialect": snap.dialect, "table_count": snap.table_count},
-            ))
+            nodes.append(
+                KGNode(
+                    id=f"src:{source_id}",
+                    type="source",
+                    source_id=source_id,
+                    name=source_id,
+                    properties={"dialect": snap.dialect, "table_count": snap.table_count},
+                )
+            )
             for table in snap.tables:
                 # Add table node
-                nodes.append(KGNode(
-                    id=f"tbl:{source_id}.{table.name}", type="table", source_id=source_id,
-                    name=table.name, properties={
-                        "row_count": table.row_count_estimate,
-                        "column_count": len(table.columns),
-                        "columns": [
-                            {
-                                "name": c.name, "data_type": c.data_type,
-                                "is_pk": c.is_primary_key, "is_fk": c.is_foreign_key,
-                                "description": c.description or "",
-                                "examples": c.examples or [],
-                            }
-                            for c in table.columns
-                        ],
-                    },
-                ))
-                for col in table.columns:
-                    nodes.append(KGNode(
-                        id=f"col:{source_id}.{table.name}.{col.name}", type="column",
-                        source_id=source_id, name=col.name,
+                nodes.append(
+                    KGNode(
+                        id=f"tbl:{source_id}.{table.name}",
+                        type="table",
+                        source_id=source_id,
+                        name=table.name,
                         properties={
-                            "data_type": col.data_type, "is_pk": col.is_primary_key,
-                            "is_fk": col.is_foreign_key, "nullable": col.nullable,
-                            "semantic_type": col.semantic_type, "description": col.description,
+                            "row_count": table.row_count_estimate,
+                            "column_count": len(table.columns),
+                            "columns": [
+                                {
+                                    "name": c.name,
+                                    "data_type": c.data_type,
+                                    "is_pk": c.is_primary_key,
+                                    "is_fk": c.is_foreign_key,
+                                    "description": c.description or "",
+                                    "examples": c.examples or [],
+                                }
+                                for c in table.columns
+                            ],
                         },
-                    ))
+                    )
+                )
+                for col in table.columns:
+                    nodes.append(
+                        KGNode(
+                            id=f"col:{source_id}.{table.name}.{col.name}",
+                            type="column",
+                            source_id=source_id,
+                            name=col.name,
+                            properties={
+                                "data_type": col.data_type,
+                                "is_pk": col.is_primary_key,
+                                "is_fk": col.is_foreign_key,
+                                "nullable": col.nullable,
+                                "semantic_type": col.semantic_type,
+                                "description": col.description,
+                            },
+                        )
+                    )
 
             # Declared FKs → edges
             for fk in snap.foreign_keys:
-                edges.append(KGEdge(
-                    id=f"fk:{source_id}.{fk.from_table}.{fk.from_column}->{fk.to_table}.{fk.to_column}",
-                    source=f"tbl:{source_id}.{fk.from_table}",
-                    target=f"tbl:{source_id}.{fk.to_table}",
-                    type=EdgeType.DECLARED_FK,
-                    join_columns={"from": fk.from_column, "to": fk.to_column},
-                    confidence=1.0,
-                    description=f"{fk.from_table}.{fk.from_column} → {fk.to_table}.{fk.to_column}",
-                ))
+                edges.append(
+                    KGEdge(
+                        id=f"fk:{source_id}.{fk.from_table}.{fk.from_column}->{fk.to_table}.{fk.to_column}",
+                        source=f"tbl:{source_id}.{fk.from_table}",
+                        target=f"tbl:{source_id}.{fk.to_table}",
+                        type=EdgeType.DECLARED_FK,
+                        join_columns={"from": fk.from_column, "to": fk.to_column},
+                        confidence=1.0,
+                        description=f"{fk.from_table}.{fk.from_column} → {fk.to_table}.{fk.to_column}",
+                    )
+                )
 
         # Stage 2: Sampling
         if on_progress:
-            await on_progress(SchemaAnalysisProgress(phase="sampling", progress_pct=0.3, message="Sampling data..."))
+            await on_progress(
+                SchemaAnalysisProgress(
+                    phase="sampling", progress_pct=0.3, message="Sampling data..."
+                )
+            )
 
         samples: dict[str, list[SampleData]] = {}
         if connectors:
@@ -185,13 +228,18 @@ class SchemaAgent:
                     if stats and stats.sample_values and not col.examples:
                         # Convert to strings, truncate long values, limit to 15
                         col.examples = [
-                            str(v)[:40] for v in stats.sample_values[:15]
+                            str(v)[:40]
+                            for v in stats.sample_values[:15]
                             if v is not None and str(v).strip()
                         ]
 
         # Stage 3: LLM analysis
         if on_progress:
-            await on_progress(SchemaAnalysisProgress(phase="llm_analysis", progress_pct=0.5, message="Running LLM analysis..."))
+            await on_progress(
+                SchemaAnalysisProgress(
+                    phase="llm_analysis", progress_pct=0.5, message="Running LLM analysis..."
+                )
+            )
 
         for source_id, snap in snapshots.items():
             try:
@@ -199,24 +247,29 @@ class SchemaAgent:
 
                 # Inferred relationships → edges
                 for rel in analysis.inferred_relationships:
-                    edges.append(KGEdge(
-                        id=f"inferred:{source_id}.{rel.from_table}.{rel.from_column}->{rel.to_table}.{rel.to_column}",
-                        source=f"tbl:{source_id}.{rel.from_table}",
-                        target=f"tbl:{source_id}.{rel.to_table}",
-                        type=EdgeType.INFERRED,
-                        join_columns={"from": rel.from_column, "to": rel.to_column},
-                        confidence=rel.confidence,
-                        evidence=rel.evidence,
-                    ))
+                    edges.append(
+                        KGEdge(
+                            id=f"inferred:{source_id}.{rel.from_table}.{rel.from_column}->{rel.to_table}.{rel.to_column}",
+                            source=f"tbl:{source_id}.{rel.from_table}",
+                            target=f"tbl:{source_id}.{rel.to_table}",
+                            type=EdgeType.INFERRED,
+                            join_columns={"from": rel.from_column, "to": rel.to_column},
+                            confidence=rel.confidence,
+                            evidence=rel.evidence,
+                        )
+                    )
 
                 # Entity groups → layers
                 for eg in analysis.entity_groups:
-                    layers.append(KGLayer(
-                        id=f"layer:{source_id}.{eg.name}",
-                        name=eg.name, description=eg.description,
-                        tables=[f"tbl:{source_id}.{t}" for t in eg.tables],
-                        color=eg.color,
-                    ))
+                    layers.append(
+                        KGLayer(
+                            id=f"layer:{source_id}.{eg.name}",
+                            name=eg.name,
+                            description=eg.description,
+                            tables=[f"tbl:{source_id}.{t}" for t in eg.tables],
+                            color=eg.color,
+                        )
+                    )
 
                 # Column semantics → update node properties + glossary
                 for cs in analysis.column_semantics:
@@ -229,11 +282,13 @@ class SchemaAgent:
                                 node.properties["pii"] = True
                                 pii_columns.append(f"{cs.table}.{cs.column}")
                     if cs.business_term:
-                        glossary.append(SemanticEntry(
-                            term=cs.business_term,
-                            maps_to=f"{cs.table}.{cs.column}",
-                            definition=cs.description,
-                        ))
+                        glossary.append(
+                            SemanticEntry(
+                                term=cs.business_term,
+                                maps_to=f"{cs.table}.{cs.column}",
+                                definition=cs.description,
+                            )
+                        )
 
             except Exception as e:
                 logger.warn("schema_agent.llm_failed", source=source_id, error=str(e))
@@ -249,11 +304,32 @@ class SchemaAgent:
                     col_to_tables.setdefault(col.name.lower(), []).append(tbl.name)
 
             # Collect shared columns per table-pair
-            SKIP_COLS = {"id", "name", "description", "created_at", "updated_at",
-                         "value", "type", "status", "date", "unnamed: 0", "unnamed: 1",
-                         "unnamed: 2", "index", "analytics_db", "row_number", "rank",
-                         "flag", "notes", "comment", "comments", "label", "tag", "tags"}
-            pair_cols: dict[tuple[str,str], list[str]] = {}
+            SKIP_COLS = {
+                "id",
+                "name",
+                "description",
+                "created_at",
+                "updated_at",
+                "value",
+                "type",
+                "status",
+                "date",
+                "unnamed: 0",
+                "unnamed: 1",
+                "unnamed: 2",
+                "index",
+                "analytics_db",
+                "row_number",
+                "rank",
+                "flag",
+                "notes",
+                "comment",
+                "comments",
+                "label",
+                "tag",
+                "tags",
+            }
+            pair_cols: dict[tuple[str, str], list[str]] = {}
             for col_name, tbl_names in col_to_tables.items():
                 # Skip single-char column names (noise), purely numeric names, and skip list
                 if len(tbl_names) < 2 or col_name in SKIP_COLS or len(col_name) <= 1:
@@ -269,8 +345,10 @@ class SchemaAgent:
 
             # One edge per pair (skip if LLM already added this pair)
             existing_pairs = {
-                (e.source.replace(f"tbl:{source_id}.", ""),
-                 e.target.replace(f"tbl:{source_id}.", ""))
+                (
+                    e.source.replace(f"tbl:{source_id}.", ""),
+                    e.target.replace(f"tbl:{source_id}.", ""),
+                )
                 for e in edges
             }
             for (ta, tb), shared_cols in pair_cols.items():
@@ -278,21 +356,29 @@ class SchemaAgent:
                     continue
                 join_key = shared_cols[0]
                 desc = f"{ta.split('_')[-1]} ↔ {tb.split('_')[-1]} via {', '.join(shared_cols[:3])}"
-                edges.append(KGEdge(
-                    id=f"inferred:{source_id}.{ta}↔{tb}",
-                    source=f"tbl:{source_id}.{ta}",
-                    target=f"tbl:{source_id}.{tb}",
-                    type=EdgeType.INFERRED,
-                    join_columns={"from": join_key, "to": join_key},
-                    confidence=0.85,
-                    evidence=f"Shared columns: {', '.join(shared_cols)}",
-                    description=desc,
-                ))
+                edges.append(
+                    KGEdge(
+                        id=f"inferred:{source_id}.{ta}↔{tb}",
+                        source=f"tbl:{source_id}.{ta}",
+                        target=f"tbl:{source_id}.{tb}",
+                        type=EdgeType.INFERRED,
+                        join_columns={"from": join_key, "to": join_key},
+                        confidence=0.85,
+                        evidence=f"Shared columns: {', '.join(shared_cols)}",
+                        description=desc,
+                    )
+                )
 
         # Stage 4: Cross-source link detection
         if len(snapshots) > 1:
             if on_progress:
-                await on_progress(SchemaAnalysisProgress(phase="cross_source", progress_pct=0.8, message="Detecting cross-source links..."))
+                await on_progress(
+                    SchemaAnalysisProgress(
+                        phase="cross_source",
+                        progress_pct=0.8,
+                        message="Detecting cross-source links...",
+                    )
+                )
 
             source_list = list(snapshots.items())
             for i in range(len(source_list)):
@@ -304,10 +390,15 @@ class SchemaAgent:
 
         # Stage 5: Assembly
         if on_progress:
-            await on_progress(SchemaAnalysisProgress(
-                phase="assembly", progress_pct=1.0, message="Knowledge graph built",
-                node_count=len(nodes), edge_count=len(edges),
-            ))
+            await on_progress(
+                SchemaAnalysisProgress(
+                    phase="assembly",
+                    progress_pct=1.0,
+                    message="Knowledge graph built",
+                    node_count=len(nodes),
+                    edge_count=len(edges),
+                )
+            )
 
         return KnowledgeGraph(
             graph_id=f"kg_{workspace_id}_{uuid.uuid4().hex[:8]}",
@@ -332,7 +423,9 @@ class SchemaAgent:
         sample_text = ""
         for sd in samples[:5]:
             if sd.sample_rows:
-                sample_text += f"\nSample from {sd.table}:\n{json.dumps(sd.sample_rows[:3], default=str)}\n"
+                sample_text += (
+                    f"\nSample from {sd.table}:\n{json.dumps(sd.sample_rows[:3], default=str)}\n"
+                )
 
         prompt = (
             f"You are a data architect. Analyze this {snap.dialect} schema and infer the full data model.\n\n"
@@ -366,8 +459,11 @@ class SchemaAgent:
                 parts = raw.split("```")
                 # Find the JSON part among the fence segments
                 raw = next(
-                    (p[4:].strip() if p.startswith("json") else p.strip()
-                     for p in parts if p.startswith("json") or p.strip().startswith("{")),
+                    (
+                        p[4:].strip() if p.startswith("json") else p.strip()
+                        for p in parts
+                        if p.startswith("json") or p.strip().startswith("{")
+                    ),
                     raw,
                 )
             # Try direct parse first
@@ -379,15 +475,17 @@ class SchemaAgent:
                 if data is None:
                     raise
         except json.JSONDecodeError as e:
-            logger.warn("schema_agent.json_parse_failed",
-                        error=str(e),
-                        content_start=resp.content[:80],
-                        content_end=resp.content[-80:])
+            logger.warn(
+                "schema_agent.json_parse_failed",
+                error=str(e),
+                content_start=resp.content[:80],
+                content_end=resp.content[-80:],
+            )
             return SchemaAnalysis(source_id=snap.source_id)
         except Exception as e:
-            logger.warn("schema_agent.json_parse_failed",
-                        error=str(e),
-                        content_start=resp.content[:80])
+            logger.warn(
+                "schema_agent.json_parse_failed", error=str(e), content_start=resp.content[:80]
+            )
             return SchemaAnalysis(source_id=snap.source_id)
 
         return SchemaAnalysis(
@@ -396,7 +494,8 @@ class SchemaAgent:
             model_used=resp.model,
             tokens_used=resp.tokens_input + resp.tokens_output,
             inferred_relationships=[
-                InferredRelationship(**r) for r in data.get("inferred_relationships", [])
+                InferredRelationship(**r)
+                for r in data.get("inferred_relationships", [])
                 if "from_table" in r and "to_table" in r
             ],
             entity_groups=[
@@ -435,7 +534,11 @@ class SchemaAgent:
         )
 
     def _detect_cross_source_links(
-        self, sid_a: str, snap_a: SchemaSnapshot, sid_b: str, snap_b: SchemaSnapshot,
+        self,
+        sid_a: str,
+        snap_a: SchemaSnapshot,
+        sid_b: str,
+        snap_b: SchemaSnapshot,
     ) -> list[KGEdge]:
         """Detect join keys between two different sources (exact name match)."""
         links = []
@@ -451,15 +554,17 @@ class SchemaAgent:
                     ta_name, ca = cols_a[key]
                     # Check type compatibility
                     if self._types_compatible(ca.data_type, c.data_type):
-                        links.append(KGEdge(
-                            id=f"cross:{sid_a}.{ta_name}.{ca.name}->{sid_b}.{t.name}.{c.name}",
-                            source=f"tbl:{sid_a}.{ta_name}",
-                            target=f"tbl:{sid_b}.{t.name}",
-                            type=EdgeType.CROSS_SOURCE,
-                            join_columns={"from": ca.name, "to": c.name},
-                            confidence=1.0 if ca.name == c.name else 0.9,
-                            evidence=f"Exact column name match: {ca.name}",
-                        ))
+                        links.append(
+                            KGEdge(
+                                id=f"cross:{sid_a}.{ta_name}.{ca.name}->{sid_b}.{t.name}.{c.name}",
+                                source=f"tbl:{sid_a}.{ta_name}",
+                                target=f"tbl:{sid_b}.{t.name}",
+                                type=EdgeType.CROSS_SOURCE,
+                                join_columns={"from": ca.name, "to": c.name},
+                                confidence=1.0 if ca.name == c.name else 0.9,
+                                evidence=f"Exact column name match: {ca.name}",
+                            )
+                        )
         return links
 
     @staticmethod
@@ -482,9 +587,10 @@ class SchemaAgent:
 # SETUP AGENT — conversational workspace creation
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 @dataclass
 class SetupEvent:
-    event_type: str = ""       # message, action, source_added, workspace_ready, error
+    event_type: str = ""  # message, action, source_added, workspace_ready, error
     data: dict = field(default_factory=dict)
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -530,9 +636,7 @@ class SetupAgent:
                 {"role": "system", "content": _SETUP_SYSTEM},
             ]
 
-        self._conversations[workspace_id].append(
-            {"role": "user", "content": user_message}
-        )
+        self._conversations[workspace_id].append({"role": "user", "content": user_message})
 
         # Add workspace state context
         if workspace_state:
@@ -546,22 +650,27 @@ class SetupAgent:
         resp = await self._llm.complete(messages)
         content = resp.content
 
-        self._conversations[workspace_id].append(
-            {"role": "assistant", "content": content}
-        )
+        self._conversations[workspace_id].append({"role": "assistant", "content": content})
 
         # Known URL schemes for connect_source validation
         _VALID_URL_SCHEMES = (
-            "postgresql://", "postgres://", "mysql://", "sqlite://",
-            "snowflake://", "bigquery://", "redshift+psycopg2://",
-            "duckdb://", "file://", "/", "./",
+            "postgresql://",
+            "postgres://",
+            "mysql://",
+            "sqlite://",
+            "snowflake://",
+            "bigquery://",
+            "redshift+psycopg2://",
+            "duckdb://",
+            "file://",
+            "/",
+            "./",
         )
 
         # Extract all JSON tool calls from the response (handles multiple per response)
         import re as _re
+
         tool_calls = []
-        text_parts = []
-        remaining = content
         for m in _re.finditer(r'\{[^{}]*"tool"[^{}]*\}', content):
             try:
                 tool_calls.append(json.loads(m.group()))
@@ -569,7 +678,7 @@ class SetupAgent:
                 pass
 
         # Collect non-tool text
-        text_only = _re.sub(r'\{[^{}]*"tool"[^{}]*\}', '', content).strip()
+        text_only = _re.sub(r'\{[^{}]*"tool"[^{}]*\}', "", content).strip()
         if text_only:
             yield SetupEvent(event_type="message", data={"text": text_only})
 
@@ -588,6 +697,7 @@ class SetupAgent:
                 )
                 try:
                     from sqlagent.connectors import ConnectorRegistry
+
                     conn = ConnectorRegistry.from_url(
                         source_id=f"src_{tool_json.get('type', 'unknown')}",
                         url=conn_str,
@@ -619,6 +729,7 @@ class SetupAgent:
 # DECOMPOSE AGENT — splits cross-source queries into sub-problems
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 @dataclass
 class SubProblem:
     id: str
@@ -632,7 +743,7 @@ class SubProblem:
 @dataclass
 class DecompositionPlan:
     sub_problems: list[SubProblem] = field(default_factory=list)
-    synthesis_strategy: str = "join"     # join, union, merge, sequential, aggregate
+    synthesis_strategy: str = "join"  # join, union, merge, sequential, aggregate
     join_key: str = ""
     complexity_score: float = 0.5
 
@@ -659,9 +770,9 @@ class DecomposeAgent:
             f"Decompose this question into sub-queries, one per data source.\n\n"
             f"Sources:\n{source_desc}\n\n"
             f"Question: {query}\n\n"
-            f"Return JSON: {{\"sub_problems\": [{{\"id\": \"sq_a\", \"nl_description\": \"...\", "
-            f"\"target_source\": \"...\", \"expected_columns\": [...]}}], "
-            f"\"synthesis_strategy\": \"join|union\", \"join_key\": \"...\"}}"
+            f'Return JSON: {{"sub_problems": [{{"id": "sq_a", "nl_description": "...", '
+            f'"target_source": "...", "expected_columns": [...]}}], '
+            f'"synthesis_strategy": "join|union", "join_key": "..."}}'
         )
 
         resp = await self._llm.complete(
@@ -692,6 +803,7 @@ class DecomposeAgent:
 # ═══════════════════════════════════════════════════════════════════════════════
 # SYNTHESIS AGENT — merges sub-query results via DuckDB
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 @dataclass
 class SynthesisResult:
@@ -742,7 +854,9 @@ class SynthesisAgent:
         if plan.synthesis_strategy == "join" and join_key:
             left = successful[0]["sub_query_id"]
             right = successful[1]["sub_query_id"]
-            sql = f"SELECT * FROM {left} a JOIN {right} b ON a.{join_key} = b.{join_key} LIMIT 10000"
+            sql = (
+                f"SELECT * FROM {left} a JOIN {right} b ON a.{join_key} = b.{join_key} LIMIT 10000"
+            )
         elif plan.synthesis_strategy == "union":
             tables = [sr["sub_query_id"] for sr in successful]
             sql = " UNION ALL ".join(f"SELECT * FROM {t}" for t in tables)
@@ -757,8 +871,11 @@ class SynthesisAgent:
             columns = list(result.columns)
             con.close()
             return SynthesisResult(
-                rows=rows, columns=columns, row_count=len(rows),
-                synthesis_sql=sql, succeeded=True,
+                rows=rows,
+                columns=columns,
+                row_count=len(rows),
+                synthesis_sql=sql,
+                succeeded=True,
             )
         except Exception as e:
             con.close()
@@ -768,6 +885,7 @@ class SynthesisAgent:
 # ═══════════════════════════════════════════════════════════════════════════════
 # RESPONSE GENERATOR — NL summary + follow-ups + chart config
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 class ResponseGenerator:
     """Generates human-readable response from query results."""
@@ -787,9 +905,9 @@ class ResponseGenerator:
         prompt = (
             f"Question: {nl_query}\nSQL: {sql}\n"
             f"Results ({len(rows)} rows, first 5): {json.dumps(sample, default=str)}\n\n"
-            f"Return JSON: {{\"summary\": \"2-3 sentence answer with **bold** key numbers\", "
-            f"\"follow_ups\": [\"question1\", \"question2\", \"question3\"], "
-            f"\"chart_type\": \"bar|line|pie|table|none\"}}"
+            f'Return JSON: {{"summary": "2-3 sentence answer with **bold** key numbers", '
+            f'"follow_ups": ["question1", "question2", "question3"], '
+            f'"chart_type": "bar|line|pie|table|none"}}'
         )
 
         resp = await self._llm.complete(
@@ -807,6 +925,7 @@ class ResponseGenerator:
 # OUTPUT VALIDATOR — sanity checks on query results
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class OutputValidator:
     """Validates query results before showing to user."""
 
@@ -816,30 +935,33 @@ class OutputValidator:
         checks = []
 
         # Non-empty
-        checks.append({
-            "check": "non_empty",
-            "passed": len(rows) > 0,
-            "detail": f"{len(rows)} rows returned",
-        })
+        checks.append(
+            {
+                "check": "non_empty",
+                "passed": len(rows) > 0,
+                "detail": f"{len(rows)} rows returned",
+            }
+        )
 
         # Not all nulls
         if rows:
-            all_null = all(
-                all(v is None for v in row.values())
-                for row in rows[:10]
+            all_null = all(all(v is None for v in row.values()) for row in rows[:10])
+            checks.append(
+                {
+                    "check": "not_all_nulls",
+                    "passed": not all_null,
+                    "detail": "All values are NULL" if all_null else "Contains non-null values",
+                }
             )
-            checks.append({
-                "check": "not_all_nulls",
-                "passed": not all_null,
-                "detail": "All values are NULL" if all_null else "Contains non-null values",
-            })
 
         # Reasonable row count
-        checks.append({
-            "check": "row_count_reasonable",
-            "passed": len(rows) <= 100000,
-            "detail": f"{len(rows)} rows",
-        })
+        checks.append(
+            {
+                "check": "row_count_reasonable",
+                "passed": len(rows) <= 100000,
+                "detail": f"{len(rows)} rows",
+            }
+        )
 
         passed = all(c["passed"] for c in checks)
         return {"passed": passed, "checks": checks}
@@ -848,6 +970,7 @@ class OutputValidator:
 # ═══════════════════════════════════════════════════════════════════════════════
 # LEARNING LOOP — trace-aware feedback → training
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 class LearningLoop:
     """
@@ -909,11 +1032,11 @@ class LearningLoop:
             context_parts.append(correction_note)
         if analysis["failed_stage"]:
             stage_lessons = {
-                "schema":     "schema pruning selected wrong tables/columns",
-                "retrieval":  "wrong example retrieved from memory",
-                "planning":   "incorrect query strategy chosen",
+                "schema": "schema pruning selected wrong tables/columns",
+                "retrieval": "wrong example retrieved from memory",
+                "planning": "incorrect query strategy chosen",
                 "generation": "SQL logic was incorrect",
-                "filtering":  "WHERE/HAVING conditions were wrong",
+                "filtering": "WHERE/HAVING conditions were wrong",
             }
             lesson = stage_lessons.get(analysis["failed_stage"], analysis["failed_stage"])
             if not correction_note or lesson not in correction_note:
@@ -938,12 +1061,13 @@ class LearningLoop:
         return {
             "pair_id": pair_id,
             "failed_stage": analysis["failed_stage"],
-            "schema_hint":  analysis["schema_hint"],
-            "message":      _correction_message(analysis),
+            "schema_hint": analysis["schema_hint"],
+            "message": _correction_message(analysis),
         }
 
 
 # ── Trace analysis helpers ────────────────────────────────────────────────────
+
 
 def _analyze_trace_for_failure(
     trace_events: list,
@@ -958,21 +1082,21 @@ def _analyze_trace_for_failure(
     Priority: explicit failed_node > user failure_type > trace event analysis > fallback
     """
     FAILURE_TYPE_TO_STAGE = {
-        "wrong_tables":      "schema",
-        "wrong_columns":     "schema",
-        "bad_example":       "retrieval",
-        "wrong_plan":        "planning",
-        "wrong_logic":       "generation",
-        "wrong_filter":      "filtering",
+        "wrong_tables": "schema",
+        "wrong_columns": "schema",
+        "bad_example": "retrieval",
+        "wrong_plan": "planning",
+        "wrong_logic": "generation",
+        "wrong_filter": "filtering",
         "wrong_aggregation": "generation",
     }
     NODE_TO_STAGE = {
-        "prune":    "schema",
+        "prune": "schema",
         "retrieve": "retrieval",
-        "plan":     "planning",
+        "plan": "planning",
         "generate": "generation",
-        "execute":  "execution",
-        "correct":  "correction",
+        "execute": "execution",
+        "correct": "correction",
     }
 
     failed_stage = ""
@@ -1001,6 +1125,7 @@ def _extract_schema_hint(original_sql: str, corrected_sql: str) -> str:
         return ""
     try:
         import re
+
         pattern = re.compile(r'\b(?:FROM|JOIN)\s+(["`\w]+(?:\.["`\w]+)?)', re.IGNORECASE)
         orig_tables = {t.strip('`"').lower() for t in pattern.findall(original_sql)}
         corr_tables = {t.strip('`"').lower() for t in pattern.findall(corrected_sql)}
@@ -1014,11 +1139,11 @@ def _extract_schema_hint(original_sql: str, corrected_sql: str) -> str:
 
 def _correction_message(analysis: dict) -> str:
     MESSAGES = {
-        "schema":     "Schema context updated — agent will include correct tables next time",
-        "retrieval":  "Example store updated — correction surfaced first on similar queries",
-        "planning":   "Query strategy saved — agent will plan differently for this pattern",
+        "schema": "Schema context updated — agent will include correct tables next time",
+        "retrieval": "Example store updated — correction surfaced first on similar queries",
+        "planning": "Query strategy saved — agent will plan differently for this pattern",
         "generation": "SQL pattern registered — agent will generate correct SQL next time",
-        "filtering":  "Filter logic saved — agent will apply correct conditions",
-        "":           "Correction registered — agent will improve on similar queries",
+        "filtering": "Filter logic saved — agent will apply correct conditions",
+        "": "Correction registered — agent will improve on similar queries",
     }
     return MESSAGES.get(analysis.get("failed_stage", ""), MESSAGES[""])

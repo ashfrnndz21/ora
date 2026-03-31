@@ -419,6 +419,140 @@ body {
 ::-webkit-scrollbar-thumb { background: #d0d0d0; border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: #b0b0b0; }
 
+/* ── Ora typewriter cursor ── */
+.ora-cursor {
+  display: inline-block;
+  width: 2px; height: 0.9em;
+  background: var(--blue);
+  margin-left: 1px;
+  vertical-align: text-bottom;
+  animation: oraCursor 1s ease-in-out infinite;
+  border-radius: 1px;
+}
+
+/* ── Pipeline View ── */
+.pipeline-view {
+  display: flex;
+  height: calc(100vh - 0px);
+  overflow: hidden;
+}
+.pipeline-stages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 32px 36px 60px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  background: var(--canvas);
+  background-image: radial-gradient(circle, rgba(0,0,0,.06) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+.pipeline-lineage {
+  width: 310px;
+  flex-shrink: 0;
+  background: var(--canvas-elevated);
+  border-left: 1.5px solid var(--glass-border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.pl-header {
+  padding: 16px 18px 13px;
+  border-bottom: 1.5px solid #ebebea;
+  display: flex; align-items: center; justify-content: space-between;
+  flex-shrink: 0;
+}
+.pl-title {
+  font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted);
+}
+.pl-count {
+  font-size: 11px; font-weight: 600; color: var(--text-muted);
+  background: var(--canvas-deep); border: 1.5px solid var(--glass-border); border-radius: 20px; padding: 2px 8px;
+}
+.pl-scroll {
+  flex: 1; overflow-y: auto; padding: 14px 0 32px;
+}
+.pl-scroll::-webkit-scrollbar { width: 3px; }
+.pl-scroll::-webkit-scrollbar-thumb { background: var(--glass-border); border-radius: 2px; }
+.pl-thread { position: relative; padding: 0 16px; }
+.pl-thread::before {
+  content: ''; position: absolute; top: 12px; bottom: 12px; left: 27px;
+  width: 1.5px; background: #ebebea;
+}
+.pl-turn { position: relative; padding-left: 26px; }
+.pl-turn-dot {
+  position: absolute; left: -7px; top: 12px;
+  width: 10px; height: 10px; border-radius: 50%;
+  background: var(--canvas-elevated); border: 2px solid var(--glass-border); z-index: 1;
+  transition: border-color .2s, background .2s;
+}
+.pl-turn.done   .pl-turn-dot { border-color: var(--green); background: var(--green-soft); }
+.pl-turn.active .pl-turn-dot { border-color: var(--blue); background: var(--blue-soft); animation: pulse 1.2s ease-in-out infinite; }
+.pl-turn.failed .pl-turn-dot { border-color: var(--red); background: var(--red-soft); }
+.pl-card {
+  background: var(--canvas); border: 1.5px solid #ebebea; border-radius: 9px;
+  padding: 10px 12px; cursor: pointer; margin-bottom: 9px;
+  transition: border-color .15s, background .15s;
+}
+.pl-card:hover { border-color: rgba(58,123,200,.28); background: var(--canvas-elevated); }
+.pl-turn.active .pl-card { border-color: rgba(58,123,200,.28); background: var(--canvas-elevated); }
+.pl-turn-meta { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; }
+.pl-turn-num { font-size: 9px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); }
+.pl-turn-badge { font-size: 9px; font-weight: 700; border-radius: 4px; padding: 1px 6px; }
+.pl-turn-badge.done   { color: var(--green-text); background: var(--green-soft); border: 1px solid rgba(45,157,106,.25); }
+.pl-turn-badge.active { color: var(--blue-text); background: var(--blue-soft); border: 1px solid rgba(74,144,217,.25); }
+.pl-turn-badge.failed { color: var(--red-text); background: var(--red-soft); border: 1px solid rgba(224,85,119,.25); }
+.pl-turn-time { font-size: 9px; color: var(--text-muted); margin-left: auto; }
+.pl-query { font-size: 12px; color: var(--text); line-height: 1.45; margin-bottom: 7px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.pl-mini-trace { display: flex; flex-wrap: wrap; gap: 3px; margin-bottom: 7px; }
+.pl-node { font-size: 9px; font-weight: 600; border-radius: 4px; padding: 2px 5px; color: var(--text-muted); background: var(--canvas-deep); border: 1px solid #ebebea; }
+.pl-node.done   { color: var(--green-text); background: var(--green-soft); border-color: rgba(45,157,106,.25); }
+.pl-node.active { color: var(--blue-text); background: var(--blue-soft); border-color: rgba(74,144,217,.25); animation: pulse 1s ease-in-out infinite; }
+.pl-node.skip   { opacity: .35; }
+.pl-stats { display: flex; gap: 8px; }
+.pl-stat { font-size: 10px; color: var(--text-muted); }
+.pl-stat span { font-weight: 600; color: var(--text-secondary); }
+.pl-live-step {
+  display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--blue-text); font-weight: 500;
+  padding: 5px 8px; background: var(--blue-soft); border: 1px solid rgba(74,144,217,.25); border-radius: 6px; margin-top: 5px;
+}
+.pl-spinner { width: 8px; height: 8px; border: 1.5px solid rgba(74,144,217,.3); border-top-color: var(--blue); border-radius: 50%; animation: spin .7s linear infinite; flex-shrink: 0; }
+.pl-placeholder { padding-left: 26px; position: relative; margin-bottom: 9px; }
+.pl-placeholder::before {
+  content: ''; position: absolute; left: -7px; top: 12px; width: 10px; height: 10px; border-radius: 50%;
+  background: var(--canvas-elevated); border: 2px dashed var(--glass-border); z-index: 1;
+}
+.pl-placeholder-inner { background: var(--canvas); border: 1.5px dashed var(--glass-border); border-radius: 9px; padding: 10px 12px; font-size: 11px; color: var(--text-muted); font-style: italic; }
+.pl-footer { padding: 10px 16px; border-top: 1.5px solid #ebebea; display: flex; align-items: center; justify-content: space-between; font-size: 10px; color: var(--text-muted); flex-shrink: 0; }
+.pl-footer-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--green); }
+
+/* Pipeline stage cards */
+.pipe-section { background: var(--canvas-elevated); border: 1.5px solid var(--glass-border); border-radius: 13px; overflow: hidden; margin-bottom: 0; }
+.pipe-section-hdr { padding: 15px 18px 13px; border-bottom: 1.5px solid #ebebea; display: flex; align-items: flex-start; justify-content: space-between; }
+.pipe-section-id { font-size: 10px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 3px; }
+.pipe-section-name { font-size: 15px; font-weight: 700; color: var(--text); letter-spacing: -.01em; }
+.pipe-section-sub { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
+.pipe-body { padding: 16px 18px; }
+.pipe-flow { display: flex; align-items: stretch; }
+.pipe-stage {
+  flex: 1; background: var(--canvas); border: 1.5px solid var(--glass-border); border-radius: 8px;
+  padding: 11px 12px 9px; cursor: pointer; position: relative; transition: border-color .15s, box-shadow .15s;
+}
+.pipe-stage:hover { border-color: rgba(74,144,217,.4); box-shadow: 0 0 0 3px rgba(74,144,217,.08); }
+.pipe-stage.done { border-color: rgba(45,157,106,.3); }
+.pipe-stage.done::after { content: '✓'; position: absolute; top: 7px; right: 9px; font-size: 10px; font-weight: 700; color: var(--green-text); }
+.pipe-stage-num { font-size: 9px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 4px; }
+.pipe-stage-title { font-size: 12px; font-weight: 700; color: var(--text); letter-spacing: -.01em; margin-bottom: 2px; }
+.pipe-stage-sub { font-size: 10px; color: var(--text-muted); line-height: 1.4; }
+.pipe-arrow { display: flex; align-items: center; justify-content: center; width: 22px; flex-shrink: 0; color: var(--glass-border); font-size: 11px; padding-bottom: 16px; }
+.pipe-pills { display: flex; flex-wrap: wrap; gap: 5px; padding: 10px 18px 14px; border-top: 1.5px solid #ebebea; }
+.pipe-pill { display: flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 500; color: var(--text-secondary); background: var(--canvas-deep); border: 1.5px solid var(--glass-border); border-radius: 20px; padding: 3px 10px; }
+.pipe-dot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
+.pipe-connector { display: flex; flex-direction: column; align-items: center; padding: 5px 0; }
+.pipe-conn-line { width: 1.5px; height: 16px; background: var(--glass-border); }
+.pipe-conn-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--canvas-elevated); border: 2px solid var(--glass-border); }
+.pipe-conn-label { font-size: 9px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--text-muted); background: var(--canvas); border: 1.5px solid var(--glass-border); border-radius: 20px; padding: 2px 9px; }
+
 /* ── Mobile & Tablet Responsiveness ── */
 @media (max-width: 768px) {
   :root { --sidebar-width: 0px; }
@@ -604,6 +738,321 @@ const api = {
   async del(path) { const r = await fetch(API+path, {method:'DELETE',headers:this._headers()}); return r.json(); },
   setToken(t) { this._tokensen=t; localStorage.setItem('ora_tokensen',t); },
 };
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ORA LOGO — continuously typing / cursor animation
+   ═══════════════════════════════════════════════════════════════════════════ */
+function OraLogo({ className = 'sidebar-logo-text' }) {
+  const FULL = 'Ora';
+  const [chars, setChars] = useState(FULL.length); // start fully shown
+  const [phase, setPhase] = useState('hold');       // hold | erasing | pause | typing
+
+  useEffect(() => {
+    let t;
+    if (phase === 'hold') {
+      t = setTimeout(() => setPhase('erasing'), 2600);
+    } else if (phase === 'erasing') {
+      if (chars > 0) {
+        t = setTimeout(() => setChars(c => c - 1), 90);
+      } else {
+        t = setTimeout(() => setPhase('pause'), 220);
+      }
+    } else if (phase === 'pause') {
+      t = setTimeout(() => setPhase('typing'), 280);
+    } else if (phase === 'typing') {
+      if (chars < FULL.length) {
+        t = setTimeout(() => setChars(c => c + 1), 120);
+      } else {
+        setPhase('hold');
+      }
+    }
+    return () => clearTimeout(t);
+  }, [phase, chars]);
+
+  const showCursor = phase === 'hold' || phase === 'typing' || phase === 'erasing';
+  return e('span', { className },
+    FULL.slice(0, chars),
+    showCursor && e('span', { className: 'ora-cursor', style: { animation: phase === 'hold' ? 'oraCursor 1s ease-in-out infinite' : 'none', opacity: phase === 'hold' ? undefined : 1 } })
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PIPELINE VIEW — architecture stages + live conversation lineage
+   ═══════════════════════════════════════════════════════════════════════════ */
+function PipelineView({ workspace }) {
+  const wsId = workspace?.workspace_id || '';
+  const [tasks, setTasks] = useState([]);
+  const [activeTurn, setActiveTurn] = useState(null); // { query, nodes[], step }
+  const [localTurns, setLocalTurns] = useState([]); // completed turns captured locally before API syncs
+  const pollRef = useRef(null);
+
+  // Poll task history every 4 seconds
+  useEffect(() => {
+    function refresh() {
+      api.get('/workspaces/' + wsId + '/tasks?limit=20').then(d => {
+        setTasks((d.tasks || []).reverse()); // oldest first for lineage thread
+      }).catch(() => {});
+    }
+    refresh();
+    pollRef.current = setInterval(refresh, 4000);
+    return () => clearInterval(pollRef.current);
+  }, [wsId]);
+
+  // Listen for live query events from AskView
+  useEffect(() => {
+    function onStart(ev) {
+      setActiveTurn({ query: ev.detail.query, nodes: [], step: 'Starting…', startedAt: Date.now() });
+    }
+    function onNode(ev) {
+      setActiveTurn(t => t ? { ...t, nodes: [...(t.nodes||[]), ev.detail.node], step: ev.detail.step || t.step } : t);
+    }
+    function onDone(ev) {
+      // Capture completed turn locally so lineage stays visible while API syncs
+      setActiveTurn(t => {
+        if (t) {
+          setLocalTurns(lt => [...lt, { ...t, done: true, endedAt: Date.now() }]);
+        }
+        return null;
+      });
+      // Refresh task list immediately (API record may not exist yet — local copy covers the gap)
+      setTimeout(() => {
+        api.get('/workspaces/' + wsId + '/tasks?limit=20').then(d => {
+          const apiTasks = (d.tasks || []).reverse();
+          setTasks(apiTasks);
+          // Once API has records, clear local cache (avoid duplicates)
+          if (apiTasks.length > 0) setLocalTurns([]);
+        }).catch(() => {});
+      }, 1200);
+    }
+    window.addEventListener('ora_query_started', onStart);
+    window.addEventListener('ora_trace_node', onNode);
+    window.addEventListener('ora_query_done', onDone);
+    return () => {
+      window.removeEventListener('ora_query_started', onStart);
+      window.removeEventListener('ora_trace_node', onNode);
+      window.removeEventListener('ora_query_done', onDone);
+    };
+  }, [wsId]);
+
+  // Derive mini trace nodes from a task (handles both API trace_json and local trace_events)
+  function miniNodes(task) {
+    // API path: trace_json has root.children
+    const trace = task.trace_json ? (typeof task.trace_json === 'string' ? JSON.parse(task.trace_json) : task.trace_json) : null;
+    if (trace) {
+      return (trace.root?.children || []).map(n => ({
+        label: (n.name || '').split(' ').slice(0,2).join(' ').slice(0,12),
+        status: n.status || 'completed',
+      }));
+    }
+    // Local path: trace_events is an array of {node, summary} from SSE stream
+    if (Array.isArray(task.trace_events) && task.trace_events.length) {
+      return task.trace_events.map(n => ({
+        label: (n.node || n.name || '').slice(0, 12),
+        status: 'completed',
+      }));
+    }
+    return [];
+  }
+
+  function elapsed(ms) {
+    if (!ms) return '';
+    const s = (ms / 1000).toFixed(1);
+    return s + 's';
+  }
+
+  function relTime(createdAt) {
+    if (!createdAt) return '';
+    const diff = Date.now() - new Date(createdAt).getTime();
+    const m = Math.floor(diff / 60000);
+    if (m < 1) return 'just now';
+    if (m < 60) return m + 'm ago';
+    return Math.floor(m/60) + 'h ago';
+  }
+
+  // Merge API tasks + locally-captured turns (local fills the gap before API syncs)
+  const mergedTurns = tasks.length > 0 ? tasks : localTurns.map(lt => ({
+    nl_query: lt.query, trace_events: lt.nodes, total_latency_ms: lt.endedAt - lt.startedAt,
+    succeeded: true, created_at: new Date(lt.startedAt).toISOString(), _local: true,
+  }));
+  const allTurns = [...mergedTurns.map((t, i) => ({ ...t, turnNum: i + 1, type: 'done' }))];
+  const totalTurns = allTurns.length + (activeTurn ? 1 : 0);
+
+  // Pipeline section data
+  const SECTIONS = [
+    {
+      id: '01', name: 'Schema Agent', sub: 'knowledge graph · FK topology · vector index · M-Schema',
+      badge: 'active',
+      stages: [
+        { num: 'Stage 1', title: 'DB Introspect',    sub: 'DDL · FK · cardinality' },
+        { num: 'Stage 2', title: 'Knowledge Graph',  sub: 'nodes · edges · layers' },
+        { num: 'Stage 3', title: 'FK Topology',      sub: 'Merkle · 3-pass detect' },
+        { num: 'Stage 4', title: 'Vector Index',     sub: 'M-Schema · NL→SQL' },
+      ],
+      pills: [
+        { label:'LangGraph', color:'#e85d04' }, { label:'SQLAlchemy 2.0', color:'#3b82f6' },
+        { label:'SQLGlot', color:'#22c55e' },   { label:'Qdrant', color:'#a855f7' },
+        { label:'fastembed', color:'#f59e0b' }, { label:'DuckDB', color:'#06b6d4' },
+      ],
+    },
+    {
+      id: '02', name: 'Query Pipeline', sub: 'LangGraph StateGraph · self-correcting · CHESS + ReFoRCE',
+      stages: [
+        { num: 'Stage 1', title: 'Schema Linker',   sub: 'CHESS LSH · RAG' },
+        { num: 'Stage 2', title: 'SQL Generator',   sub: '3 candidates · parallel' },
+        { num: 'Stage 3', title: 'Self-Corrector',  sub: 'ReFoRCE · 3-stage loop' },
+        { num: 'Output',  title: 'Result',          sub: 'DataFrame · NL · Chart', green: true },
+      ],
+      pills: [
+        { label:'LangGraph', color:'#e85d04' }, { label:'LangChain', color:'#3b82f6' },
+        { label:'LiteLLM', color:'#a855f7' },   { label:'OpenTelemetry', color:'#22c55e' },
+        { label:'FastAPI', color:'#f59e0b' },
+      ],
+    },
+    {
+      id: '03', name: 'Specialist Agents', sub: 'decompose · synthesize · respond · learn',
+      stages: [
+        { num: 'Agent', title: 'DecomposeAgent',    sub: 'cross-source · DAG planner' },
+        { num: 'Agent', title: 'SynthesisAgent',    sub: 'DuckDB JOIN · in-memory' },
+        { num: 'Agent', title: 'ResponseGenerator', sub: 'NL · chart · follow-ups' },
+        { num: 'Agent', title: 'LearningLoop',      sub: 'feedback → training pairs' },
+      ],
+      pills: [
+        { label:'DuckDB', color:'#06b6d4' }, { label:'LangGraph', color:'#e85d04' },
+        { label:'LiteLLM', color:'#a855f7' }, { label:'Qdrant', color:'#f59e0b' },
+      ],
+    },
+  ];
+
+  const CONNECTORS = ['Query Orchestration', 'Specialist Agents'];
+
+  return e('div', { className:'pipeline-view' },
+    /* ── LEFT: Stages ── */
+    e('div', { className:'pipeline-stages' },
+      SECTIONS.map((sec, si) =>
+        e(React.Fragment, { key: sec.id },
+          e('div', { className:'pipe-section' },
+            /* Section header */
+            e('div', { className:'pipe-section-hdr' },
+              e('div', null,
+                e('div', { className:'pipe-section-id' }, sec.id + ' · ' + sec.name.toUpperCase()),
+                e('div', { className:'pipe-section-name' }, sec.name),
+                e('div', { className:'pipe-section-sub' }, sec.sub),
+              ),
+              sec.badge && e('span', { className:'badge badge-info', style:{fontSize:10} }, sec.badge),
+            ),
+            /* Stage flow */
+            e('div', { className:'pipe-body' },
+              e('div', { className:'pipe-flow' },
+                sec.stages.map((st, i) =>
+                  e(React.Fragment, { key: i },
+                    e('div', { className:'pipe-stage done', style: st.green ? {borderColor:'rgba(45,157,106,.3)',background:'rgba(45,157,106,.05)'} : {} },
+                      e('div', { className:'pipe-stage-num' }, st.num),
+                      e('div', { className:'pipe-stage-title' }, st.title),
+                      e('div', { className:'pipe-stage-sub' }, st.sub),
+                    ),
+                    i < sec.stages.length - 1 && e('div', { className:'pipe-arrow' }, '→'),
+                  )
+                ),
+              ),
+            ),
+            /* Tech pills */
+            e('div', { className:'pipe-pills' },
+              sec.pills.map(p =>
+                e('div', { key:p.label, className:'pipe-pill' },
+                  e('div', { className:'pipe-dot', style:{background:p.color} }),
+                  p.label,
+                )
+              ),
+            ),
+          ),
+          /* Connector between sections */
+          si < SECTIONS.length - 1 && e('div', { className:'pipe-connector' },
+            e('div', { className:'pipe-conn-line' }),
+            e('div', { className:'pipe-conn-dot' }),
+            e('div', { className:'pipe-conn-label' }, CONNECTORS[si]),
+            e('div', { className:'pipe-conn-dot' }),
+            e('div', { className:'pipe-conn-line' }),
+          ),
+        )
+      ),
+    ),
+
+    /* ── RIGHT: Conversation Lineage ── */
+    e('div', { className:'pipeline-lineage' },
+      e('div', { className:'pl-header' },
+        e('span', { className:'pl-title' }, 'Conversation Lineage'),
+        e('span', { className:'pl-count' }, totalTurns + (totalTurns === 1 ? ' turn' : ' turns')),
+      ),
+      e('div', { className:'pl-scroll' },
+        e('div', { className:'pl-thread' },
+          /* Placeholder for next query */
+          !activeTurn && e('div', { className:'pl-placeholder' },
+            e('div', { className:'pl-placeholder-inner' }, 'Next query will appear here…'),
+          ),
+          /* Active streaming turn */
+          activeTurn && e('div', { className:'pl-turn active' },
+            e('div', { className:'pl-turn-dot' }),
+            e('div', { className:'pl-card' },
+              e('div', { className:'pl-turn-meta' },
+                e('span', { className:'pl-turn-num' }, 'Turn ' + (totalTurns)),
+                e('span', { className:'pl-turn-badge active' }, 'running'),
+                e('span', { className:'pl-turn-time' }, ((Date.now() - activeTurn.startedAt) / 1000).toFixed(1) + 's'),
+              ),
+              e('div', { className:'pl-query' }, '"' + activeTurn.query + '"'),
+              e('div', { className:'pl-mini-trace' },
+                activeTurn.nodes.map((n, i) =>
+                  e('span', { key:i, className:'pl-node done' }, (n.name||'').split(' ').slice(0,2).join(' ').slice(0,12))
+                ),
+              ),
+              e('div', { className:'pl-live-step' },
+                e('div', { className:'pl-spinner' }),
+                e('span', null, activeTurn.step),
+              ),
+            ),
+          ),
+          /* Completed turns, newest first */
+          [...allTurns].reverse().map((task, i) =>
+            e('div', { key:task.trace_id||i, className:'pl-turn ' + (task.succeeded ? 'done' : 'failed') },
+              e('div', { className:'pl-turn-dot' }),
+              e('div', { className:'pl-card' },
+                e('div', { className:'pl-turn-meta' },
+                  e('span', { className:'pl-turn-num' }, 'Turn ' + task.turnNum),
+                  e('span', { className:'pl-turn-badge ' + (task.succeeded ? 'done' : 'failed') }, task.succeeded ? 'done' : 'failed'),
+                  e('span', { className:'pl-turn-time' }, relTime(task.created_at)),
+                ),
+                e('div', { className:'pl-query' }, '"' + (task.nl_query || '').split('\n').pop().trim() + '"'),
+                e('div', { className:'pl-mini-trace' },
+                  miniNodes(task).map((n, j) =>
+                    e('span', { key:j, className:'pl-node done' }, n.label)
+                  ),
+                ),
+                e('div', { className:'pl-stats' },
+                  task.row_count > 0 && e('div', { className:'pl-stat' }, e('span', null, task.row_count.toLocaleString()), ' rows'),
+                  task.total_tokens > 0 && e('div', { className:'pl-stat' }, e('span', null, task.total_tokens.toLocaleString()), ' tok'),
+                  task.total_latency_ms > 0 && e('div', { className:'pl-stat' }, e('span', null, elapsed(task.total_latency_ms))),
+                ),
+              ),
+            )
+          ),
+          /* Empty state */
+          allTurns.length === 0 && !activeTurn && e('div', { style:{padding:'20px 0', textAlign:'center', color:'var(--text-muted)', fontSize:12} },
+            e('div', null, 'No queries yet.'),
+            e('div', { style:{fontSize:11, marginTop:4} }, 'Run your first query in Ask →'),
+          ),
+        ),
+      ),
+      e('div', { className:'pl-footer' },
+        e('div', { style:{display:'flex',alignItems:'center',gap:6} },
+          e('div', { className:'pl-footer-dot' }),
+          e('span', null, 'Live · updates every 4s'),
+        ),
+        totalTurns > 0 && e('span', { style:{fontSize:10,color:'var(--blue-text)',cursor:'pointer',fontWeight:600} },
+          totalTurns + ' queries'
+        ),
+      ),
+    ),
+  );
+}
 
 /* ═══════════════════════════════════════════════════════════════════════════
    CMD+K SEARCH MODAL
@@ -932,7 +1381,7 @@ function OnboardingFlow({onComplete}) {
   function Logo() {
     return e('div', {className:'sidebar-logo', style:{justifyContent:'center',marginBottom:12}},
       e('div', {className:'sidebar-logo-icon'}),
-      e('span', {className:'sidebar-logo-text'}, 'Ora'),
+      e(OraLogo),
     );
   }
 
@@ -1074,6 +1523,7 @@ function Icon({name, size=16}) {
     attach: 'M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48',
     filter: 'M22 3H2l8 9.46V19l4 2v-8.54L22 3z',
     search: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z',
+    pipeline: 'M5 12h2m0 0a2 2 0 104 0m-4 0a2 2 0 104 0m0 0h2m2 0h2m0 0a2 2 0 104 0m-4 0a2 2 0 104 0M3 6h18M3 18h18',
   };
   const d = paths[name] || paths.home;
   const isFilled = ['home'].includes(name);
@@ -1156,11 +1606,11 @@ function Sidebar({view, setView, workspace, user, onBack}) {
   }, [workspace]);
 
   const navItems = [
-    {id:'home', icon:'home', label:'Home'},
-    {id:'ask', icon:'chat', label:'Ask'},
-    {id:'data', icon:'data', label:'Data'},
-    {id:'tasks', icon:'tasks', label:'Tasks'},
-    {id:'learn', icon:'learn', label:'Learn'},
+    {id:'home',     icon:'home',     label:'Home'},
+    {id:'ask',      icon:'chat',     label:'Ask'},
+    {id:'data',     icon:'data',     label:'Data'},
+    {id:'tasks',    icon:'tasks',    label:'Tasks'},
+    {id:'learn',    icon:'learn',    label:'Learn'},
     {id:'settings', icon:'settings', label:'Settings'},
   ];
 
@@ -1187,7 +1637,7 @@ function Sidebar({view, setView, workspace, user, onBack}) {
         display:'flex',alignItems:'center',justifyContent:'center',
         fontSize:11,fontWeight:700,color:'white',letterSpacing:'-0.5px',
       }}, 'O'),
-      e('span', {className:'sidebar-logo-text'}, 'Ora'),
+      e(OraLogo),
       e('span', {style:{
         fontSize:8,fontWeight:500,color:'white',
         background:'var(--blue)',borderRadius:2,padding:'1px 4px',
@@ -1265,6 +1715,71 @@ function Sidebar({view, setView, workspace, user, onBack}) {
 /* ═══════════════════════════════════════════════════════════════════════════
    TRACE TIMELINE (the signature Beam.ai component)
    ═══════════════════════════════════════════════════════════════════════════ */
+// Maps raw node keys to human-facing labels for in-flight streaming display.
+// Uses the event's summary context when available for richer labels.
+function traceNodeLabel(evt) {
+  if (!evt) return '';
+  const key = evt.node || '';
+  const summary = (evt.summary || '').toLowerCase();
+  // Context-aware overrides first
+  if (key === 'understand') {
+    if (summary.includes('spans') || summary.includes('datasets') || summary.includes('cross')) return 'Spans multiple datasets';
+    return 'Reading your question';
+  }
+  if (key === 'prune') {
+    const cols = evt.columns_after;
+    if (cols) return `Narrowed to ${cols} relevant columns`;
+    return 'Scanning the schema';
+  }
+  if (key === 'retrieve') {
+    const n = evt.example_count;
+    if (n === 0) return 'No past examples — reasoning fresh';
+    if (n === 1) return 'Found a useful reference query';
+    if (n > 1)   return `Found ${n} helpful past queries`;
+    return 'Checking memory';
+  }
+  if (key === 'plan') {
+    if (summary.includes('join')) return 'Mapping out the joins';
+    if (summary.includes('direct') || summary.includes('simple')) return 'Straightforward — going direct';
+    return 'Thinking through the approach';
+  }
+  if (key === 'generate') {
+    return 'Writing the SQL';
+  }
+  if (key === 'execute') {
+    const rows = evt.row_count;
+    if (rows > 0) return `Got ${rows.toLocaleString()} rows back`;
+    return 'Running the query';
+  }
+  if (key === 'correct') {
+    const s = evt.stage || '';
+    if (s === 'schema_aware') return 'Re-checking against the schema';
+    if (s === 'db_confirmed') return 'Confirming against the database';
+    return 'Something was off — adjusting';
+  }
+  if (key === 'respond') {
+    if (summary.includes('context')) return 'Answering from our conversation';
+    return 'Writing up the findings';
+  }
+  if (key === 'learn') return 'Filed away for next time';
+  if (key === 'decompose') {
+    const n = evt.sub_query_count;
+    if (n) return `Split into ${n} parallel queries`;
+    return 'Breaking this down';
+  }
+  if (key === 'fan_out') {
+    const n = evt.sub_query_count;
+    if (n) return `Running ${n} queries in parallel`;
+    return 'Querying all sources at once';
+  }
+  if (key === 'synthesize') {
+    const rows = evt.row_count;
+    if (rows) return `Joined results — ${rows.toLocaleString()} rows`;
+    return 'Bringing the results together';
+  }
+  return (key || '').replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
+}
+
 function TraceTimeline({trace, collapsed}) {
   const [expanded, setExpanded] = useState(!collapsed);
   const [expandedNode, setExpandedNode] = useState(null);
@@ -1396,7 +1911,7 @@ function TraceTimeline({trace, collapsed}) {
       );
     }),
 
-    // Synthetic Learn Agent node — appears after every successful query
+    // Synthetic memory node — appears after every successful query
     expanded && trace.succeeded && e('div', {
       className:'trace-node',
       style:{animation:'fadeUp 200ms ease '+(nodes.length*50+80)+'ms both', opacity:0.85},
@@ -1404,17 +1919,338 @@ function TraceTimeline({trace, collapsed}) {
       e('div', {className:'trace-dot completed', style:{background:'rgba(192,132,252,0.2)',color:'#c084fc',border:'1px solid rgba(192,132,252,0.3)',fontSize:11}}, '✦'),
       e('div', {className:'trace-info', style:{flex:1}},
         e('div', {style:{display:'flex',alignItems:'center',gap:6}},
-          e('span', {className:'trace-name', style:{color:'#c084fc'}}, 'Learn Agent'),
-          e('span', {style:{fontSize:10,color:'var(--text-muted)',background:'var(--glass)',padding:'1px 6px',borderRadius:4}}, 'background'),
+          e('span', {className:'trace-name', style:{color:'#c084fc'}},
+            trace.learn_event?.soul_evolved
+              ? 'I\'ve updated my understanding of how you think about your data'
+              : 'Filed this away for next time'
+          ),
+          e('span', {style:{fontSize:10,color:'var(--text-muted)',background:'var(--glass)',padding:'1px 6px',borderRadius:4}}, 'in background'),
         ),
         e('div', {className:'trace-summary'},
           trace.learn_event?.soul_evolved
-            ? 'SOUL evolved — mental model updated from latest query patterns'
-            : 'Auto-saved as training pair · SOUL observation recorded',
+            ? 'Mental model refined — I\'ll use this pattern in future queries'
+            : 'This Q&A pair is now in memory — I\'ll draw on it next time you ask something similar',
         ),
       ),
       e('div', {style:{fontSize:10,color:'#c084fc',fontFamily:'var(--font-mono)',flexShrink:0}}, 'async'),
     ),
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   CONVERSATION LINEAGE — live turn tiles with expandable OTel-style traces
+   Embedded directly in HomeView. Replaces static pipeline diagram.
+   ═══════════════════════════════════════════════════════════════════════════ */
+function ConversationLineage({ workspace }) {
+  const wsId = workspace?.workspace_id || '';
+  const [tasks, setTasks] = useState([]);
+  const [activeTurn, setActiveTurn] = useState(null);
+  const [localTurns, setLocalTurns] = useState([]);
+  const [expandedId, setExpandedId] = useState(null);
+  const [traceCache, setTraceCache] = useState({}); // trace_id → detail with root.children
+  const [tick, setTick] = useState(0); // force re-render for live elapsed
+
+  // Poll task history every 4s
+  useEffect(() => {
+    function refresh() {
+      api.get('/workspaces/' + wsId + '/tasks?limit=30').then(d => {
+        setTasks((d.tasks || []).reverse());
+      }).catch(() => {});
+    }
+    refresh();
+    const t = setInterval(refresh, 4000);
+    return () => clearInterval(t);
+  }, [wsId]);
+
+  // Tick every second while a turn is active (for live elapsed display)
+  useEffect(() => {
+    if (!activeTurn) return;
+    const t = setInterval(() => setTick(x => x + 1), 1000);
+    return () => clearInterval(t);
+  }, [!!activeTurn]);
+
+  // Live SSE events from AskView
+  useEffect(() => {
+    function onStart(ev) {
+      setActiveTurn({ query: ev.detail.query, nodes: [], step: 'Starting…', startedAt: Date.now() });
+    }
+    function onNode(ev) {
+      setActiveTurn(t => t ? { ...t, nodes: [...(t.nodes || []), ev.detail.node], step: ev.detail.step || t.step } : t);
+    }
+    function onDone(ev) {
+      setActiveTurn(t => {
+        if (t) setLocalTurns(lt => [...lt, { ...t, done: true, endedAt: Date.now() }]);
+        return null;
+      });
+      setTimeout(() => {
+        api.get('/workspaces/' + wsId + '/tasks?limit=30').then(d => {
+          const apiTasks = (d.tasks || []).reverse();
+          setTasks(apiTasks);
+          if (apiTasks.length > 0) setLocalTurns([]);
+        }).catch(() => {});
+      }, 1200);
+    }
+    window.addEventListener('ora_query_started', onStart);
+    window.addEventListener('ora_trace_node', onNode);
+    window.addEventListener('ora_query_done', onDone);
+    return () => {
+      window.removeEventListener('ora_query_started', onStart);
+      window.removeEventListener('ora_trace_node', onNode);
+      window.removeEventListener('ora_query_done', onDone);
+    };
+  }, [wsId]);
+
+  function getTraceNodes(task) {
+    const tid = task.trace_id;
+    // 1. Lazy-loaded detail from the per-task API endpoint (root.children)
+    const cached = tid && traceCache[tid];
+    if (cached && cached.root) return cached.root.children || [];
+    // 2. trace_json on the task object itself (future — some endpoints include it)
+    const tj = task.trace_json
+      ? (typeof task.trace_json === 'string' ? JSON.parse(task.trace_json) : task.trace_json)
+      : null;
+    if (tj) return tj.root?.children || [];
+    // 3. Local SSE trace_events (streamed in real-time from AskView)
+    if (Array.isArray(task.trace_events))
+      return task.trace_events.map(n => ({
+        name: n.node || '', summary: n.summary || '', status: 'completed',
+        latency_ms: 0, tokens: 0, agent: '',
+        detail: { node: n.node || '' },
+      }));
+    return [];
+  }
+
+  function toggleExpand(tid, task) {
+    if (expandedId === tid) { setExpandedId(null); return; }
+    setExpandedId(tid);
+    // Lazy-load the full trace from the detail endpoint if not already cached
+    if (tid && !tid.startsWith('local_') && !traceCache[tid]) {
+      api.get('/workspaces/' + wsId + '/tasks/' + tid)
+        .then(d => setTraceCache(c => ({ ...c, [tid]: d })))
+        .catch(() => setTraceCache(c => ({ ...c, [tid]: { _error: true } })));
+    }
+  }
+
+  function relTime(ts) {
+    if (!ts) return '';
+    const diff = Date.now() - new Date(ts).getTime();
+    const m = Math.floor(diff / 60000);
+    if (m < 1) return 'just now';
+    if (m < 60) return m + 'm ago';
+    return Math.floor(m / 60) + 'h ago';
+  }
+
+  const mergedTurns = tasks.length > 0 ? tasks : localTurns.map(lt => ({
+    nl_query: lt.query, trace_events: lt.nodes,
+    total_latency_ms: lt.endedAt - lt.startedAt,
+    succeeded: true, created_at: new Date(lt.startedAt).toISOString(), _local: true,
+  }));
+  const allTurns = [...mergedTurns].reverse(); // newest first
+  const totalCount = allTurns.length + (activeTurn ? 1 : 0);
+
+  return e('div', { style: { marginBottom: 16 } },
+    // Section header
+    e('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 } },
+      e('h3', { style: { fontSize: 14, fontWeight: 600 } }, 'Conversation Lineage'),
+      totalCount > 0 && e('span', { style: {
+        fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--text-muted)',
+        background: 'var(--canvas-deep)', border: '1px solid var(--glass-border)',
+        borderRadius: 4, padding: '2px 8px',
+      }}, totalCount + ' turn' + (totalCount !== 1 ? 's' : '')),
+    ),
+
+    // ── Active streaming turn ─────────────────────────────────────────────
+    activeTurn && e('div', { className: 'card card-static', style: { padding: '10px 14px', marginBottom: 8, borderLeft: '3px solid var(--blue)' } },
+      e('div', { style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 } },
+        e('div', { style: { width: 7, height: 7, borderRadius: '50%', background: 'var(--blue)', flexShrink: 0, animation: 'pulse 1.2s ease-in-out infinite' } }),
+        e('span', { style: { fontSize: 11, fontWeight: 600, color: 'var(--blue-text)', textTransform: 'uppercase', letterSpacing: '0.06em' } }, 'Running'),
+        e('span', { style: { fontSize: 11, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' } }, '· ' + activeTurn.step),
+        e('span', { style: { fontSize: 11, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginLeft: 'auto' } },
+          ((Date.now() - activeTurn.startedAt) / 1000).toFixed(1) + 's'
+        ),
+      ),
+      e('div', { style: { fontSize: 13, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } },
+        '"' + activeTurn.query + '"'
+      ),
+      activeTurn.nodes.length > 0 && e('div', { style: { display: 'flex', gap: 4, marginTop: 6, flexWrap: 'wrap' } },
+        activeTurn.nodes.map((n, j) => e('span', { key: j, style: {
+          fontSize: 10, fontFamily: 'var(--font-mono)', background: 'var(--canvas-deep)',
+          border: '1px solid var(--glass-border)', borderRadius: 3, padding: '1px 5px', color: 'var(--text-secondary)',
+        }}, n.node || '')),
+      ),
+    ),
+
+    // ── Empty state ───────────────────────────────────────────────────────
+    allTurns.length === 0 && !activeTurn && e('div', { className: 'card card-static', style: { padding: '20px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: 13 } },
+      e('div', { style: { marginBottom: 4 } }, 'No queries yet.'),
+      e('div', { style: { fontSize: 12, color: 'var(--text-muted)' } }, 'Run your first query in Ask →'),
+    ),
+
+    // ── Completed turns — click to expand full OTel trace ─────────────────
+    allTurns.map((task, i) => {
+      const tid = task.trace_id || ('local_' + i);
+      const isExpanded = expandedId === tid;
+      const nodes = getTraceNodes(task);
+      const turnNum = allTurns.length - i;
+
+      return e('div', { key: tid, className: 'card card-static', style: { marginBottom: 8, overflow: 'hidden' } },
+        // Header row (always visible)
+        e('div', {
+          style: { padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none' },
+          onClick: () => toggleExpand(tid, task),
+        },
+          e('div', { style: { width: 6, height: 6, borderRadius: '50%', background: task.succeeded ? 'var(--green)' : 'var(--red)', flexShrink: 0 } }),
+          e('span', { style: { fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)', flexShrink: 0, minWidth: 40 } },
+            'Turn ' + turnNum
+          ),
+          e('span', { className: 'badge badge-' + (task.succeeded ? 'success' : 'error'), style: { flexShrink: 0 } },
+            task.succeeded ? 'done' : 'failed'
+          ),
+          e('span', { style: { fontSize: 13, color: 'var(--text)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginLeft: 4 } },
+            '"' + extractQuestion(task.nl_query) + '"'
+          ),
+          e('span', { style: { fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', flexShrink: 0 } },
+            relTime(task.created_at)
+          ),
+          e('span', { style: { fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', flexShrink: 0, marginLeft: 4 } },
+            '· ' + ((task.total_latency_ms || 0) / 1000).toFixed(1) + 's'
+          ),
+          e('span', { style: { fontSize: 10, color: 'var(--text-muted)', flexShrink: 0, marginLeft: 6, display: 'inline-block', transition: 'transform 0.15s', transform: isExpanded ? 'rotate(180deg)' : 'none' } }, '▼'),
+        ),
+
+        // Stage pills — collapsed only
+        !isExpanded && nodes.length > 0 && e('div', { style: { padding: '0 14px 8px', display: 'flex', gap: 4, flexWrap: 'wrap' } },
+          nodes.map((n, j) => e('span', { key: j, style: {
+            fontSize: 10, fontFamily: 'var(--font-mono)', background: 'var(--canvas-deep)',
+            border: '1px solid var(--glass-border)', borderRadius: 3, padding: '1px 5px', color: 'var(--text-secondary)',
+          }}, (n.name || n.node || '').split(' ').slice(0, 2).join(' ').slice(0, 16))),
+        ),
+
+        // Expanded pipeline lineage — stage → agent → reasoning → schema → end-to-end
+        isExpanded && (function() {
+          // Map each LangGraph node key to a pipeline stage group
+          const STAGE_GROUPS = [
+            { num: '01', label: 'Schema Agent',   keys: ['understand','prune','retrieve'] },
+            { num: '02', label: 'Query Pipeline', keys: ['plan','generate','execute','correct','decompose','fan_out','synthesize'] },
+            { num: '03', label: 'Response',       keys: ['respond','learn'] },
+          ];
+          function nodeKey(n) { return (n.detail && n.detail.node) || n.node || ''; }
+          // Bucket nodes into groups
+          const grouped = STAGE_GROUPS.map(g => ({
+            ...g,
+            items: nodes.filter(n => g.keys.includes(nodeKey(n))),
+          })).filter(g => g.items.length > 0);
+          // Anything not matched goes in a catch-all
+          const matched = new Set(nodes.filter(n => STAGE_GROUPS.some(g => g.keys.includes(nodeKey(n)))));
+          const overflow = nodes.filter(n => !matched.has(n));
+          if (overflow.length) grouped.push({ num: '—', label: 'Other', items: overflow });
+
+          // Still loading from API
+          if (nodes.length === 0 && tid && !tid.startsWith('local_') && !traceCache[tid]) {
+            return e('div', { style: { borderTop: '1px solid var(--glass-border)', padding: '14px 14px', background: 'var(--canvas-deep)', display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-muted)', fontSize: 12 } },
+              e('div', { style: { width: 14, height: 14, border: '2px solid var(--glass-border)', borderTopColor: 'var(--blue)', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 } }),
+              'Loading trace…',
+            );
+          }
+          // API returned error
+          if (traceCache[tid] && traceCache[tid]._error) {
+            return e('div', { style: { borderTop: '1px solid var(--glass-border)', padding: '14px', background: 'var(--canvas-deep)', color: 'var(--red-text)', fontSize: 12 } }, 'Could not load trace data');
+          }
+          if (nodes.length === 0) return e('div', { style: { borderTop: '1px solid var(--glass-border)', padding: '14px', background: 'var(--canvas-deep)', color: 'var(--text-muted)', fontSize: 12, fontStyle: 'italic' } },
+            task.error ? 'Failed: ' + task.error : 'No trace data available'
+          );
+
+          return e('div', { style: { borderTop: '1px solid var(--glass-border)', background: 'var(--canvas-deep)', padding: '12px 14px' } },
+            grouped.map((group, gi) => {
+              const isLastGroup = gi === grouped.length - 1;
+              return e('div', { key: group.num },
+                // Stage section box
+                e('div', { style: {
+                  border: '1px solid var(--glass-border)',
+                  borderRadius: 6,
+                  background: 'var(--canvas-elevated)',
+                  overflow: 'hidden',
+                }},
+                  // Section header
+                  e('div', { style: {
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    padding: '7px 12px',
+                    borderBottom: '1px solid var(--glass-border)',
+                    background: 'var(--canvas-deep)',
+                  }},
+                    e('span', { style: {
+                      fontSize: 9, fontWeight: 700, fontFamily: 'var(--font-mono)',
+                      color: 'var(--text-muted)', letterSpacing: '0.08em',
+                      background: 'var(--canvas-deep)', border: '1px solid var(--glass-border)',
+                      borderRadius: 3, padding: '1px 5px',
+                    }}, group.num),
+                    e('span', { style: { fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', letterSpacing: '0.04em', textTransform: 'uppercase' } }, group.label),
+                  ),
+                  // Nodes inside this stage
+                  e('div', { style: { padding: '0' } },
+                    group.items.map((n, ni) => {
+                      const isLastNode = ni === group.items.length - 1;
+                      const isFailed = n.status === 'failed';
+                      const ms = n.latency_ms || 0;
+                      const tok = n.tokens || 0;
+                      const agent = n.agent || '';
+                      const name = n.name || nodeKey(n) || '';
+                      const summary = n.summary || '';
+                      return e('div', { key: ni, style: {
+                        padding: '9px 12px',
+                        borderBottom: isLastNode ? 'none' : '1px solid var(--glass-border)',
+                        display: 'flex', alignItems: 'flex-start', gap: 10,
+                      }},
+                        // Status dot
+                        e('div', { style: {
+                          width: 7, height: 7, borderRadius: '50%', flexShrink: 0, marginTop: 4,
+                          background: isFailed ? 'var(--red)' : 'var(--green)',
+                        }}),
+                        // Main content
+                        e('div', { style: { flex: 1, minWidth: 0 } },
+                          e('div', { style: { display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' } },
+                            e('span', { style: { fontSize: 12, fontWeight: 600, color: 'var(--text)', lineHeight: 1.3 } }, name),
+                            agent && e('span', { style: {
+                              fontSize: 10, fontFamily: 'var(--font-mono)', color: 'var(--blue-text)',
+                              background: 'var(--blue-soft)', border: '1px solid rgba(74,144,217,.2)',
+                              borderRadius: 3, padding: '0 5px', lineHeight: '18px',
+                            }}, agent),
+                          ),
+                          summary && e('div', { style: { fontSize: 11, color: 'var(--text-secondary)', marginTop: 3, lineHeight: 1.5 } }, summary),
+                        ),
+                        // Timing / tokens — right side
+                        e('div', { style: { flexShrink: 0, textAlign: 'right', fontFamily: 'var(--font-mono)' } },
+                          ms > 0 && e('div', { style: { fontSize: 10, color: 'var(--text-muted)' } }, ms + 'ms'),
+                          tok > 0 && e('div', { style: { fontSize: 10, color: 'var(--text-muted)' } }, tok.toLocaleString() + ' tok'),
+                        ),
+                      );
+                    }),
+                  ),
+                ),
+                // Arrow connector between stage groups
+                !isLastGroup && e('div', { style: {
+                  display: 'flex', justifyContent: 'center', alignItems: 'center',
+                  height: 24, color: 'var(--text-muted)', fontSize: 13, letterSpacing: 1,
+                } }, '↓'),
+              );
+            }),
+            // Run-level stats footer (no SQL)
+            e('div', { style: {
+              display: 'flex', gap: 12, marginTop: 10, paddingTop: 10,
+              borderTop: '1px solid var(--glass-border)',
+              fontSize: 11, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', flexWrap: 'wrap',
+            }},
+              task.row_count > 0 && e('span', null, task.row_count.toLocaleString() + ' rows'),
+              task.total_tokens > 0 && e('span', null, task.total_tokens.toLocaleString() + ' tokens'),
+              task.total_cost_usd > 0 && e('span', null, '$' + task.total_cost_usd.toFixed(4)),
+              task.winner_generator && e('span', { style: { color: 'var(--blue-text)' } }, 'winner: ' + task.winner_generator),
+              task.correction_rounds > 0 && e('span', { style: { color: 'var(--amber-text)' } }, task.correction_rounds + ' correction' + (task.correction_rounds > 1 ? 's' : '')),
+              task.error && e('span', { style: { color: 'var(--red-text)', flex: 1 } }, task.error.slice(0, 100)),
+            ),
+          );
+        })(),
+      );
+    }),
   );
 }
 
@@ -1484,30 +2320,7 @@ function HomeView({workspace, onNavigate}) {
         )
       )
     ),
-    (workspace?.sources?.length > 0)
-      ? e('div', {className:'card card-static', style:{padding:'14px 16px',marginBottom:16}},
-          e(PipelineFlowCanvas, { workspace, onNavigate }),
-        )
-      : e('div', {className:'card card-static', style:{padding:'20px 24px',marginBottom:16,display:'flex',alignItems:'center',justifyContent:'space-between',cursor:'pointer'}, onClick:()=>onNavigate('ask')},
-          e('div', null,
-            e('div', {style:{fontSize:14,fontWeight:600,marginBottom:4}}, 'Connect your first data source'),
-            e('div', {style:{fontSize:12,color:'var(--text-secondary)'}}, 'Upload a CSV, XLSX, or Parquet file — or connect a database URL'),
-          ),
-          e('div', {style:{fontSize:20,opacity:0.4}}, '→'),
-        ),
-    // Recent tasks
-    tasks.length > 0 && e('div', null,
-      e('h3', {style:{fontSize:14,fontWeight:600,marginBottom:8}}, 'Recent Queries'),
-      tasks.map((t, i) => {
-        return e('div', {key:i, className:'card card-static', style:{padding:'10px 14px',marginBottom:8,display:'flex',justifyContent:'space-between',alignItems:'center',cursor:'pointer'}, onClick:()=>onNavigate('tasks')},
-          e('div', {style:{fontSize:13,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',minWidth:0}}, extractQuestion(t.nl_query)),
-          e('div', {style:{display:'flex',gap:8,alignItems:'center',flexShrink:0}},
-            e('span', {className:'badge badge-'+(t.succeeded?'success':'error')}, t.succeeded?'done':'failed'),
-            e('span', {style:{fontSize:11,fontFamily:'var(--font-mono)',color:'var(--text-muted)'}}, Math.round((t.total_latency_ms||0)/1000)+'s'),
-          ),
-        );
-      }),
-    ),
+    e(ConversationLineage, { workspace }),
 
     // Model Observability Panel
     (currentModel || modelStats.length > 0) && e('div', {style:{marginTop:16}},
@@ -1786,21 +2599,23 @@ function ResultBlock({data: d, addToast, setQuery, workspace}) {
   // Streaming state — show trace nodes as they arrive
   if (d._streaming) {
     const nodes = d._traceNodes || [];
+    const lastNode = nodes[nodes.length - 1];
+    const runningLabel = lastNode ? traceNodeLabel(lastNode) : 'Thinking…';
     return e('div', {style:{marginBottom:24}},
       e('div', {className:'card trace-card card-static', style:{padding:16}},
-        e('div', {style:{fontSize:13,color:'var(--text-secondary)',marginBottom:12}}, nodes.length + ' steps completed...'),
+        e('div', {style:{display:'flex',alignItems:'center',gap:8,marginBottom:14}},
+          e('div', {style:{width:12,height:12,border:'2px solid rgba(79,125,249,0.3)',borderTopColor:'var(--blue)',borderRadius:'50%',animation:'spin 0.8s linear infinite',flexShrink:0}}),
+          e('div', {style:{fontSize:13,color:'var(--text-secondary)',fontWeight:500}}, runningLabel + '…'),
+        ),
         nodes.map((node, i) =>
           e('div', {key:i, className:'trace-node', style:{animation:'fadeUp 200ms ease '+(i*30)+'ms both'}},
             e('div', {className:'trace-dot '+(node.status||'completed')}, node.status==='completed'?'✓':node.status==='failed'?'✕':'◐'),
             e('div', {className:'trace-info'},
-              e('div', {className:'trace-name'}, node.name),
+              e('div', {className:'trace-name'}, traceNodeLabel(node)),
               e('div', {className:'trace-summary'}, node.summary||''),
             ),
             e('div', {className:'trace-timing'}, (node.latency_ms||0)+'ms'),
           )
-        ),
-        e('div', {style:{textAlign:'center',padding:8}},
-          e('div', {style:{display:'inline-block',width:16,height:16,border:'2px solid var(--glass-border)',borderTopColor:'var(--blue)',borderRadius:'50%',animation:'spin 0.8s linear infinite'}}),
         ),
       ),
     );
@@ -2134,7 +2949,7 @@ function ResultBlock({data: d, addToast, setQuery, workspace}) {
           e('div', {key:i, className:'trace-node'},
             e('div', {className:'trace-dot completed'}, '✓'),
             e('div', {className:'trace-info'},
-              e('div', {className:'trace-name'}, node.name),
+              e('div', {className:'trace-name'}, traceNodeLabel(node)),
               e('div', {className:'trace-summary'}, node.summary||''),
             ),
             e('div', {className:'trace-timing'}, (node.latency_ms||0)+'ms'),
@@ -2191,6 +3006,8 @@ function AskView({workspace, addToast, messages: parentMessages, setMessages: se
     abortRef.current = new AbortController();
     setQuery(''); setLoading(true);
     setMessages(m => [...m, {role:'user', text:q}]);
+    // Broadcast to PipelineView lineage
+    window.dispatchEvent(new CustomEvent('ora_query_started', {detail:{query:q}}));
 
     // Use SSE streaming — trace nodes appear one-by-one
     try {
@@ -2235,6 +3052,8 @@ function AskView({workspace, addToast, messages: parentMessages, setMessages: se
               const data = JSON.parse(line.substring(6));
               if (eventType === 'trace.node.completed' || eventType === 'trace.node.started') {
                 traceNodes = [...traceNodes, data];
+                // Broadcast to PipelineView lineage
+                window.dispatchEvent(new CustomEvent('ora_trace_node', {detail:{node:data, step:traceNodeLabel(data)+'…'}}));
                 // Update the streaming message with latest trace nodes
                 setMessages(m => {
                   const updated = [...m];
@@ -2297,6 +3116,7 @@ function AskView({workspace, addToast, messages: parentMessages, setMessages: se
     } catch(err) {
       setMessages(m => [...m, {role:'assistant', data:{succeeded:false, error:err.message}}]);
     }
+    window.dispatchEvent(new CustomEvent('ora_query_done', {detail:{query:q}}));
     setLoading(false);
   }
 

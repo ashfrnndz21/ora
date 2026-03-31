@@ -7,14 +7,18 @@ information_schema or equivalent system tables.
 from __future__ import annotations
 
 import asyncio
-import sqlite3
 from datetime import datetime, timezone
 
 import pandas as pd
 import structlog
 
 from sqlagent.models import (
-    SchemaSnapshot, SchemaTable, SchemaColumn, ForeignKey, SampleData, ColumnStats,
+    SchemaSnapshot,
+    SchemaTable,
+    SchemaColumn,
+    ForeignKey,
+    SampleData,
+    ColumnStats,
 )
 
 logger = structlog.get_logger()
@@ -23,6 +27,7 @@ logger = structlog.get_logger()
 # ═══════════════════════════════════════════════════════════════════════════════
 # SQLITE
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 class SQLiteConnector:
     """SQLite connector — fully async via aiosqlite."""
@@ -42,13 +47,16 @@ class SQLiteConnector:
 
     async def connect(self) -> None:
         import aiosqlite
+
         self._conn = await aiosqlite.connect(self._db_path)
 
     async def _ensure_conn(self):
         if self._conn is None:
             await self.connect()
 
-    async def execute(self, sql: str, timeout_s: float = 30.0, max_rows: int = 10_000) -> pd.DataFrame:
+    async def execute(
+        self, sql: str, timeout_s: float = 30.0, max_rows: int = 10_000
+    ) -> pd.DataFrame:
         await self._ensure_conn()
         try:
             cursor = await self._conn.execute(sql)
@@ -57,6 +65,7 @@ class SQLiteConnector:
             return pd.DataFrame(rows, columns=columns)
         except Exception as e:
             from sqlagent.exceptions import SQLExecutionFailed
+
             raise SQLExecutionFailed(sql=sql, error=str(e))
 
     async def introspect(self) -> SchemaSnapshot:
@@ -75,14 +84,16 @@ class SQLiteConnector:
             cursor = await self._conn.execute(f"PRAGMA table_info('{tname}')")
             for row in await cursor.fetchall():
                 # row: (cid, name, type, notnull, dflt_value, pk)
-                columns.append(SchemaColumn(
-                    name=row[1],
-                    data_type=row[2] or "TEXT",
-                    nullable=not bool(row[3]),
-                    is_primary_key=bool(row[5]),
-                    default_value=row[4],
-                    column_position=row[0],
-                ))
+                columns.append(
+                    SchemaColumn(
+                        name=row[1],
+                        data_type=row[2] or "TEXT",
+                        nullable=not bool(row[3]),
+                        is_primary_key=bool(row[5]),
+                        default_value=row[4],
+                        column_position=row[0],
+                    )
+                )
 
             # Row count estimate
             try:
@@ -99,19 +110,27 @@ class SQLiteConnector:
                 ref_table = fk_row[2]
                 from_col = fk_row[3]
                 to_col = fk_row[4]
-                foreign_keys.append(ForeignKey(
-                    from_table=tname, from_column=from_col,
-                    to_table=ref_table, to_column=to_col,
-                ))
+                foreign_keys.append(
+                    ForeignKey(
+                        from_table=tname,
+                        from_column=from_col,
+                        to_table=ref_table,
+                        to_column=to_col,
+                    )
+                )
                 # Mark column as FK
                 for col in columns:
                     if col.name == from_col:
                         col.is_foreign_key = True
                         col.foreign_key_ref = {"table": ref_table, "column": to_col}
 
-            tables.append(SchemaTable(
-                name=tname, columns=columns, row_count_estimate=row_count,
-            ))
+            tables.append(
+                SchemaTable(
+                    name=tname,
+                    columns=columns,
+                    row_count_estimate=row_count,
+                )
+            )
 
         return SchemaSnapshot(
             source_id=self._source_id,
@@ -132,15 +151,13 @@ class SQLiteConnector:
         col_stats: dict[str, ColumnStats] = {}
         for col in columns:
             try:
-                cur2 = await self._conn.execute(
-                    f"SELECT COUNT(DISTINCT \"{col}\") FROM '{table}'"
-                )
+                cur2 = await self._conn.execute(f"SELECT COUNT(DISTINCT \"{col}\") FROM '{table}'")
                 row = await cur2.fetchone()
                 distinct = row[0] if row else 0
                 samples: list = []
                 if 0 < distinct <= 50:
                     cur3 = await self._conn.execute(
-                        f"SELECT DISTINCT \"{col}\" FROM '{table}' WHERE \"{col}\" IS NOT NULL LIMIT 30"
+                        f'SELECT DISTINCT "{col}" FROM \'{table}\' WHERE "{col}" IS NOT NULL LIMIT 30'
                     )
                     samples = [r[0] for r in await cur3.fetchall()]
                 col_stats[col] = ColumnStats(distinct_count=distinct, sample_values=samples)
@@ -164,6 +181,7 @@ class SQLiteConnector:
 # POSTGRESQL
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class PostgresConnector:
     """PostgreSQL connector — async via asyncpg."""
 
@@ -182,13 +200,16 @@ class PostgresConnector:
 
     async def connect(self) -> None:
         import asyncpg
+
         self._pool = await asyncpg.create_pool(self._conn_str, min_size=1, max_size=5)
 
     async def _ensure_pool(self):
         if self._pool is None:
             await self.connect()
 
-    async def execute(self, sql: str, timeout_s: float = 30.0, max_rows: int = 10_000) -> pd.DataFrame:
+    async def execute(
+        self, sql: str, timeout_s: float = 30.0, max_rows: int = 10_000
+    ) -> pd.DataFrame:
         await self._ensure_pool()
         async with self._pool.acquire() as conn:
             try:
@@ -200,9 +221,11 @@ class PostgresConnector:
                 return pd.DataFrame(data, columns=columns)
             except asyncio.TimeoutError:
                 from sqlagent.exceptions import ExecutionTimeout
+
                 raise ExecutionTimeout(f"Query timed out after {timeout_s}s")
             except Exception as e:
                 from sqlagent.exceptions import SQLExecutionFailed
+
                 raise SQLExecutionFailed(sql=sql, error=str(e))
 
     async def introspect(self) -> SchemaSnapshot:
@@ -221,21 +244,27 @@ class PostgresConnector:
 
             for tname in table_names:
                 # Columns
-                col_rows = await conn.fetch("""
+                col_rows = await conn.fetch(
+                    """
                     SELECT column_name, data_type, is_nullable, column_default, ordinal_position
                     FROM information_schema.columns
                     WHERE table_schema = 'public' AND table_name = $1
                     ORDER BY ordinal_position
-                """, tname)
+                """,
+                    tname,
+                )
 
                 # PKs
-                pk_rows = await conn.fetch("""
+                pk_rows = await conn.fetch(
+                    """
                     SELECT kcu.column_name
                     FROM information_schema.table_constraints tc
                     JOIN information_schema.key_column_usage kcu
                         ON tc.constraint_name = kcu.constraint_name
                     WHERE tc.table_name = $1 AND tc.constraint_type = 'PRIMARY KEY'
-                """, tname)
+                """,
+                    tname,
+                )
                 pk_cols = {r["column_name"] for r in pk_rows}
 
                 columns = [
@@ -252,13 +281,15 @@ class PostgresConnector:
 
                 # Row count
                 try:
-                    count_row = await conn.fetchrow(f"SELECT COUNT(*) AS cnt FROM \"{tname}\"")
+                    count_row = await conn.fetchrow(f'SELECT COUNT(*) AS cnt FROM "{tname}"')
                     row_count = count_row["cnt"]
                 except Exception as exc:
                     logger.debug("connector.sql.operation_failed", error=str(exc))
                     row_count = 0
 
-                tables.append(SchemaTable(name=tname, columns=columns, row_count_estimate=row_count))
+                tables.append(
+                    SchemaTable(name=tname, columns=columns, row_count_estimate=row_count)
+                )
 
             # Foreign keys
             fk_rows = await conn.fetch("""
@@ -270,14 +301,20 @@ class PostgresConnector:
                 WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_schema = 'public'
             """)
             for r in fk_rows:
-                foreign_keys.append(ForeignKey(
-                    from_table=r["table_name"], from_column=r["column_name"],
-                    to_table=r["ref_table"], to_column=r["ref_column"],
-                ))
+                foreign_keys.append(
+                    ForeignKey(
+                        from_table=r["table_name"],
+                        from_column=r["column_name"],
+                        to_table=r["ref_table"],
+                        to_column=r["ref_column"],
+                    )
+                )
 
         return SchemaSnapshot(
-            source_id=self._source_id, dialect="postgresql",
-            tables=tables, foreign_keys=foreign_keys,
+            source_id=self._source_id,
+            dialect="postgresql",
+            tables=tables,
+            foreign_keys=foreign_keys,
         )
 
     async def sample(self, table: str, n: int = 5) -> SampleData:
@@ -304,6 +341,7 @@ class PostgresConnector:
 # MYSQL
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class MySQLConnector:
     """MySQL connector — async via aiomysql."""
 
@@ -323,22 +361,27 @@ class MySQLConnector:
     async def connect(self) -> None:
         # Parse mysql://user:pass@host:port/dbname
         from urllib.parse import urlparse
+
         parsed = urlparse(self._conn_str)
         import aiomysql
+
         self._pool = await aiomysql.create_pool(
             host=parsed.hostname or "localhost",
             port=parsed.port or 3306,
             user=parsed.username or "root",
             password=parsed.password or "",
             db=parsed.path.lstrip("/"),
-            minsize=1, maxsize=5,
+            minsize=1,
+            maxsize=5,
         )
 
     async def _ensure_pool(self):
         if self._pool is None:
             await self.connect()
 
-    async def execute(self, sql: str, timeout_s: float = 30.0, max_rows: int = 10_000) -> pd.DataFrame:
+    async def execute(
+        self, sql: str, timeout_s: float = 30.0, max_rows: int = 10_000
+    ) -> pd.DataFrame:
         await self._ensure_pool()
         async with self._pool.acquire() as conn:
             async with conn.cursor() as cur:
@@ -361,18 +404,22 @@ class MySQLConnector:
                 table_info = await cur.fetchall()
 
                 for tname, row_count in table_info:
-                    await cur.execute("""
+                    await cur.execute(
+                        """
                         SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE, COLUMN_DEFAULT,
                                ORDINAL_POSITION, COLUMN_KEY
                         FROM INFORMATION_SCHEMA.COLUMNS
                         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s
                         ORDER BY ORDINAL_POSITION
-                    """, (tname,))
+                    """,
+                        (tname,),
+                    )
                     col_rows = await cur.fetchall()
 
                     columns = [
                         SchemaColumn(
-                            name=r[0], data_type=r[1].upper(),
+                            name=r[0],
+                            data_type=r[1].upper(),
                             nullable=r[2] == "YES",
                             is_primary_key=r[5] == "PRI",
                             default_value=r[3],
@@ -380,7 +427,9 @@ class MySQLConnector:
                         )
                         for r in col_rows
                     ]
-                    tables.append(SchemaTable(name=tname, columns=columns, row_count_estimate=row_count or 0))
+                    tables.append(
+                        SchemaTable(name=tname, columns=columns, row_count_estimate=row_count or 0)
+                    )
 
                 # FKs
                 await cur.execute("""
@@ -389,14 +438,20 @@ class MySQLConnector:
                     WHERE TABLE_SCHEMA = DATABASE() AND REFERENCED_TABLE_NAME IS NOT NULL
                 """)
                 for r in await cur.fetchall():
-                    foreign_keys.append(ForeignKey(
-                        from_table=r[0], from_column=r[1],
-                        to_table=r[2], to_column=r[3],
-                    ))
+                    foreign_keys.append(
+                        ForeignKey(
+                            from_table=r[0],
+                            from_column=r[1],
+                            to_table=r[2],
+                            to_column=r[3],
+                        )
+                    )
 
         return SchemaSnapshot(
-            source_id=self._source_id, dialect="mysql",
-            tables=tables, foreign_keys=foreign_keys,
+            source_id=self._source_id,
+            dialect="mysql",
+            tables=tables,
+            foreign_keys=foreign_keys,
         )
 
     async def sample(self, table: str, n: int = 5) -> SampleData:
@@ -416,6 +471,7 @@ class MySQLConnector:
 # ═══════════════════════════════════════════════════════════════════════════════
 # REDSHIFT (extends PostgreSQL — same wire protocol)
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 class RedshiftConnector(PostgresConnector):
     """Redshift connector — inherits from PostgreSQL, overrides introspection."""

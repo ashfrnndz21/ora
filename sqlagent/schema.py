@@ -9,7 +9,6 @@ M-Schema: serializes the pruned schema into the format LLMs understand best
 
 from __future__ import annotations
 
-import asyncio
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -23,6 +22,7 @@ logger = structlog.get_logger()
 # ═══════════════════════════════════════════════════════════════════════════════
 # CHESS LSH SCHEMA SELECTOR
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 class SchemaSelector:
     """CHESS LSH schema pruning — embedding-based column selection.
@@ -64,6 +64,10 @@ class SchemaSelector:
                     desc_parts.extend(col.aliases)
                 if col.semantic_type:
                     desc_parts.append(col.semantic_type)
+                if col.examples:
+                    # Including sample values dramatically improves matching for
+                    # code columns (e.g. geo: MYS VNM IDN) and date/category columns
+                    desc_parts.append(" ".join(str(v) for v in col.examples[:10]))
                 desc = " ".join(desc_parts)
                 col_entries.append((desc, f"{table.name}.{col.name}", col, table))
 
@@ -79,16 +83,19 @@ class SchemaSelector:
 
         # Cosine similarity
         import numpy as np
+
         query_vec = np.array(query_embedding)
         scores = []
         for i, col_emb in enumerate(col_embeddings):
             col_vec = np.array(col_emb)
-            sim = np.dot(query_vec, col_vec) / (np.linalg.norm(query_vec) * np.linalg.norm(col_vec) + 1e-8)
+            sim = np.dot(query_vec, col_vec) / (
+                np.linalg.norm(query_vec) * np.linalg.norm(col_vec) + 1e-8
+            )
             scores.append((float(sim), col_entries[i]))
 
         # Sort by similarity, take top-K
         scores.sort(key=lambda x: x[0], reverse=True)
-        selected = scores[:self._top_k]
+        selected = scores[: self._top_k]
 
         # Collect selected tables with only their relevant columns
         table_columns: dict[str, list[SchemaColumn]] = {}
@@ -110,14 +117,16 @@ class SchemaSelector:
         result = []
         for tname, cols in table_columns.items():
             orig = table_objects[tname]
-            result.append(SchemaTable(
-                name=orig.name,
-                schema_name=orig.schema_name,
-                columns=cols,
-                row_count_estimate=orig.row_count_estimate,
-                tags=orig.tags,
-                description=orig.description,
-            ))
+            result.append(
+                SchemaTable(
+                    name=orig.name,
+                    schema_name=orig.schema_name,
+                    columns=cols,
+                    row_count_estimate=orig.row_count_estimate,
+                    tags=orig.tags,
+                    description=orig.description,
+                )
+            )
 
         return result
 
@@ -125,6 +134,7 @@ class SchemaSelector:
 # ═══════════════════════════════════════════════════════════════════════════════
 # M-SCHEMA SERIALIZER
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 class MSchemaSerializer:
     """Serialize schema to M-Schema format for LLM prompts.
@@ -191,11 +201,13 @@ class MSchemaSerializer:
 # SEMANTIC LAYER
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 @dataclass
 class GlossaryEntry:
     """Maps a business term to a schema column."""
-    term: str                             # "revenue", "headcount"
-    column: str                           # "orders.total_amount"
+
+    term: str  # "revenue", "headcount"
+    column: str  # "orders.total_amount"
     definition: str = ""
 
 
@@ -206,6 +218,7 @@ class SemanticLayerState:
     Built from: schema analysis, dbt docs, catalog integrations,
     user corrections, SOUL observations.
     """
+
     glossary: list[GlossaryEntry] = field(default_factory=list)
     pii_columns: list[str] = field(default_factory=list)
     column_descriptions: dict[str, str] = field(default_factory=dict)  # "table.col" → description
@@ -232,7 +245,9 @@ class SemanticLayerState:
         if self.glossary:
             lines.append("Business glossary:")
             for g in self.glossary:
-                lines.append(f"  {g.term} → {g.column}" + (f" ({g.definition})" if g.definition else ""))
+                lines.append(
+                    f"  {g.term} → {g.column}" + (f" ({g.definition})" if g.definition else "")
+                )
         if self.pii_columns:
             lines.append(f"PII columns (do not select): {', '.join(self.pii_columns)}")
         return "\n".join(lines)

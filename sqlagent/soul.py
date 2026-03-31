@@ -39,9 +39,10 @@ Return JSON with these fields. Be specific and evidence-based."""
 @dataclass
 class SOULInstinct:
     """An inferred behavioral pattern with confidence."""
+
     name: str
     value: str
-    confidence: float = 0.5    # 0-1, decays over 90 days if not reinforced
+    confidence: float = 0.5  # 0-1, decays over 90 days if not reinforced
     evidence: str = ""
     last_reinforced: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -49,11 +50,14 @@ class SOULInstinct:
 @dataclass
 class SOULProfile:
     """A user's inferred mental model."""
+
     user_id: str = ""
-    accountability_unit: str = ""      # store, region, sku, customer, team
-    time_reference: str = ""           # vs_last_week, vs_budget, ytd
-    decision_horizon: str = ""         # daily_ops, weekly_review, monthly_board
-    vocabulary_map: dict[str, str] = field(default_factory=dict)  # "revenue" → "orders.total_amount"
+    accountability_unit: str = ""  # store, region, sku, customer, team
+    time_reference: str = ""  # vs_last_week, vs_budget, ytd
+    decision_horizon: str = ""  # daily_ops, weekly_review, monthly_board
+    vocabulary_map: dict[str, str] = field(
+        default_factory=dict
+    )  # "revenue" → "orders.total_amount"
     preferred_dimensions: list[str] = field(default_factory=list)
     frequent_entities: list[str] = field(default_factory=list)
     instincts: list[SOULInstinct] = field(default_factory=list)
@@ -81,13 +85,13 @@ class SOULProfile:
         """Export as human-readable markdown (user can edit to override)."""
         lines = [
             f"# SOUL Profile: {self.user_id}",
-            f"",
+            "",
             f"**Accountability unit:** {self.accountability_unit or '(not yet inferred)'}",
             f"**Time reference:** {self.time_reference or '(not yet inferred)'}",
             f"**Decision horizon:** {self.decision_horizon or '(not yet inferred)'}",
             f"**Query count:** {self.query_count}",
             f"**Version:** {self.version}",
-            f"",
+            "",
         ]
         if self.vocabulary_map:
             lines.append("## Vocabulary Map")
@@ -156,12 +160,14 @@ class UserSOUL:
         try:
             if user_id not in self._observations:
                 self._observations[user_id] = []
-            self._observations[user_id].append({
-                "query": query,
-                "tables": tables,
-                "generator": generator,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            })
+            self._observations[user_id].append(
+                {
+                    "query": query,
+                    "tables": tables,
+                    "generator": generator,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+            )
 
             profile = self.get_profile(user_id)
             profile.query_count += 1
@@ -182,10 +188,7 @@ class UserSOUL:
 
         # Build observation summary for the LLM
         recent = observations[-50:]  # Last 50 observations
-        obs_text = "\n".join(
-            f"- Query: \"{o['query']}\" → Tables: {o['tables']}"
-            for o in recent
-        )
+        obs_text = "\n".join(f'- Query: "{o["query"]}" → Tables: {o["tables"]}' for o in recent)
 
         prompt = (
             f"User has made {profile.query_count} queries.\n\n"
@@ -204,11 +207,15 @@ class UserSOUL:
             )
 
             data = json.loads(resp.content)
-            profile.accountability_unit = data.get("accountability_unit", profile.accountability_unit)
+            profile.accountability_unit = data.get(
+                "accountability_unit", profile.accountability_unit
+            )
             profile.time_reference = data.get("time_reference", profile.time_reference)
             profile.decision_horizon = data.get("decision_horizon", profile.decision_horizon)
             profile.vocabulary_map.update(data.get("vocabulary_map", {}))
-            profile.preferred_dimensions = data.get("preferred_dimensions", profile.preferred_dimensions)
+            profile.preferred_dimensions = data.get(
+                "preferred_dimensions", profile.preferred_dimensions
+            )
             profile.frequent_entities = data.get("frequent_entities", profile.frequent_entities)
             profile.last_evolved = datetime.now(timezone.utc)
             profile.version += 1

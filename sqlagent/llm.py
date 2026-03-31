@@ -6,7 +6,7 @@ Uses litellm as the universal routing layer. Supports:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import AsyncIterator, Protocol, runtime_checkable
 
 import structlog
@@ -17,6 +17,7 @@ logger = structlog.get_logger()
 # ═══════════════════════════════════════════════════════════════════════════════
 # PROTOCOL
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 @dataclass
 class LLMResponse:
@@ -30,7 +31,7 @@ class LLMResponse:
 
 @dataclass
 class Message:
-    role: str        # "system", "user", "assistant"
+    role: str  # "system", "user", "assistant"
     content: str
 
 
@@ -55,6 +56,7 @@ class LLMProvider(Protocol):
 # ═══════════════════════════════════════════════════════════════════════════════
 # LITELLM PROVIDER
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 class LiteLLMProvider:
     """Universal LLM provider via litellm.
@@ -101,7 +103,11 @@ class LiteLLMProvider:
                     last = kwargs["messages"][-1]
                     if last["role"] == "user":
                         kwargs["messages"] = kwargs["messages"][:-1] + [
-                            {"role": last["role"], "content": last["content"] + "\n\nRespond with valid JSON only. No markdown, no explanation, just the JSON object."}
+                            {
+                                "role": last["role"],
+                                "content": last["content"]
+                                + "\n\nRespond with valid JSON only. No markdown, no explanation, just the JSON object.",
+                            }
                         ]
             else:
                 kwargs["response_format"] = {"type": "json_object"}
@@ -141,6 +147,7 @@ class LiteLLMProvider:
         except Exception as e:
             logger.error("llm.call_failed", model=self.model, error=str(e))
             from sqlagent.exceptions import LLMCallFailed
+
             raise LLMCallFailed(f"LLM call failed ({self.model}): {e}") from e
 
     async def stream(
@@ -171,6 +178,7 @@ class LiteLLMProvider:
 # EMBEDDER
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 @runtime_checkable
 class Embedder(Protocol):
     async def embed(self, texts: list[str]) -> list[list[float]]: ...
@@ -193,15 +201,15 @@ class FastEmbedEmbedder:
     def _ensure_model(self):
         if self._model is None:
             from fastembed import TextEmbedding
+
             self._model = TextEmbedding(model_name=self._model_name)
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
         import asyncio
+
         self._ensure_model()
         # fastembed is sync — wrap in thread
-        embeddings = await asyncio.to_thread(
-            lambda: list(self._model.embed(texts))
-        )
+        embeddings = await asyncio.to_thread(lambda: list(self._model.embed(texts)))
         return [list(e) for e in embeddings]
 
     @property

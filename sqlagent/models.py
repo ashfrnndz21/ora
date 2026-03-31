@@ -8,17 +8,18 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from enum import Enum
+from typing import Any
 
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
-from enum import Enum
-from typing import Any
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # SCHEMA MODELS
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 @dataclass
 class SchemaColumn:
@@ -27,13 +28,13 @@ class SchemaColumn:
     nullable: bool = True
     is_primary_key: bool = False
     is_foreign_key: bool = False
-    foreign_key_ref: dict | None = None   # {"table": ..., "column": ...}
+    foreign_key_ref: dict | None = None  # {"table": ..., "column": ...}
     default_value: str | None = None
     column_position: int = 0
     description: str = ""
     examples: list[str] = field(default_factory=list)
     aliases: list[str] = field(default_factory=list)
-    semantic_type: str = ""               # identifier, currency, email, timestamp, etc.
+    semantic_type: str = ""  # identifier, currency, email, timestamp, etc.
     is_pii: bool = False
     merkle_hash: str = ""
 
@@ -62,6 +63,7 @@ class ForeignKey:
 @dataclass
 class SchemaSnapshot:
     """Point-in-time capture of a database schema."""
+
     source_id: str
     dialect: str
     tables: list[SchemaTable] = field(default_factory=list)
@@ -87,18 +89,20 @@ class SchemaSnapshot:
 @dataclass
 class ColumnStats:
     """Statistics for a single column from sampling."""
+
     distinct_count: int = 0
     null_count: int = 0
     min_value: Any = None
     max_value: Any = None
     mean_value: float | None = None
     sample_values: list[Any] = field(default_factory=list)
-    pattern: str = ""                     # regex pattern detected
+    pattern: str = ""  # regex pattern detected
 
 
 @dataclass
 class SampleData:
     """Sample rows + column stats for a table."""
+
     table: str
     sample_rows: list[dict] = field(default_factory=list)
     column_stats: dict[str, ColumnStats] = field(default_factory=dict)
@@ -107,6 +111,7 @@ class SampleData:
 # ═══════════════════════════════════════════════════════════════════════════════
 # KNOWLEDGE GRAPH
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 class EdgeType(str, Enum):
     DECLARED_FK = "declared_fk"
@@ -118,8 +123,9 @@ class EdgeType(str, Enum):
 @dataclass
 class KGNode:
     """A node in the knowledge graph (table or column)."""
-    id: str                               # "tbl:orders" or "col:orders.total_amount"
-    type: str                             # "table" | "column" | "source"
+
+    id: str  # "tbl:orders" or "col:orders.total_amount"
+    type: str  # "table" | "column" | "source"
     source_id: str = ""
     name: str = ""
     properties: dict = field(default_factory=dict)
@@ -130,13 +136,14 @@ class KGNode:
 @dataclass
 class KGEdge:
     """An edge in the knowledge graph (relationship between nodes)."""
+
     id: str
-    source: str                           # node ID
-    target: str                           # node ID
+    source: str  # node ID
+    target: str  # node ID
     type: EdgeType = EdgeType.DECLARED_FK
     join_columns: dict = field(default_factory=dict)  # {"from": ..., "to": ...}
     confidence: float = 1.0
-    cardinality: str = ""                 # "one_to_one", "one_to_many", "many_to_one", "many_to_many"
+    cardinality: str = ""  # "one_to_one", "one_to_many", "many_to_one", "many_to_many"
     evidence: str = ""
     description: str = ""
 
@@ -144,30 +151,33 @@ class KGEdge:
 @dataclass
 class KGLayer:
     """An entity group layer in the knowledge graph."""
+
     id: str
     name: str
     description: str = ""
-    tables: list[str] = field(default_factory=list)   # node IDs
+    tables: list[str] = field(default_factory=list)  # node IDs
     color: str = "#4f7df9"
 
 
 @dataclass
 class SemanticEntry:
     """A glossary term mapping business language to schema."""
+
     term: str
-    maps_to: str = ""                     # "table.column"
+    maps_to: str = ""  # "table.column"
     definition: str = ""
 
 
 @dataclass
 class KnowledgeGraph:
     """The complete knowledge graph for a workspace."""
+
     graph_id: str = ""
     workspace_id: str = ""
     version: int = 1
     built_at: datetime = field(default_factory=_utcnow)
 
-    sources: list[dict] = field(default_factory=list)      # source metadata
+    sources: list[dict] = field(default_factory=list)  # source metadata
     nodes: list[KGNode] = field(default_factory=list)
     edges: list[KGEdge] = field(default_factory=list)
     layers: list[KGLayer] = field(default_factory=list)
@@ -197,21 +207,38 @@ class KnowledgeGraph:
             "built_at": self.built_at.isoformat(),
             "sources": self.sources,
             "nodes": [
-                {"id": n.id, "type": n.type, "source_id": n.source_id,
-                 "name": n.name, "properties": n.properties}
+                {
+                    "id": n.id,
+                    "type": n.type,
+                    "source_id": n.source_id,
+                    "name": n.name,
+                    "properties": n.properties,
+                }
                 for n in self.nodes
             ],
             "edges": [
-                {"id": e.id, "source": e.source, "target": e.target,
-                 "type": e.type.value, "join_columns": e.join_columns,
-                 "confidence": e.confidence, "cardinality": e.cardinality,
-                 "evidence": e.evidence, "description": e.description}
+                {
+                    "id": e.id,
+                    "source": e.source,
+                    "target": e.target,
+                    "type": e.type.value,
+                    "join_columns": e.join_columns,
+                    "confidence": e.confidence,
+                    "cardinality": e.cardinality,
+                    "evidence": e.evidence,
+                    "description": e.description,
+                }
                 for e in self.edges
             ],
             "layers": [
-                {"id": l.id, "name": l.name, "description": l.description,
-                 "tables": l.tables, "color": l.color}
-                for l in self.layers
+                {
+                    "id": layer.id,
+                    "name": layer.name,
+                    "description": layer.description,
+                    "tables": layer.tables,
+                    "color": layer.color,
+                }
+                for layer in self.layers
             ],
             "glossary": [
                 {"term": g.term, "maps_to": g.maps_to, "definition": g.definition}
@@ -232,6 +259,7 @@ class KnowledgeGraph:
 # TRACE (EXECUTION TRACE TREE)
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class TraceStatus(str, Enum):
     PENDING = "pending"
     RUNNING = "running"
@@ -243,9 +271,10 @@ class TraceStatus(str, Enum):
 @dataclass
 class TraceNode:
     """A single node in the execution trace tree."""
+
     node_id: str
     name: str
-    agent: str = ""                       # "orchestrator", "sql_agent", "schema_agent", etc.
+    agent: str = ""  # "orchestrator", "sql_agent", "schema_agent", etc.
     status: TraceStatus = TraceStatus.PENDING
     started_at: datetime | None = None
     completed_at: datetime | None = None
@@ -253,7 +282,7 @@ class TraceNode:
     tokens: int = 0
     cost_usd: float = 0.0
     summary: str = ""
-    detail: dict = field(default_factory=dict)    # node-specific: sql, error, row_count, etc.
+    detail: dict = field(default_factory=dict)  # node-specific: sql, error, row_count, etc.
     children: list[TraceNode] = field(default_factory=list)
     parent_id: str | None = None
 
@@ -277,6 +306,7 @@ class TraceNode:
 @dataclass
 class Trace:
     """Complete execution trace for a query task."""
+
     trace_id: str
     workspace_id: str = ""
     user_id: str = ""
@@ -287,8 +317,8 @@ class Trace:
     completed_at: datetime | None = None
     total_latency_ms: int = 0
     total_tokens: int = 0
-    tokens_input: int = 0           # prompt / input tokens
-    tokens_output: int = 0          # completion / output tokens
+    tokens_input: int = 0  # prompt / input tokens
+    tokens_output: int = 0  # completion / output tokens
     total_cost_usd: float = 0.0
     succeeded: bool = False
     winner_generator: str = ""
@@ -296,7 +326,7 @@ class Trace:
     sql: str = ""
     row_count: int = 0
     error: str = ""
-    model_id: str = ""              # e.g. "claude-sonnet-4-5" — which model ran this query
+    model_id: str = ""  # e.g. "claude-sonnet-4-5" — which model ran this query
 
     def to_dict(self) -> dict:
         return {
@@ -327,6 +357,7 @@ class Trace:
 # WORKSPACE + AUTH
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class WorkspaceStatus(str, Enum):
     SETUP = "setup"
     ANALYZING = "analyzing"
@@ -341,7 +372,7 @@ class Workspace:
     owner_id: str = ""
     description: str = ""
     status: WorkspaceStatus = WorkspaceStatus.SETUP
-    sources: list[dict] = field(default_factory=list)    # DataSourceConfig as dicts
+    sources: list[dict] = field(default_factory=list)  # DataSourceConfig as dicts
     knowledge_graph_version: int = 0
     query_count: int = 0
     created_at: datetime = field(default_factory=_utcnow)
@@ -354,7 +385,7 @@ class User:
     email: str
     display_name: str = ""
     avatar_url: str = ""
-    provider: str = "email"               # "google" | "email"
+    provider: str = "email"  # "google" | "email"
     created_at: datetime = field(default_factory=_utcnow)
     last_login: datetime = field(default_factory=_utcnow)
 
@@ -363,11 +394,13 @@ class User:
 # SQL GENERATION
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 @dataclass
 class Candidate:
     """Output from a SQL generator."""
+
     candidate_id: str = ""
-    generator_id: str = ""                # "fewshot", "plan", "decompose"
+    generator_id: str = ""  # "fewshot", "plan", "decompose"
     sql: str = ""
     reasoning: str = ""
     confidence: float = 0.0
@@ -384,6 +417,7 @@ class Candidate:
 @dataclass
 class TrainingExample:
     """An NL→SQL training pair stored in the vector store."""
+
     nl_query: str
     sql: str
     ddl: str = ""
@@ -397,6 +431,7 @@ class TrainingExample:
 @dataclass
 class SearchResult:
     """A training example with similarity score from vector search."""
+
     example: TrainingExample
     similarity: float = 0.0
 
@@ -405,9 +440,11 @@ class SearchResult:
 # PIPELINE RESULT
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 @dataclass
 class PipelineResult:
     """Final result from a query execution."""
+
     query_id: str = ""
     nl_query: str = ""
     sql: str = ""
@@ -438,6 +475,7 @@ class PipelineResult:
     def dataframe(self):
         """Return results as a pandas DataFrame."""
         import pandas as pd
+
         return pd.DataFrame(self.rows, columns=self.columns) if self.rows else pd.DataFrame()
 
 
@@ -445,9 +483,11 @@ class PipelineResult:
 # EVENTS (emitted by pipeline nodes via EventBus)
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 @dataclass
 class BaseEvent:
     """Base for all pipeline events."""
+
     event_type: str = ""
     timestamp: datetime = field(default_factory=_utcnow)
     metadata: dict = field(default_factory=dict)
@@ -509,7 +549,7 @@ class CandidateSelected(BaseEvent):
     event_type: str = "candidate.selected"
     winner_generator: str = ""
     sql: str = ""
-    selection_method: str = ""            # "pairwise_llm", "majority_vote", "single"
+    selection_method: str = ""  # "pairwise_llm", "majority_vote", "single"
     reasoning: str = ""
 
 
@@ -527,7 +567,7 @@ class ExecutionResult(BaseEvent):
 class CorrectionStarted(BaseEvent):
     event_type: str = "correction.started"
     round: int = 0
-    stage: str = ""                       # "error_aware", "schema_aware", "db_confirmed"
+    stage: str = ""  # "error_aware", "schema_aware", "db_confirmed"
     original_error: str = ""
 
 
@@ -616,6 +656,7 @@ class ErrorEvent(BaseEvent):
 # SCHEMA ANALYSIS (output from SchemaAgent LLM pass)
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 @dataclass
 class InferredRelationship:
     from_table: str
@@ -639,7 +680,7 @@ class EntityGrouping:
 class ColumnSemantic:
     table: str
     column: str
-    semantic_type: str = ""               # identifier, currency, email, timestamp, enum, etc.
+    semantic_type: str = ""  # identifier, currency, email, timestamp, enum, etc.
     description: str = ""
     business_term: str = ""
     aliases: list[str] = field(default_factory=list)
@@ -651,12 +692,13 @@ class DataQualityIssue:
     table: str
     column: str
     issue: str = ""
-    severity: str = "info"                # info, warning, error
+    severity: str = "info"  # info, warning, error
 
 
 @dataclass
 class SchemaAnalysis:
     """Complete LLM analysis of a database schema."""
+
     analysis_id: str = ""
     source_id: str = ""
     analyzed_at: datetime = field(default_factory=_utcnow)

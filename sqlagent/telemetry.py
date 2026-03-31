@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import collections
 import functools
+import json as _json
 import time
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Callable
 
@@ -51,6 +53,7 @@ def setup_telemetry(config: Any) -> None:
     if config.otel_endpoint:
         try:
             from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+
             exporter = OTLPSpanExporter(endpoint=config.otel_endpoint)
             provider.add_span_processor(BatchSpanProcessor(exporter))
         except Exception as e:
@@ -76,6 +79,7 @@ def get_tracer():
     global _tracer
     if _tracer is None:
         from opentelemetry import trace as otel_trace
+
         _tracer = otel_trace.get_tracer("sqlagent", "2.0.0")
     return _tracer
 
@@ -83,6 +87,7 @@ def get_tracer():
 # ═══════════════════════════════════════════════════════════════════════════════
 # @traced_node DECORATOR
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 def traced_node(node_name: str):
     """Decorator for LangGraph node functions.
@@ -97,6 +102,7 @@ def traced_node(node_name: str):
         async def prune_node(state):
             ...
     """
+
     def decorator(fn: Callable) -> Callable:
         @functools.wraps(fn)
         async def wrapper(state, *args, **kwargs):
@@ -119,28 +125,34 @@ def traced_node(node_name: str):
                                 span.set_attribute(f"sqlagent.{k}", v)
 
                     # Buffer for /debug/traces
-                    _trace_buffer.append({
-                        "node": node_name,
-                        "latency_ms": latency_ms,
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
-                        "query_id": state.get("query_id", ""),
-                    })
+                    _trace_buffer.append(
+                        {
+                            "node": node_name,
+                            "latency_ms": latency_ms,
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                            "query_id": state.get("query_id", ""),
+                        }
+                    )
 
                     return result
 
                 except Exception as e:
                     from opentelemetry.trace import StatusCode
+
                     span.set_status(StatusCode.ERROR, str(e))
                     span.record_exception(e)
-                    _trace_buffer.append({
-                        "node": node_name,
-                        "error": str(e),
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
-                        "query_id": state.get("query_id", ""),
-                    })
+                    _trace_buffer.append(
+                        {
+                            "node": node_name,
+                            "error": str(e),
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                            "query_id": state.get("query_id", ""),
+                        }
+                    )
                     raise
 
         return wrapper
+
     return decorator
 
 
@@ -188,8 +200,12 @@ try:
     )
 
     def record_query_metrics(
-        source_id: str, succeeded: bool, generator: str,
-        latency_s: float, cost_usd: float, model: str,
+        source_id: str,
+        succeeded: bool,
+        generator: str,
+        latency_s: float,
+        cost_usd: float,
+        model: str,
         correction_stages: list[str] | None = None,
     ) -> None:
         """Record metrics for a completed query."""
@@ -200,7 +216,7 @@ try:
         ).inc()
         QUERY_LATENCY.labels(source_id=source_id).observe(latency_s)
         COST_TOTAL.labels(source_id=source_id, model=model).inc(cost_usd)
-        for stage in (correction_stages or []):
+        for stage in correction_stages or []:
             CORRECTION_TOTAL.labels(stage=stage).inc()
 
     def get_prometheus_metrics() -> bytes:
@@ -226,11 +242,13 @@ except ImportError:
 # AUDIT LOG (SQLite, immutable)
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class AuditLog:
     """Append-only SQLite audit trail for every query."""
 
     def __init__(self, db_path: str = ""):
         import os
+
         if not db_path:
             db_path = os.path.join(os.path.expanduser("~"), ".sqlagent", "audit.db")
         self._db_path = db_path
@@ -239,6 +257,7 @@ class AuditLog:
         """Create audit table if not exists."""
         import aiosqlite
         import os
+
         os.makedirs(os.path.dirname(self._db_path), exist_ok=True)
         async with aiosqlite.connect(self._db_path) as db:
             await db.execute("""
@@ -277,19 +296,32 @@ class AuditLog:
     ) -> None:
         """Write an immutable audit record."""
         import aiosqlite
+
         async with aiosqlite.connect(self._db_path) as db:
             await db.execute(
                 "INSERT OR REPLACE INTO audit VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (query_id, workspace_id, user_id, nl_query, sql,
-                 int(succeeded), row_count, cost_usd, latency_ms,
-                 corrections, generator, error,
-                 datetime.now(timezone.utc).isoformat()),
+                (
+                    query_id,
+                    workspace_id,
+                    user_id,
+                    nl_query,
+                    sql,
+                    int(succeeded),
+                    row_count,
+                    cost_usd,
+                    latency_ms,
+                    corrections,
+                    generator,
+                    error,
+                    datetime.now(timezone.utc).isoformat(),
+                ),
             )
             await db.commit()
 
     async def recent(self, limit: int = 50) -> list[dict]:
         """Get recent audit records."""
         import aiosqlite
+
         async with aiosqlite.connect(self._db_path) as db:
             db.row_factory = aiosqlite.Row
             cursor = await db.execute(
@@ -303,9 +335,6 @@ class AuditLog:
 # LESSON STORE (SQLite — persists Learn Agent correction records)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-import json as _json
-from dataclasses import dataclass, field as _field
-
 
 @dataclass
 class LessonRecord:
@@ -315,24 +344,25 @@ class LessonRecord:
     and approves the rewritten SQL.  Persisted to SQLite so it survives
     server restarts and is shown on the Learn page as the 'Correction Log'.
     """
+
     lesson_id: str
     workspace_id: str
     user_id: str
     nl_query: str
     original_sql: str
     corrected_sql: str
-    domain_insight: str     # what the agent discovered about the data domain
-    context_rule: str       # the extracted general business rule (also in data_context_notes)
-    what_changed: str       # technical one-liner explaining the SQL fix
-    rows_preview: str       # JSON-serialised list[dict] (max 5 rows)
-    columns: str            # JSON-serialised list[str]
+    domain_insight: str  # what the agent discovered about the data domain
+    context_rule: str  # the extracted general business rule (also in data_context_notes)
+    what_changed: str  # technical one-liner explaining the SQL fix
+    rows_preview: str  # JSON-serialised list[dict] (max 5 rows)
+    columns: str  # JSON-serialised list[str]
     row_count: int
-    failed_stage: str       # schema | retrieval | planning | generation | filtering
-    failed_node: str        # prune | retrieve | plan | generate | execute | correct
-    pair_id: str            # vector-store training pair ID (if saved)
+    failed_stage: str  # schema | retrieval | planning | generation | filtering
+    failed_node: str  # prune | retrieve | plan | generate | execute | correct
+    pair_id: str  # vector-store training pair ID (if saved)
     tokens_used: int
     cost_usd: float
-    created_at: str         # ISO timestamp
+    created_at: str  # ISO timestamp
 
 
 class LessonStore:
@@ -344,12 +374,15 @@ class LessonStore:
 
     def __init__(self, db_path: str = ""):
         import os
+
         if not db_path:
             db_path = os.path.join(os.path.expanduser("~"), ".sqlagent", "lessons.db")
         self._db_path = db_path
 
     async def init(self) -> None:
-        import aiosqlite, os
+        import aiosqlite
+        import os
+
         os.makedirs(os.path.dirname(self._db_path), exist_ok=True)
         async with aiosqlite.connect(self._db_path) as db:
             await db.execute("""
@@ -378,22 +411,36 @@ class LessonStore:
 
     async def save(self, record: LessonRecord) -> None:
         import aiosqlite
+
         async with aiosqlite.connect(self._db_path) as db:
             await db.execute(
                 "INSERT OR REPLACE INTO lessons VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
-                    record.lesson_id, record.workspace_id, record.user_id,
-                    record.nl_query, record.original_sql, record.corrected_sql,
-                    record.domain_insight, record.context_rule, record.what_changed,
-                    record.rows_preview, record.columns, record.row_count,
-                    record.failed_stage, record.failed_node, record.pair_id,
-                    record.tokens_used, record.cost_usd, record.created_at,
+                    record.lesson_id,
+                    record.workspace_id,
+                    record.user_id,
+                    record.nl_query,
+                    record.original_sql,
+                    record.corrected_sql,
+                    record.domain_insight,
+                    record.context_rule,
+                    record.what_changed,
+                    record.rows_preview,
+                    record.columns,
+                    record.row_count,
+                    record.failed_stage,
+                    record.failed_node,
+                    record.pair_id,
+                    record.tokens_used,
+                    record.cost_usd,
+                    record.created_at,
                 ),
             )
             await db.commit()
 
     async def list_for_workspace(self, workspace_id: str = "", limit: int = 20) -> list[dict]:
         import aiosqlite
+
         async with aiosqlite.connect(self._db_path) as db:
             db.row_factory = aiosqlite.Row
             if workspace_id:
@@ -425,12 +472,14 @@ class LessonStore:
 
     async def delete(self, lesson_id: str) -> None:
         import aiosqlite
+
         async with aiosqlite.connect(self._db_path) as db:
             await db.execute("DELETE FROM lessons WHERE lesson_id=?", (lesson_id,))
             await db.commit()
 
     async def count(self, workspace_id: str = "") -> int:
         import aiosqlite
+
         async with aiosqlite.connect(self._db_path) as db:
             if workspace_id:
                 cursor = await db.execute(
@@ -446,6 +495,7 @@ class LessonStore:
 # LANGFUSE INTEGRATION (optional)
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 def get_langfuse_handler(config: Any):
     """Return a LangChain CallbackHandler for Langfuse tracing.
 
@@ -456,6 +506,7 @@ def get_langfuse_handler(config: Any):
         return None
     try:
         from langfuse.callback import CallbackHandler
+
         return CallbackHandler(
             public_key=config.langfuse_public_key,
             secret_key=config.langfuse_secret_key,

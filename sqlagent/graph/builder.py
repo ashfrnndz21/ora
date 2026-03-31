@@ -33,6 +33,7 @@ from sqlagent.graph.nodes import (
 # CONDITIONAL EDGE FUNCTIONS
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 def route_after_understand(state: QueryState) -> str:
     """After understanding: route to simple pipeline or cross-source decomposition."""
     if state.get("is_cross_source"):
@@ -65,6 +66,7 @@ def route_after_correct(state: QueryState) -> str:
 # GRAPH COMPILATION
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 def compile_query_graph(services: Any) -> Any:
     """Compile the full query orchestration graph.
 
@@ -95,10 +97,14 @@ def compile_query_graph(services: Any) -> Any:
     graph.set_entry_point("understand")
 
     # ── Conditional: understand → simple or cross-source ──────────────────────
-    graph.add_conditional_edges("understand", route_after_understand, {
-        "prune": "prune",
-        "decompose": "decompose",
-    })
+    graph.add_conditional_edges(
+        "understand",
+        route_after_understand,
+        {
+            "prune": "prune",
+            "decompose": "decompose",
+        },
+    )
 
     # ── Simple path (linear) ──────────────────────────────────────────────────
     graph.add_edge("prune", "retrieve")
@@ -107,15 +113,23 @@ def compile_query_graph(services: Any) -> Any:
     graph.add_edge("generate", "execute")
 
     # ── After execute: success → respond, error → correct ─────────────────────
-    graph.add_conditional_edges("execute", route_after_execute, {
-        "respond": "respond",
-        "correct": "correct",
-    })
+    graph.add_conditional_edges(
+        "execute",
+        route_after_execute,
+        {
+            "respond": "respond",
+            "correct": "correct",
+        },
+    )
 
     # ── After correct: retry execution ────────────────────────────────────────
-    graph.add_conditional_edges("correct", route_after_correct, {
-        "execute": "execute",
-    })
+    graph.add_conditional_edges(
+        "correct",
+        route_after_correct,
+        {
+            "execute": "execute",
+        },
+    )
 
     # ── Cross-source path ─────────────────────────────────────────────────────
     graph.add_edge("decompose", "fan_out")

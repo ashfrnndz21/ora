@@ -15,7 +15,6 @@ natively and DuckDB / pandas handle them well already).
 from __future__ import annotations
 
 import csv
-import io
 import json
 import os
 import re
@@ -28,22 +27,26 @@ logger = structlog.get_logger()
 
 # ── Data classes ──────────────────────────────────────────────────────────────
 
+
 @dataclass
 class ColumnProfile:
     name: str
-    raw_dtype: str          # DuckDB's initial guess before profiling
-    null_pct: float         # fraction of rows that are null / empty
-    sample_values: list     # up to 10 non-null raw string values
-    found_null_strings: list = field(default_factory=list)  # actual null-encoded strings seen in this column
+    raw_dtype: str  # DuckDB's initial guess before profiling
+    null_pct: float  # fraction of rows that are null / empty
+    sample_values: list  # up to 10 non-null raw string values
+    found_null_strings: list = field(
+        default_factory=list
+    )  # actual null-encoded strings seen in this column
     looks_numeric: bool = False
     looks_date: bool = False
     looks_boolean: bool = False
-    currency_prefix: str = ""   # "$", "€", "£", "" etc.
+    currency_prefix: str = ""  # "$", "€", "£", "" etc.
 
 
 @dataclass
 class ReadConfig:
     """Stored per-file. Contains the DuckDB arguments that load this file cleanly."""
+
     source_id: str
     file_path: str
 
@@ -100,7 +103,6 @@ class ReadConfig:
 
         # Build SELECT with any CAST expressions
         if self.cast_exprs:
-            col_list = []
             # We can't know all columns at SQL-build time (before the table exists).
             # Emit a raw SELECT * wrapped in a second pass instead.
             # The CAST exprs are applied after initial load via ALTER / SELECT.
@@ -117,7 +119,7 @@ class ReadConfig:
             for col, expr in self.cast_exprs.items()
         )
         return (
-            f'CREATE TEMP VIEW raw_load AS SELECT * FROM {reader};\n'
+            f"CREATE TEMP VIEW raw_load AS SELECT * FROM {reader};\n"
             f'CREATE TABLE "{table_name}" AS SELECT *, {cast_cols} FROM raw_load'
         )
 
@@ -125,7 +127,7 @@ class ReadConfig:
 # ── Sampling helpers ──────────────────────────────────────────────────────────
 
 _MAX_SAMPLE_ROWS = 80
-_MAX_SAMPLE_BYTES = 16_000   # stay well inside a typical 8k-token context window
+_MAX_SAMPLE_BYTES = 16_000  # stay well inside a typical 8k-token context window
 
 
 def _read_raw_sample(file_path: str) -> tuple[str, list[str], int]:
@@ -146,14 +148,14 @@ def _read_raw_sample(file_path: str) -> tuple[str, list[str], int]:
                 lines.append(line)
                 if i >= _MAX_SAMPLE_ROWS:
                     break
-                if sum(len(l) for l in lines) > _MAX_SAMPLE_BYTES:
+                if sum(len(ln) for ln in lines) > _MAX_SAMPLE_BYTES:
                     break
     except Exception as exc:
         logger.warning("profiler.sample_failed", error=str(exc))
         return "", [], 0
 
     raw = "\n".join(lines)
-    return raw, headers, len(lines) - 1   # -1 for header
+    return raw, headers, len(lines) - 1  # -1 for header
 
 
 def _compute_stats(file_path: str, headers: list[str], raw: str) -> list[ColumnProfile]:
@@ -166,7 +168,7 @@ def _compute_stats(file_path: str, headers: list[str], raw: str) -> list[ColumnP
 
     # Parse rows
     rows: list[list[str]] = []
-    for line in raw.split("\n")[1:]:   # skip header
+    for line in raw.split("\n")[1:]:  # skip header
         if line.strip():
             rows.append(next(csv.reader([line], delimiter=delim), []))
 
@@ -175,10 +177,7 @@ def _compute_stats(file_path: str, headers: list[str], raw: str) -> list[ColumnP
 
     profiles: list[ColumnProfile] = []
     for col_idx, col_name in enumerate(headers):
-        values = [
-            r[col_idx].strip() if col_idx < len(r) else ""
-            for r in rows
-        ]
+        values = [r[col_idx].strip() if col_idx < len(r) else "" for r in rows]
 
         null_indicators = {"", "n/a", "na", "null", "none", "-", "--", "nan", "#n/a", "nil"}
         non_null = [v for v in values if v.lower() not in null_indicators]
@@ -189,10 +188,13 @@ def _compute_stats(file_path: str, headers: list[str], raw: str) -> list[ColumnP
         # Track which non-default null-encoding strings were actually seen in this column.
         # DuckDB already handles "", "NULL", "NA", "\N" — only flag extras.
         duckdb_defaults = {"", "null", "na", "\\n"}
-        found_null_strings = list({
-            v for v in values
-            if v.lower() in null_indicators and v.lower() not in duckdb_defaults and v != ""
-        })
+        found_null_strings = list(
+            {
+                v
+                for v in values
+                if v.lower() in null_indicators and v.lower() not in duckdb_defaults and v != ""
+            }
+        )
 
         # Heuristics
         looks_numeric = False
@@ -200,27 +202,26 @@ def _compute_stats(file_path: str, headers: list[str], raw: str) -> list[ColumnP
         if non_null:
             cleaned = []
             for v in non_null[:20]:
-                m = re.match(r'^([€$£¥₹])\s*', v)
+                m = re.match(r"^([€$£¥₹])\s*", v)
                 if m:
                     currency_prefix = m.group(1)
-                    v = v[m.end():]
-                cleaned.append(re.sub(r'[,_\s]', '', v))
-            numeric_count = sum(1 for v in cleaned if re.match(r'^-?\d+(\.\d+)?([eE][+-]?\d+)?$', v))
+                    v = v[m.end() :]
+                cleaned.append(re.sub(r"[,_\s]", "", v))
+            numeric_count = sum(
+                1 for v in cleaned if re.match(r"^-?\d+(\.\d+)?([eE][+-]?\d+)?$", v)
+            )
             looks_numeric = numeric_count / max(len(cleaned), 1) >= 0.80
 
         looks_date = False
         if non_null and not looks_numeric:
             date_patterns = [
-                r'^\d{4}-\d{2}-\d{2}',           # ISO
-                r'^\d{1,2}/\d{1,2}/\d{2,4}',     # US/EU
-                r'^\d{1,2}-\d{1,2}-\d{2,4}',
-                r'^\d{4}/\d{2}/\d{2}',
-                r'^\w{3}\s+\d{1,2},?\s+\d{4}',   # Jan 1, 2024
+                r"^\d{4}-\d{2}-\d{2}",  # ISO
+                r"^\d{1,2}/\d{1,2}/\d{2,4}",  # US/EU
+                r"^\d{1,2}-\d{1,2}-\d{2,4}",
+                r"^\d{4}/\d{2}/\d{2}",
+                r"^\w{3}\s+\d{1,2},?\s+\d{4}",  # Jan 1, 2024
             ]
-            date_count = sum(
-                1 for v in non_null[:20]
-                if any(re.match(p, v) for p in date_patterns)
-            )
+            date_count = sum(1 for v in non_null[:20] if any(re.match(p, v) for p in date_patterns))
             looks_date = date_count / max(len(non_null[:20]), 1) >= 0.70
 
         looks_boolean = False
@@ -229,17 +230,19 @@ def _compute_stats(file_path: str, headers: list[str], raw: str) -> list[ColumnP
             bool_count = sum(1 for v in non_null[:20] if v.lower() in bool_vals)
             looks_boolean = bool_count / max(len(non_null[:20]), 1) >= 0.90
 
-        profiles.append(ColumnProfile(
-            name=col_name,
-            raw_dtype="VARCHAR",
-            null_pct=round(null_pct, 3),
-            sample_values=sample_values,
-            found_null_strings=found_null_strings,
-            looks_numeric=looks_numeric,
-            looks_date=looks_date,
-            looks_boolean=looks_boolean,
-            currency_prefix=currency_prefix,
-        ))
+        profiles.append(
+            ColumnProfile(
+                name=col_name,
+                raw_dtype="VARCHAR",
+                null_pct=round(null_pct, 3),
+                sample_values=sample_values,
+                found_null_strings=found_null_strings,
+                looks_numeric=looks_numeric,
+                looks_date=looks_date,
+                looks_boolean=looks_boolean,
+                currency_prefix=currency_prefix,
+            )
+        )
 
     return profiles
 
@@ -320,7 +323,7 @@ def _parse_llm_response(raw: str, source_id: str, file_path: str, n_rows: int) -
         obj = json.loads(text)
     except json.JSONDecodeError:
         # Try extracting the first {...} block
-        m = re.search(r'\{.*\}', text, re.DOTALL)
+        m = re.search(r"\{.*\}", text, re.DOTALL)
         if m:
             try:
                 obj = json.loads(m.group())
@@ -342,10 +345,11 @@ def _parse_llm_response(raw: str, source_id: str, file_path: str, n_rows: int) -
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
+
 async def profile_file(
     file_path: str,
     source_id: str,
-    llm=None,          # LLMProvider — optional; if None, returns a sensible default config
+    llm=None,  # LLMProvider — optional; if None, returns a sensible default config
     model: str = "",
 ) -> ReadConfig:
     """Profile a CSV/TSV file and return a ReadConfig with optimal DuckDB load args.
@@ -428,7 +432,7 @@ def _heuristic_config(
     # Build CAST expressions for currency columns
     for p in profiles:
         if p.currency_prefix and p.looks_numeric:
-            safe_col = re.sub(r'[^a-z0-9_]', '_', p.name.lower()).strip('_')
+            safe_col = re.sub(r"[^a-z0-9_]", "_", p.name.lower()).strip("_")
             cast_exprs[safe_col] = (
                 f"CAST(REPLACE(REPLACE({safe_col}, '{p.currency_prefix}', ''), ',', '') AS DOUBLE)"
             )

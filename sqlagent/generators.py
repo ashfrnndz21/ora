@@ -27,6 +27,7 @@ logger = structlog.get_logger()
 # GENERATOR PROTOCOL
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 @runtime_checkable
 class Generator(Protocol):
     @property
@@ -44,6 +45,7 @@ class Generator(Protocol):
 # ═══════════════════════════════════════════════════════════════════════════════
 # FEWSHOT GENERATOR (primary — highest accuracy on BIRD benchmark)
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 class FewshotGenerator:
     """RAG few-shot generator — retrieves similar examples and uses them as context.
@@ -70,11 +72,13 @@ class FewshotGenerator:
 
         # Build M-Schema context
         from sqlagent.models import SchemaTable, SchemaColumn
+
         tables = []
         for t in schema.get("tables", []):
             cols = [
                 SchemaColumn(
-                    name=c["name"], data_type=c.get("data_type", ""),
+                    name=c["name"],
+                    data_type=c.get("data_type", ""),
                     is_primary_key=c.get("is_pk", False),
                     is_foreign_key=c.get("is_fk", False),
                     description=c.get("description", ""),
@@ -88,7 +92,7 @@ class FewshotGenerator:
 
         # Build few-shot examples
         example_text = ""
-        for ex in (examples or []):
+        for ex in examples or []:
             example_text += f"\nQuestion: {ex.get('nl', '')}\nSQL: {ex.get('sql', '')}\n"
 
         # Build workspace-specific learned context (from user corrections)
@@ -151,6 +155,7 @@ class FewshotGenerator:
 # ═══════════════════════════════════════════════════════════════════════════════
 # PLAN GENERATOR (CoT planning → SQL)
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 class PlanGenerator:
     """Chain-of-thought planning generator — plans first, then writes SQL."""
@@ -230,6 +235,7 @@ class PlanGenerator:
 # DECOMPOSE GENERATOR (CTE decomposition)
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class DecomposeGenerator:
     """CTE decomposition generator — breaks complex queries into CTEs."""
 
@@ -305,6 +311,7 @@ class DecomposeGenerator:
 # ENSEMBLE (parallel execution + pairwise selection)
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class GeneratorEnsemble:
     """Runs all generators in parallel, selects best candidate.
 
@@ -330,8 +337,10 @@ class GeneratorEnsemble:
         async def _run(gen: Generator) -> dict:
             try:
                 candidate = await gen.generate(
-                    nl_query=nl_query, schema=pruned_schema,
-                    examples=examples, plan=plan,
+                    nl_query=nl_query,
+                    schema=pruned_schema,
+                    examples=examples,
+                    plan=plan,
                     context_notes=context_notes,
                 )
                 return {
@@ -393,6 +402,7 @@ class GeneratorEnsemble:
 # ═══════════════════════════════════════════════════════════════════════════════
 # HELPERS
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 def _extract_sql(text: str) -> str:
     """Extract SQL from LLM response, handling markdown code blocks."""

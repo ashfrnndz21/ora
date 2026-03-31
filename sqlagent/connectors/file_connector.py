@@ -6,7 +6,6 @@ Files are ingested into DuckDB in-process for SQL querying.
 from __future__ import annotations
 
 import os
-from datetime import datetime, timezone
 
 import duckdb
 import pandas as pd
@@ -40,7 +39,9 @@ class DuckDBConnector:
         if self._conn is None:
             self._conn = duckdb.connect(self._db_path)
 
-    async def execute(self, sql: str, timeout_s: float = 30.0, max_rows: int = 10_000) -> pd.DataFrame:
+    async def execute(
+        self, sql: str, timeout_s: float = 30.0, max_rows: int = 10_000
+    ) -> pd.DataFrame:
         self._ensure_conn()
         try:
             result = self._conn.execute(sql)
@@ -48,6 +49,7 @@ class DuckDBConnector:
             return df.head(max_rows)
         except Exception as e:
             from sqlagent.exceptions import SQLExecutionFailed
+
             raise SQLExecutionFailed(sql=sql, error=str(e))
 
     async def introspect(self) -> SchemaSnapshot:
@@ -58,20 +60,41 @@ class DuckDBConnector:
         table_names = [row[0] for row in result.fetchall()]
 
         for tname in table_names:
-            col_result = self._conn.execute(f"DESCRIBE \"{tname}\"")
+            col_result = self._conn.execute(f'DESCRIBE "{tname}"')
             col_rows = col_result.fetchall()
+
+            # Sample distinct values for low-cardinality columns — used by LSH pruner
+            # to improve embedding similarity (e.g. geo column shows ['MYS','VNM',...])
+            col_examples: dict[str, list[str]] = {}
+            for r in col_rows:
+                cname = r[0]
+                try:
+                    dist_row = self._conn.execute(
+                        f'SELECT COUNT(DISTINCT "{cname}") FROM "{tname}"'
+                    ).fetchone()
+                    distinct = int(dist_row[0]) if dist_row else 0
+                    if 0 < distinct <= 50:
+                        vals = self._conn.execute(
+                            f'SELECT DISTINCT CAST("{cname}" AS VARCHAR) FROM "{tname}" '
+                            f'WHERE "{cname}" IS NOT NULL LIMIT 20'
+                        ).fetchall()
+                        col_examples[cname] = [str(v[0]) for v in vals if v[0] is not None]
+                except Exception:
+                    pass
+
             columns = [
                 SchemaColumn(
                     name=r[0],
                     data_type=r[1],
                     nullable=r[2] == "YES" if len(r) > 2 else True,
                     column_position=i,
+                    examples=col_examples.get(r[0], []),
                 )
                 for i, r in enumerate(col_rows)
             ]
 
             try:
-                count = self._conn.execute(f"SELECT COUNT(*) FROM \"{tname}\"").fetchone()[0]
+                count = self._conn.execute(f'SELECT COUNT(*) FROM "{tname}"').fetchone()[0]
             except Exception as exc:
                 logger.debug("connector.file.operation_failed", error=str(exc))
                 count = 0
@@ -79,7 +102,9 @@ class DuckDBConnector:
             tables.append(SchemaTable(name=tname, columns=columns, row_count_estimate=count))
 
         return SchemaSnapshot(
-            source_id=self._source_id, dialect="duckdb", tables=tables,
+            source_id=self._source_id,
+            dialect="duckdb",
+            tables=tables,
         )
 
     async def sample(self, table: str, n: int = 5) -> SampleData:
@@ -90,9 +115,7 @@ class DuckDBConnector:
         col_stats: dict[str, ColumnStats] = {}
         for col in df.columns:
             try:
-                dist_df = await self.execute(
-                    f'SELECT COUNT(DISTINCT "{col}") AS n FROM "{table}"'
-                )
+                dist_df = await self.execute(f'SELECT COUNT(DISTINCT "{col}") AS n FROM "{table}"')
                 distinct = int(dist_df.iloc[0, 0]) if not dist_df.empty else 0
                 samples: list = []
                 if 0 < distinct <= 50:
@@ -145,13 +168,13 @@ class FileConnector(DuckDBConnector):
 
     def _safe_table_name(self) -> str:
         import re
+
         base = os.path.basename(self._file_path)
-        name = re.sub(r'[^a-z0-9_]', '_', os.path.splitext(base)[0].lower()).strip('_')
-        return re.sub(r'_+', '_', name)
+        name = re.sub(r"[^a-z0-9_]", "_", os.path.splitext(base)[0].lower()).strip("_")
+        return re.sub(r"_+", "_", name)
 
     async def _ingest_file(self) -> None:
         self._ensure_conn()
-        import re
         ext = os.path.splitext(self._file_path)[1].lower()
         self._table_name = self._safe_table_name()
 
@@ -177,7 +200,7 @@ class FileConnector(DuckDBConnector):
                 delim_arg = "delim='\\t', " if ext == ".tsv" else ""
                 escaped = self._file_path.replace("'", "''")
                 self._conn.execute(
-                    f"CREATE TABLE \"{self._table_name}\" AS SELECT * FROM "
+                    f'CREATE TABLE "{self._table_name}" AS SELECT * FROM '
                     f"read_csv_auto('{escaped}', {delim_arg}"
                     f"normalize_names=true, null_padding=true, ignore_errors=true)"
                 )
@@ -187,19 +210,19 @@ class FileConnector(DuckDBConnector):
             try:
                 # Try reading all sheets
                 xls = pd.ExcelFile(self._file_path, engine=engine)
+
                 def _sanitize_name(name):
                     """Make a string safe for SQL table names."""
                     import re
-                    return re.sub(r'[^a-z0-9_]', '_', name.lower()).strip('_')
+
+                    return re.sub(r"[^a-z0-9_]", "_", name.lower()).strip("_")
 
                 if len(xls.sheet_names) == 1:
                     df = pd.read_excel(xls, sheet_name=0)
                     safe = _sanitize_name(self._table_name)
                     self._table_name = safe
                     self._conn.register(safe, df)
-                    self._conn.execute(
-                        f'CREATE TABLE "{safe}" AS SELECT * FROM "{safe}"'
-                    )
+                    self._conn.execute(f'CREATE TABLE "{safe}" AS SELECT * FROM "{safe}"')
                 else:
                     # Multiple sheets → one table per sheet
                     for sheet in xls.sheet_names:
@@ -208,9 +231,7 @@ class FileConnector(DuckDBConnector):
                         if df.empty:
                             continue
                         self._conn.register(safe, df)
-                        self._conn.execute(
-                            f'CREATE TABLE "{safe}" AS SELECT * FROM "{safe}"'
-                        )
+                        self._conn.execute(f'CREATE TABLE "{safe}" AS SELECT * FROM "{safe}"')
             except Exception as e:
                 raise ValueError(f"Failed to read Excel file: {e}")
         elif ext == ".parquet":
@@ -220,13 +241,14 @@ class FileConnector(DuckDBConnector):
         elif ext == ".json":
             escaped = self._file_path.replace("'", "''")
             self._conn.execute(
-                f"CREATE TABLE \"{self._table_name}\" AS SELECT * FROM "
+                f'CREATE TABLE "{self._table_name}" AS SELECT * FROM '
                 f"read_json_auto('{escaped}', ignore_errors=true)"
             )
         elif ext in (".pptx", ".ppt"):
             # Extract text/tables from PowerPoint slides into a table
             try:
                 from pptx import Presentation
+
                 prs = Presentation(self._file_path)
                 rows = []
                 for slide_num, slide in enumerate(prs.slides, 1):
@@ -243,17 +265,21 @@ class FileConnector(DuckDBConnector):
                         elif shape.has_text_frame:
                             text = shape.text_frame.text.strip()
                             if text:
-                                rows.append({"slide": slide_num, "content": text, "shape_type": "text"})
+                                rows.append(
+                                    {"slide": slide_num, "content": text, "shape_type": "text"}
+                                )
                 if rows:
                     df = pd.DataFrame(rows)
                     self._conn.register(self._table_name, df)
                     self._conn.execute(
-                        f"CREATE TABLE \"{self._table_name}\" AS SELECT * FROM {self._table_name}"
+                        f'CREATE TABLE "{self._table_name}" AS SELECT * FROM {self._table_name}'
                     )
                 else:
                     raise ValueError("No extractable content found in PowerPoint file")
             except ImportError:
-                raise ValueError("python-pptx required for PowerPoint files: pip install python-pptx")
+                raise ValueError(
+                    "python-pptx required for PowerPoint files: pip install python-pptx"
+                )
         else:
             raise ValueError(f"Unsupported file format: {ext}")
 

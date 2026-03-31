@@ -21,8 +21,7 @@ from typing import Any
 import structlog
 
 from sqlagent.config import AgentConfig
-from sqlagent.models import PipelineResult, Trace
-from sqlagent.exceptions import ConfigurationError
+from sqlagent.models import PipelineResult
 
 logger = structlog.get_logger()
 
@@ -31,13 +30,15 @@ logger = structlog.get_logger()
 # PIPELINE SERVICES (dependency injection container)
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 @dataclass
 class PipelineServices:
     """All services needed by graph nodes. Injected at compile time."""
+
     config: AgentConfig = field(default_factory=AgentConfig)
     llm: Any = None
     embedder: Any = None
-    connectors: dict = field(default_factory=dict)        # source_id → Connector
+    connectors: dict = field(default_factory=dict)  # source_id → Connector
     schema_selector: Any = None
     example_store: Any = None
     ensemble: Any = None
@@ -46,12 +47,13 @@ class PipelineServices:
     soul: Any = None
     trace_store: Any = None
     audit_log: Any = None
-    lesson_store: Any = None   # LessonStore — persists Learn Agent correction records
+    lesson_store: Any = None  # LessonStore — persists Learn Agent correction records
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # SQL AGENT
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 class SQLAgent:
     """The main sqlagent class. Compiles a LangGraph and runs queries through it.
@@ -67,18 +69,16 @@ class SQLAgent:
     ):
         self._config = config or AgentConfig()
         if llm_model:
-            self._config = AgentConfig(
-                **{**self._config.__dict__, "llm_model": llm_model}
-            )
+            self._config = AgentConfig(**{**self._config.__dict__, "llm_model": llm_model})
         self._db_url = db
         self._services: PipelineServices | None = None
         self._graph = None
         self._ready = False
         # Learn Agent state
-        self._learn_activity: list[dict] = []   # recent auto-learn events (capped at 50)
+        self._learn_activity: list[dict] = []  # recent auto-learn events (capped at 50)
         self._auto_learns_total: int = 0
         self._soul_evolutions: int = 0
-        self._auto_learn: bool = True           # can be overridden by server settings
+        self._auto_learn: bool = True  # can be overridden by server settings
         # Workspace semantic context — lessons learned from user corrections.
         # Injected into EVERY SQL generation prompt so the LLM never repeats the same mistake.
         self._data_context_notes: list[str] = []
@@ -94,6 +94,7 @@ class SQLAgent:
 
         # LLM
         from sqlagent.llm import LiteLLMProvider
+
         services.llm = LiteLLMProvider(
             model=self._config.llm_model,
             temperature=self._config.temperature,
@@ -102,11 +103,13 @@ class SQLAgent:
 
         # Embedder
         from sqlagent.llm import FastEmbedEmbedder
+
         services.embedder = FastEmbedEmbedder(model=self._config.embedding_model)
 
         # Connector
         if self._db_url:
             from sqlagent.connectors import ConnectorRegistry
+
             source_id = f"src_{uuid.uuid4().hex[:8]}"
             conn = ConnectorRegistry.from_url(source_id, self._db_url)
             await conn.connect()
@@ -114,6 +117,7 @@ class SQLAgent:
 
         # Schema selector
         from sqlagent.schema import SchemaSelector
+
         services.schema_selector = SchemaSelector(
             embedder=services.embedder,
             top_k=self._config.schema_pruning_top_k,
@@ -121,12 +125,19 @@ class SQLAgent:
 
         # Vector store + example store
         from sqlagent.retrieval import QdrantVectorStore, ExampleStore
+
         vector_store = QdrantVectorStore()
         await vector_store.ensure_collection(dimensions=self._config.embedding_dimensions)
         services.example_store = ExampleStore(vector_store=vector_store, embedder=services.embedder)
 
         # Generators + ensemble
-        from sqlagent.generators import FewshotGenerator, PlanGenerator, DecomposeGenerator, GeneratorEnsemble
+        from sqlagent.generators import (
+            FewshotGenerator,
+            PlanGenerator,
+            DecomposeGenerator,
+            GeneratorEnsemble,
+        )
+
         generators = []
         for gen_name in self._config.generators:
             if gen_name == "fewshot":
@@ -139,10 +150,12 @@ class SQLAgent:
 
         # Policy
         from sqlagent.runtime import PolicyGateway
+
         services.policy = PolicyGateway(config=self._config)
 
         # Memory
         from sqlagent.runtime import MemoryManager, WorkingMemory, EpisodicMemory
+
         services.memory_manager = MemoryManager(
             working=WorkingMemory(),
             episodic=EpisodicMemory(),
@@ -150,19 +163,23 @@ class SQLAgent:
 
         # SOUL
         from sqlagent.soul import UserSOUL
+
         services.soul = UserSOUL(llm=services.llm)
 
         # Trace store
         from sqlagent.trace import TraceStore
+
         services.trace_store = TraceStore()
 
         # Audit log
         from sqlagent.telemetry import AuditLog
+
         services.audit_log = AuditLog()
         await services.audit_log.init()
 
         # Lesson store (persists Learn Agent correction records to SQLite)
         from sqlagent.telemetry import LessonStore
+
         services.lesson_store = LessonStore()
         await services.lesson_store.init()
 
@@ -170,14 +187,18 @@ class SQLAgent:
 
         # Compile the query orchestration LangGraph
         from sqlagent.graph.builder import compile_query_graph
+
         self._graph = compile_query_graph(services)
 
         # Compile the Learn Agent correction LangGraph (separate graph)
         from sqlagent.graph.learn_graph import compile_learn_graph
+
         self._learn_graph = compile_learn_graph(services)
 
         self._ready = True
-        logger.info("agent.ready", model=self._config.llm_model, sources=list(services.connectors.keys()))
+        logger.info(
+            "agent.ready", model=self._config.llm_model, sources=list(services.connectors.keys())
+        )
 
     async def query(
         self,
@@ -193,6 +214,7 @@ class SQLAgent:
 
         # Build initial state
         from sqlagent.graph.state import QueryState
+
         initial_state: QueryState = {
             "nl_query": nl_query,
             "query_id": query_id,
@@ -211,6 +233,7 @@ class SQLAgent:
         # Optional Langfuse callback
         config = {}
         from sqlagent.telemetry import get_langfuse_handler
+
         handler = get_langfuse_handler(self._config)
         if handler:
             config["callbacks"] = [handler]
@@ -221,12 +244,15 @@ class SQLAgent:
         except Exception as e:
             logger.error("agent.query_failed", error=str(e), query=nl_query[:50])
             return PipelineResult(
-                query_id=query_id, nl_query=nl_query,
-                succeeded=False, error=str(e),
+                query_id=query_id,
+                nl_query=nl_query,
+                succeeded=False,
+                error=str(e),
             )
 
         # Build PipelineResult
         from sqlagent.trace import TraceCollector
+
         trace = TraceCollector.build_trace(result_state, workspace_id=workspace_id, user_id=user_id)
 
         # Persist trace
@@ -240,8 +266,11 @@ class SQLAgent:
         if self._services.audit_log:
             try:
                 await self._services.audit_log.record(
-                    query_id=query_id, workspace_id=workspace_id, user_id=user_id,
-                    nl_query=nl_query, sql=result_state.get("sql", ""),
+                    query_id=query_id,
+                    workspace_id=workspace_id,
+                    user_id=user_id,
+                    nl_query=nl_query,
+                    sql=result_state.get("sql", ""),
                     succeeded=result_state.get("succeeded", False),
                     row_count=result_state.get("row_count", 0),
                     cost_usd=result_state.get("cost_usd", 0.0),
@@ -255,8 +284,11 @@ class SQLAgent:
 
         # Prometheus metrics
         from sqlagent.telemetry import record_query_metrics
+
         record_query_metrics(
-            source_id=result_state.get("target_sources", [""])[0] if result_state.get("target_sources") else "",
+            source_id=result_state.get("target_sources", [""])[0]
+            if result_state.get("target_sources")
+            else "",
             succeeded=result_state.get("succeeded", False),
             generator=result_state.get("winner_generator", ""),
             latency_s=trace.total_latency_ms / 1000.0,
@@ -291,6 +323,7 @@ class SQLAgent:
         workspace_id: str = "",
         session_id: str = "",
         display_nl_query: str = "",
+        conversation_history: list | None = None,
     ):
         """Run query with streaming — yields trace events as each node completes.
 
@@ -299,17 +332,21 @@ class SQLAgent:
         """
         await self._ensure_ready()
         import time
+
         started = time.monotonic()
         query_id = str(uuid.uuid4())[:12]
 
         # Reset per-query token accumulators on the LLM provider
-        if hasattr(self._services, 'llm') and hasattr(self._services.llm, 'reset_session_tokens'):
+        if hasattr(self._services, "llm") and hasattr(self._services.llm, "reset_session_tokens"):
             self._services.llm.reset_session_tokens()
 
         from sqlagent.graph.state import QueryState
+
         initial_state: QueryState = {
             "nl_query": nl_query,  # full context-enriched query for LLM reasoning
-            "display_nl_query": display_nl_query if display_nl_query else nl_query,  # clean question for display
+            "display_nl_query": display_nl_query
+            if display_nl_query
+            else nl_query,  # clean question for display
             "query_id": query_id,
             "user_id": user_id,
             "workspace_id": workspace_id,
@@ -324,10 +361,13 @@ class SQLAgent:
             # Workspace-specific semantic lessons from user corrections
             # These inject into every SQL generation so the LLM never repeats known mistakes
             "data_context_notes": list(self._data_context_notes),
+            # Structured conversation history for multi-turn intent classification
+            "conversation_history": conversation_history or [],
         }
 
         config = {}
         from sqlagent.telemetry import get_langfuse_handler
+
         handler = get_langfuse_handler(self._config)
         if handler:
             config["callbacks"] = [handler]
@@ -336,7 +376,9 @@ class SQLAgent:
         prev_trace_count = 0
         final_state = initial_state
         try:
-            async for state in self._graph.astream(initial_state, config=config, stream_mode="values"):
+            async for state in self._graph.astream(
+                initial_state, config=config, stream_mode="values"
+            ):
                 final_state = state
                 new_events = state.get("trace_events", [])
                 # Yield only NEW trace events since last yield
@@ -350,16 +392,19 @@ class SQLAgent:
             return
 
         # Collect per-query token breakdown from LLM provider session counters
-        _llm = self._services.llm if hasattr(self._services, 'llm') else None
-        tokens_input_session = getattr(_llm, '_session_tokens_input', 0)
-        tokens_output_session = getattr(_llm, '_session_tokens_output', 0)
-        active_model_id = getattr(_llm, 'model', self._config.llm_model)
+        _llm = self._services.llm if hasattr(self._services, "llm") else None
+        tokens_input_session = getattr(_llm, "_session_tokens_input", 0)
+        tokens_output_session = getattr(_llm, "_session_tokens_output", 0)
+        active_model_id = getattr(_llm, "model", self._config.llm_model)
 
         # Build trace + persist — wrapped so a serialization bug never blocks query.result
         trace = None
         try:
             from sqlagent.trace import TraceCollector
-            trace = TraceCollector.build_trace(final_state, workspace_id=workspace_id, user_id=user_id)
+
+            trace = TraceCollector.build_trace(
+                final_state, workspace_id=workspace_id, user_id=user_id
+            )
             trace.model_id = active_model_id
             trace.tokens_input = tokens_input_session
             trace.tokens_output = tokens_output_session
@@ -376,15 +421,21 @@ class SQLAgent:
         _sql_for_learn = final_state.get("sql", "")
         _succeeded_q = final_state.get("succeeded", False)
         # auto_learn can be disabled by server setting _auto_learn attribute before query
-        _auto_learn_enabled = getattr(self, '_auto_learn', True) is not False
+        _auto_learn_enabled = getattr(self, "_auto_learn", True) is not False
 
         learn_event = {"action": None, "soul_evolved": False}
 
         async def _background_learn():
             # 1. Auto-learn: save successful query as training pair
-            if _succeeded_q and _auto_learn_enabled and _sql_for_learn and self._services.example_store:
+            if (
+                _succeeded_q
+                and _auto_learn_enabled
+                and _sql_for_learn
+                and self._services.example_store
+            ):
                 try:
                     from sqlagent.agents import LearningLoop
+
                     loop = LearningLoop(self._services.example_store)
                     await loop.on_thumbs_up(_nl_for_learn, _sql_for_learn)
                     self._auto_learns_total += 1
@@ -405,7 +456,6 @@ class SQLAgent:
             if self._services.soul:
                 try:
                     tables = final_state.get("pruned_tables") or []
-                    prev_evolutions = self._soul_evolutions
                     await self._services.soul.observe(
                         user_id=user_id or "local",
                         nl_query=_nl_for_learn,
@@ -413,7 +463,11 @@ class SQLAgent:
                     )
                     # Check if SOUL evolved (query_count hit a 20-multiple)
                     soul_profile = self._services.soul._profiles.get(user_id or "local")
-                    if soul_profile and soul_profile.query_count > 0 and soul_profile.query_count % 20 == 0:
+                    if (
+                        soul_profile
+                        and soul_profile.query_count > 0
+                        and soul_profile.query_count % 20 == 0
+                    ):
                         self._soul_evolutions += 1
                         learn_event["soul_evolved"] = True
                         _soul_act = {
@@ -429,6 +483,7 @@ class SQLAgent:
                     logger.debug("agent.operation_failed", error=str(exc))
 
         import asyncio as _asyncio
+
         _asyncio.create_task(_background_learn())
 
         # Audit + metrics
@@ -436,8 +491,11 @@ class SQLAgent:
         if self._services.audit_log:
             try:
                 await self._services.audit_log.record(
-                    query_id=query_id, workspace_id=workspace_id, user_id=user_id,
-                    nl_query=final_state.get("display_nl_query") or nl_query, sql=final_state.get("sql", ""),
+                    query_id=query_id,
+                    workspace_id=workspace_id,
+                    user_id=user_id,
+                    nl_query=final_state.get("display_nl_query") or nl_query,
+                    sql=final_state.get("sql", ""),
                     succeeded=final_state.get("succeeded", False),
                     row_count=final_state.get("row_count", 0),
                     cost_usd=final_state.get("cost_usd", 0.0),
@@ -451,8 +509,11 @@ class SQLAgent:
 
         try:
             from sqlagent.telemetry import record_query_metrics
+
             record_query_metrics(
-                source_id=final_state.get("target_sources", [""])[0] if final_state.get("target_sources") else "",
+                source_id=final_state.get("target_sources", [""])[0]
+                if final_state.get("target_sources")
+                else "",
                 succeeded=final_state.get("succeeded", False),
                 generator=final_state.get("winner_generator", ""),
                 latency_s=total_ms / 1000.0,
@@ -469,18 +530,22 @@ class SQLAgent:
         # Sanitize rows one final time: NaN/Inf → None, non-serializable → str.
         # execute_node already cleans, but cross-source or unusual dtypes can slip through.
         import math as _math
+
         def _safe_val(v):
             if isinstance(v, float) and (_math.isnan(v) or _math.isinf(v)):
                 return None
             try:
                 import json as _json
+
                 _json.dumps(v)
                 return v
             except (TypeError, ValueError):
                 return str(v)
 
         raw_rows = final_state.get("rows", [])
-        safe_rows = [{k: _safe_val(v) for k, v in row.items()} for row in raw_rows] if raw_rows else []
+        safe_rows = (
+            [{k: _safe_val(v) for k, v in row.items()} for row in raw_rows] if raw_rows else []
+        )
 
         # trace.to_dict() wrapped — a serialization bug in the trace must never
         # prevent the result from reaching the browser.
@@ -521,6 +586,7 @@ class SQLAgent:
         """Add an additional data source."""
         await self._ensure_ready()
         from sqlagent.connectors import ConnectorRegistry
+
         conn = ConnectorRegistry.from_url(source_id, db_url)
         await conn.connect()
         self._services.connectors[source_id] = conn
@@ -529,8 +595,11 @@ class SQLAgent:
         """Add a verified NL→SQL training pair."""
         await self._ensure_ready()
         return await self._services.example_store.add(
-            nl_query=nl_query, sql=sql, source_id=source_id,
-            generator="user_trained", verified=True,
+            nl_query=nl_query,
+            sql=sql,
+            source_id=source_id,
+            generator="user_trained",
+            verified=True,
         )
 
     async def train_docs(self, text: str, source: str = "docs") -> None:
@@ -546,6 +615,7 @@ class SQLAgent:
 # ═══════════════════════════════════════════════════════════════════════════════
 # QUICK API — one-liner functions
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 def ask(
     nl_query: str,

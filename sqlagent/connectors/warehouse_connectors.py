@@ -6,12 +6,11 @@ These use sync SDKs wrapped in asyncio.to_thread for async compatibility.
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
 
 import pandas as pd
 import structlog
 
-from sqlagent.models import SchemaSnapshot, SchemaTable, SchemaColumn, ForeignKey, SampleData
+from sqlagent.models import SchemaSnapshot, SchemaTable, SchemaColumn, SampleData
 
 logger = structlog.get_logger()
 
@@ -19,6 +18,7 @@ logger = structlog.get_logger()
 # ═══════════════════════════════════════════════════════════════════════════════
 # SNOWFLAKE
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 class SnowflakeConnector:
     """Snowflake connector — sync SDK wrapped in asyncio.to_thread."""
@@ -39,6 +39,7 @@ class SnowflakeConnector:
     def _parse_url(self) -> dict:
         """Parse snowflake://user:pass@account/database/schema?warehouse=WH"""
         from urllib.parse import urlparse, parse_qs
+
         parsed = urlparse(self._conn_str)
         parts = parsed.path.strip("/").split("/")
         qs = parse_qs(parsed.query)
@@ -54,21 +55,24 @@ class SnowflakeConnector:
     async def connect(self) -> None:
         params = self._parse_url()
         import snowflake.connector
-        self._conn = await asyncio.to_thread(
-            snowflake.connector.connect, **params
-        )
+
+        self._conn = await asyncio.to_thread(snowflake.connector.connect, **params)
 
     async def _ensure_conn(self):
         if self._conn is None:
             await self.connect()
 
-    async def execute(self, sql: str, timeout_s: float = 30.0, max_rows: int = 10_000) -> pd.DataFrame:
+    async def execute(
+        self, sql: str, timeout_s: float = 30.0, max_rows: int = 10_000
+    ) -> pd.DataFrame:
         await self._ensure_conn()
+
         def _run():
             cursor = self._conn.cursor()
             cursor.execute(sql)
             df = cursor.fetch_pandas_all()
             return df.head(max_rows)
+
         return await asyncio.to_thread(_run)
 
     async def introspect(self) -> SchemaSnapshot:
@@ -94,7 +98,8 @@ class SnowflakeConnector:
                 """)
                 columns = [
                     SchemaColumn(
-                        name=r[0], data_type=r[1],
+                        name=r[0],
+                        data_type=r[1],
                         nullable=r[2] == "YES",
                         default_value=r[3],
                         column_position=r[4],
@@ -104,7 +109,8 @@ class SnowflakeConnector:
                 tables.append(SchemaTable(name=tname, columns=columns))
 
             return SchemaSnapshot(
-                source_id=self._source_id, dialect="snowflake",
+                source_id=self._source_id,
+                dialect="snowflake",
                 tables=tables,
             )
 
@@ -126,6 +132,7 @@ class SnowflakeConnector:
 # ═══════════════════════════════════════════════════════════════════════════════
 # BIGQUERY
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 class BigQueryConnector:
     """BigQuery connector — google-cloud-bigquery wrapped in asyncio.to_thread."""
@@ -154,23 +161,27 @@ class BigQueryConnector:
     async def connect(self) -> None:
         self._parse_url()
         from google.cloud import bigquery
-        self._client = await asyncio.to_thread(
-            bigquery.Client, project=self._project
-        )
+
+        self._client = await asyncio.to_thread(bigquery.Client, project=self._project)
 
     async def _ensure_client(self):
         if self._client is None:
             await self.connect()
 
-    async def execute(self, sql: str, timeout_s: float = 30.0, max_rows: int = 10_000) -> pd.DataFrame:
+    async def execute(
+        self, sql: str, timeout_s: float = 30.0, max_rows: int = 10_000
+    ) -> pd.DataFrame:
         await self._ensure_client()
+
         def _run():
             job = self._client.query(sql)
             return job.to_dataframe().head(max_rows)
+
         return await asyncio.to_thread(_run)
 
     async def introspect(self) -> SchemaSnapshot:
         await self._ensure_client()
+
         def _introspect():
             tables = []
             dataset_ref = f"{self._project}.{self._dataset}"
@@ -185,14 +196,19 @@ class BigQueryConnector:
                     )
                     for field in table.schema
                 ]
-                tables.append(SchemaTable(
-                    name=table.table_id,
-                    columns=columns,
-                    row_count_estimate=table.num_rows or 0,
-                ))
+                tables.append(
+                    SchemaTable(
+                        name=table.table_id,
+                        columns=columns,
+                        row_count_estimate=table.num_rows or 0,
+                    )
+                )
             return SchemaSnapshot(
-                source_id=self._source_id, dialect="bigquery", tables=tables,
+                source_id=self._source_id,
+                dialect="bigquery",
+                tables=tables,
             )
+
         return await asyncio.to_thread(_introspect)
 
     async def sample(self, table: str, n: int = 5) -> SampleData:

@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 import structlog
 
 from sqlagent.models import User
-from sqlagent.exceptions import AuthError, InvalidToken
+from sqlagent.exceptions import InvalidToken
 
 logger = structlog.get_logger()
 
@@ -31,6 +31,7 @@ LOCAL_USER = User(
 # ═══════════════════════════════════════════════════════════════════════════════
 # JWT UTILITIES
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 def _get_secret(config_secret: str = "") -> str:
     """Get JWT secret from config, env, or generate one."""
@@ -57,6 +58,7 @@ def _get_secret(config_secret: str = "") -> str:
 def create_token(user_id: str, secret: str = "", expires_hours: int = 72) -> str:
     """Create a JWT token for a user."""
     import jwt
+
     secret = _get_secret(secret)
     payload = {
         "user_id": user_id,
@@ -69,6 +71,7 @@ def create_token(user_id: str, secret: str = "", expires_hours: int = 72) -> str
 def verify_token(token: str, secret: str = "") -> dict:
     """Verify a JWT token. Returns {"user_id": ..., "exp": ...}."""
     import jwt
+
     secret = _get_secret(secret)
     try:
         return jwt.decode(token, secret, algorithms=["HS256"])
@@ -82,9 +85,11 @@ def verify_token(token: str, secret: str = "") -> dict:
 # GOOGLE OAUTH
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 def google_auth_url(client_id: str, redirect_uri: str) -> str:
     """Generate Google OAuth redirect URL."""
     from urllib.parse import urlencode
+
     params = {
         "client_id": client_id,
         "redirect_uri": redirect_uri,
@@ -96,19 +101,26 @@ def google_auth_url(client_id: str, redirect_uri: str) -> str:
 
 
 async def google_callback(
-    code: str, client_id: str, client_secret: str, redirect_uri: str,
+    code: str,
+    client_id: str,
+    client_secret: str,
+    redirect_uri: str,
 ) -> dict:
     """Exchange OAuth code for user info. Returns {email, name, picture}."""
     import httpx
+
     async with httpx.AsyncClient() as client:
         # Exchange code for tokens
-        token_resp = await client.post("https://oauth2.googleapis.com/token", data={
-            "code": code,
-            "client_id": client_id,
-            "client_secret": client_secret,
-            "redirect_uri": redirect_uri,
-            "grant_type": "authorization_code",
-        })
+        token_resp = await client.post(
+            "https://oauth2.googleapis.com/token",
+            data={
+                "code": code,
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "redirect_uri": redirect_uri,
+                "grant_type": "authorization_code",
+            },
+        )
         token_resp.raise_for_status()
         tokens = token_resp.json()
 
@@ -137,7 +149,7 @@ def send_magic_link(email: str) -> str:
     """
     code = f"{secrets.randbelow(999999):06d}"
     _magic_codes[email.lower()] = (code, time.time() + 600)  # 10 min expiry
-    logger.debug("auth.magic_link_generated", email=email)   # code excluded from log
+    logger.debug("auth.magic_link_generated", email=email)  # code excluded from log
     # TODO: replace with real email delivery (SendGrid, SES, Resend, etc.)
     return code
 
@@ -161,6 +173,7 @@ def verify_magic_link(email: str, code: str) -> bool:
 # AUTH STORE (SQLite)
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class AuthStore:
     """User storage backed by SQLite."""
 
@@ -174,6 +187,7 @@ class AuthStore:
         if self._initialized:
             return
         import aiosqlite
+
         os.makedirs(os.path.dirname(self._db_path), exist_ok=True)
         async with aiosqlite.connect(self._db_path) as db:
             await db.execute("""
@@ -191,11 +205,16 @@ class AuthStore:
         self._initialized = True
 
     async def get_or_create(
-        self, email: str, display_name: str = "", avatar_url: str = "", provider: str = "email",
+        self,
+        email: str,
+        display_name: str = "",
+        avatar_url: str = "",
+        provider: str = "email",
     ) -> User:
         """Get existing user or create new one."""
         await self.init()
         import aiosqlite
+
         async with aiosqlite.connect(self._db_path) as db:
             cursor = await db.execute("SELECT * FROM users WHERE email = ?", (email,))
             row = await cursor.fetchone()
@@ -205,31 +224,48 @@ class AuthStore:
                 await db.execute("UPDATE users SET last_login = ? WHERE email = ?", (now, email))
                 await db.commit()
                 return User(
-                    user_id=row[0], email=row[1], display_name=row[2],
-                    avatar_url=row[3], provider=row[4],
+                    user_id=row[0],
+                    email=row[1],
+                    display_name=row[2],
+                    avatar_url=row[3],
+                    provider=row[4],
                 )
 
             user_id = str(uuid.uuid4())
             await db.execute(
                 "INSERT INTO users VALUES (?,?,?,?,?,?,?)",
-                (user_id, email, display_name or email.split("@")[0], avatar_url, provider, now, now),
+                (
+                    user_id,
+                    email,
+                    display_name or email.split("@")[0],
+                    avatar_url,
+                    provider,
+                    now,
+                    now,
+                ),
             )
             await db.commit()
             return User(
-                user_id=user_id, email=email,
+                user_id=user_id,
+                email=email,
                 display_name=display_name or email.split("@")[0],
-                avatar_url=avatar_url, provider=provider,
+                avatar_url=avatar_url,
+                provider=provider,
             )
 
     async def get_by_id(self, user_id: str) -> User | None:
         await self.init()
         import aiosqlite
+
         async with aiosqlite.connect(self._db_path) as db:
             cursor = await db.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
             row = await cursor.fetchone()
             if not row:
                 return None
             return User(
-                user_id=row[0], email=row[1], display_name=row[2],
-                avatar_url=row[3], provider=row[4],
+                user_id=row[0],
+                email=row[1],
+                display_name=row[2],
+                avatar_url=row[3],
+                provider=row[4],
             )

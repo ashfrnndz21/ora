@@ -16,7 +16,7 @@ from typing import Any
 import pandas as pd
 import structlog
 
-from sqlagent.exceptions import SQLExecutionFailed, CorrectionExhausted, PolicyViolation
+from sqlagent.exceptions import SQLExecutionFailed
 
 logger = structlog.get_logger()
 
@@ -25,9 +25,11 @@ logger = structlog.get_logger()
 # SQL EXECUTOR
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 @dataclass
 class ExecutionResult:
     """Result from executing SQL against a database."""
+
     sql: str = ""
     dataframe: pd.DataFrame | None = None
     row_count: int = 0
@@ -52,7 +54,8 @@ class SQLExecutor:
             result = self._policy.check(sql, {})
             if not result.passed:
                 return ExecutionResult(
-                    sql=sql, succeeded=False,
+                    sql=sql,
+                    succeeded=False,
                     error=f"Policy blocked [{result.rule_id}]: {result.reason}",
                 )
             if result.modified_sql:
@@ -65,24 +68,34 @@ class SQLExecutor:
             df = await self._conn.execute(sql, timeout_s=timeout, max_rows=max_rows)
             latency = int((time.monotonic() - started) * 1000)
             return ExecutionResult(
-                sql=sql, dataframe=df, row_count=len(df),
-                latency_ms=latency, succeeded=True,
+                sql=sql,
+                dataframe=df,
+                row_count=len(df),
+                latency_ms=latency,
+                succeeded=True,
             )
         except SQLExecutionFailed as e:
             latency = int((time.monotonic() - started) * 1000)
             return ExecutionResult(
-                sql=sql, latency_ms=latency, succeeded=False, error=str(e),
+                sql=sql,
+                latency_ms=latency,
+                succeeded=False,
+                error=str(e),
             )
         except Exception as e:
             latency = int((time.monotonic() - started) * 1000)
             return ExecutionResult(
-                sql=sql, latency_ms=latency, succeeded=False, error=str(e),
+                sql=sql,
+                latency_ms=latency,
+                succeeded=False,
+                error=str(e),
             )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 3-STAGE ReFoRCE CORRECTION LOOP
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 class CorrectionLoop:
     """3-stage self-correction loop (ReFoRCE algorithm, Snowflake 2025).
@@ -127,9 +140,7 @@ class CorrectionLoop:
                 )
             else:
                 # Stage 3: DB-confirmed
-                new_sql = await self._db_confirmed_correct(
-                    current_sql, current_error, nl_query
-                )
+                new_sql = await self._db_confirmed_correct(current_sql, current_error, nl_query)
 
             if not new_sql:
                 continue

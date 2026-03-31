@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 @dataclass(frozen=True)
 class AgentCoreConfig:
     """AWS AgentCore deployment configuration."""
+
     enabled: bool = False
     region: str = "us-east-1"
     bedrock_model_id: str = "anthropic.claude-sonnet-4-6"
@@ -20,14 +21,15 @@ class AgentCoreConfig:
 @dataclass(frozen=True)
 class DataSourceConfig:
     """Per-source connection configuration."""
+
     source_id: str
-    type: str                          # sqlite, postgresql, mysql, duckdb, snowflake, bigquery, redshift, csv, xlsx
+    type: str  # sqlite, postgresql, mysql, duckdb, snowflake, bigquery, redshift, csv, xlsx
     connection_string: str = ""
     file_path: str = ""
     display_name: str = ""
     schema_name: str = ""
-    warehouse: str = ""                # Snowflake
-    dataset: str = ""                  # BigQuery
+    warehouse: str = ""  # Snowflake
+    dataset: str = ""  # BigQuery
     read_only: bool = True
 
 
@@ -58,9 +60,9 @@ class AgentConfig:
     query_timeout_s: float = 60.0
 
     # Memory
-    vector_store_backend: str = "qdrant"   # qdrant | chroma
-    episodic_backend: str = "sqlite"       # sqlite | dynamodb
-    soul_evolution_interval: int = 20      # queries between SOUL evolution
+    vector_store_backend: str = "qdrant"  # qdrant | chroma
+    episodic_backend: str = "sqlite"  # sqlite | dynamodb
+    soul_evolution_interval: int = 20  # queries between SOUL evolution
 
     # Policy
     select_only: bool = True
@@ -76,7 +78,7 @@ class AgentConfig:
 
     # Telemetry
     otel_enabled: bool = True
-    otel_endpoint: str = ""                # OTLP gRPC endpoint (empty = console)
+    otel_endpoint: str = ""  # OTLP gRPC endpoint (empty = console)
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""
     langfuse_host: str = "https://cloud.langfuse.com"

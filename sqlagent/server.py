@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 import os
 import uuid
 from datetime import datetime, timezone
@@ -27,7 +28,6 @@ logger = structlog.get_logger()
 
 _state: dict[str, Any] = {}
 
-import math
 
 def _sanitize_for_json(rows: list[dict]) -> list[dict]:
     """Replace NaN/Inf with None for JSON serialization."""
@@ -47,33 +47,40 @@ def _sanitize_for_json(rows: list[dict]) -> list[dict]:
 class MagicLinkRequest(BaseModel):
     email: str
 
+
 class MagicLinkVerify(BaseModel):
     email: str
     code: str
 
+
 class CreateWorkspace(BaseModel):
     name: str
     description: str = ""
+
 
 class QueryRequest(BaseModel):
     query: str
     workspace_id: str = ""
     session_id: str = ""
 
+
 class TrainRequest(BaseModel):
     nl_query: str
     sql: str
     source_id: str = ""
 
+
 class InstallPackRequest(BaseModel):
     pack_name: str
+
 
 class FeedbackRequest(BaseModel):
     query_id: str
     nl_query: str
     sql: str
-    feedback: str              # "thumbs_up" | "thumbs_down"
+    feedback: str  # "thumbs_up" | "thumbs_down"
     corrected_sql: str = ""
+
 
 class SetupChatRequest(BaseModel):
     message: str
@@ -82,6 +89,7 @@ class SetupChatRequest(BaseModel):
 def create_app(config: Any = None, default_db: str = "") -> FastAPI:
     """Create the FastAPI application."""
     from sqlagent.config import AgentConfig
+
     cfg = config or AgentConfig()
     _state["default_db"] = default_db
 
@@ -112,7 +120,9 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
         _state["agents"] = {}
 
         # Load persisted user settings (API keys, model) — survive restarts
-        import json as _json, os as _os
+        import json as _json
+        import os as _os
+
         _settings_path = _os.path.join(_os.path.expanduser("~"), ".sqlagent", "user_settings.json")
         if _os.path.exists(_settings_path):
             try:
@@ -125,9 +135,16 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
                 if saved.get("anthropic_key"):
                     _os.environ["ANTHROPIC_API_KEY"] = saved["anthropic_key"]
                 import structlog as _sl
-                _sl.get_logger().info("settings.loaded", model=saved.get("model",""), has_openai=bool(saved.get("openai_key")), has_anthropic=bool(saved.get("anthropic_key")))
+
+                _sl.get_logger().info(
+                    "settings.loaded",
+                    model=saved.get("model", ""),
+                    has_openai=bool(saved.get("openai_key")),
+                    has_anthropic=bool(saved.get("anthropic_key")),
+                )
             except Exception as _e:
                 import structlog as _sl
+
                 _sl.get_logger().warn("settings.load_failed", error=str(_e))
 
         yield
@@ -138,8 +155,8 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
         description="The NL2SQL Agentic Runtime — connect any database, ask in plain English.",
         version="2.0.0",
         lifespan=lifespan,
-        docs_url=None,      # We serve a custom dark-themed /docs
-        redoc_url=None,     # Replaced by /docs
+        docs_url=None,  # We serve a custom dark-themed /docs
+        redoc_url=None,  # Replaced by /docs
         openapi_tags=[
             {"name": "query", "description": "Run natural language queries against databases"},
             {"name": "schema", "description": "Schema introspection, pruning, and knowledge graph"},
@@ -163,12 +180,13 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
     _allow_credentials = bool(_cors_origins and "*" not in _cors_origins)
     if "*" in _cors_origins and cfg.auth_enabled:
         import warnings
+
         warnings.warn(
             "CORS wildcard ('*') with auth_enabled=True is a security risk. "
             "Set SQLAGENT_CORS_ORIGINS to specific origins instead.",
             stacklevel=2,
         )
-        _cors_origins = []   # deny rather than allow unsafe combination
+        _cors_origins = []  # deny rather than allow unsafe combination
     app.add_middleware(
         CORSMiddleware,
         allow_origins=_cors_origins if _cors_origins else [],
@@ -181,6 +199,7 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
     if cfg.otel_enabled:
         try:
             from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+
             FastAPIInstrumentor.instrument_app(app)
         except Exception as exc:
             logger.debug("otel.instrumentation_skipped", error=str(exc))
@@ -190,6 +209,7 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
     async def get_current_user(request: Request):
         if not cfg.auth_enabled:
             from sqlagent.auth import LOCAL_USER
+
             return LOCAL_USER
 
         token = request.headers.get("Authorization", "").replace("Bearer ", "")
@@ -200,6 +220,7 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
 
         from sqlagent.auth import verify_token
         from sqlagent.exceptions import InvalidToken
+
         try:
             payload = verify_token(token, cfg.auth_jwt_secret)
             user = await _state["auth_store"].get_by_id(payload["user_id"])
@@ -218,6 +239,7 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
         if not email:
             raise HTTPException(400, "email required")
         from sqlagent.auth import send_magic_link
+
         send_magic_link(email)
         # NOTE: code is NOT returned in the response — it must be delivered via email.
         # For local dev without an email provider, check server logs at DEBUG level.
@@ -229,21 +251,35 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
         email = body.get("email", "").strip()
         code = body.get("code", "").strip()
         from sqlagent.auth import verify_magic_link, create_token
+
         if not verify_magic_link(email, code):
             raise HTTPException(401, "Invalid or expired code")
         user = await _state["auth_store"].get_or_create(email)
         token = create_token(user.user_id, cfg.auth_jwt_secret)
-        return {"token": token, "user": {"user_id": user.user_id, "email": user.email, "display_name": user.display_name}}
+        return {
+            "token": token,
+            "user": {
+                "user_id": user.user_id,
+                "email": user.email,
+                "display_name": user.display_name,
+            },
+        }
 
     @app.get("/auth/me", tags=["auth"])
     async def auth_me(user=Depends(get_current_user)):
-        return {"user_id": user.user_id, "email": user.email, "display_name": user.display_name, "avatar_url": user.avatar_url}
+        return {
+            "user_id": user.user_id,
+            "email": user.email,
+            "display_name": user.display_name,
+            "avatar_url": user.avatar_url,
+        }
 
     # ── Workspace routes ──────────────────────────────────────────────────────
 
-
     @app.post("/workspaces", tags=["workspaces"])
-    async def create_workspace(name: str = Body(...), description: str = Body(""), user=Depends(get_current_user)):
+    async def create_workspace(
+        name: str = Body(...), description: str = Body(""), user=Depends(get_current_user)
+    ):
         ws = await _state["workspace_store"].create(name, user.user_id, description)
         return {"workspace_id": ws.workspace_id, "name": ws.name, "status": ws.status.value}
 
@@ -251,21 +287,34 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
     async def list_workspaces(user=Depends(get_current_user)):
         workspaces = await _state["workspace_store"].list_for_user(user.user_id)
         return [
-            {"workspace_id": w.workspace_id, "name": w.name, "status": w.status.value,
-             "sources": w.sources, "query_count": w.query_count,
-             "created_at": w.created_at.isoformat() if hasattr(w.created_at, "isoformat") else str(w.created_at)}
+            {
+                "workspace_id": w.workspace_id,
+                "name": w.name,
+                "status": w.status.value,
+                "sources": w.sources,
+                "query_count": w.query_count,
+                "created_at": w.created_at.isoformat()
+                if hasattr(w.created_at, "isoformat")
+                else str(w.created_at),
+            }
             for w in workspaces
         ]
 
     @app.get("/workspaces/{workspace_id}", tags=["workspaces"])
     async def get_workspace(workspace_id: str, user=Depends(get_current_user)):
         from sqlagent.exceptions import WorkspaceNotFound
+
         try:
             ws = await _state["workspace_store"].get(workspace_id)
         except WorkspaceNotFound:
             raise HTTPException(404, "Workspace not found")
-        return {"workspace_id": ws.workspace_id, "name": ws.name, "status": ws.status.value,
-                "sources": ws.sources, "query_count": ws.query_count}
+        return {
+            "workspace_id": ws.workspace_id,
+            "name": ws.name,
+            "status": ws.status.value,
+            "sources": ws.sources,
+            "query_count": ws.query_count,
+        }
 
     @app.delete("/workspaces/{workspace_id}", tags=["workspaces"])
     async def delete_workspace(workspace_id: str, user=Depends(get_current_user)):
@@ -274,9 +323,10 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
         _state.get("agents", {}).pop(workspace_id, None)
         _state.get("setup_agents", {}).pop(workspace_id, None)
         _state.pop(f"kg_{workspace_id}", None)
-        _state.pop(f"kg_default", None)  # Also clear default KG
+        _state.pop("kg_default", None)  # Also clear default KG
         # Clean uploaded files
         import shutil
+
         uploads_dir = os.path.join(os.path.expanduser("~"), ".sqlagent", "uploads", workspace_id)
         if os.path.exists(uploads_dir):
             shutil.rmtree(uploads_dir, ignore_errors=True)
@@ -290,7 +340,6 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
 
     # ── Query routes ──────────────────────────────────────────────────────────
 
-
     @app.post("/query", tags=["query"])
     async def run_query(request: Request, user=Depends(get_current_user)):
         body = await request.json()
@@ -299,18 +348,26 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
         session_id = body.get("session_id", "")
         agent = await _get_or_create_agent(workspace_id, user.user_id)
         result = await agent.query(
-            nl_query=query, user_id=user.user_id,
-            workspace_id=workspace_id, session_id=session_id,
+            nl_query=query,
+            user_id=user.user_id,
+            workspace_id=workspace_id,
+            session_id=session_id,
         )
         return {
-            "query_id": result.query_id, "sql": result.sql,
-            "succeeded": result.succeeded, "error": result.error,
-            "rows": _sanitize_for_json(result.rows[:100]), "columns": result.columns,
+            "query_id": result.query_id,
+            "sql": result.sql,
+            "succeeded": result.succeeded,
+            "error": result.error,
+            "rows": _sanitize_for_json(result.rows[:100]),
+            "columns": result.columns,
             "row_count": result.row_count,
-            "nl_response": result.nl_response, "follow_ups": result.follow_ups,
+            "nl_response": result.nl_response,
+            "follow_ups": result.follow_ups,
             "chart_config": result.chart_config,
-            "total_tokens": result.total_tokens, "total_cost_usd": result.total_cost_usd,
-            "latency_ms": result.latency_ms, "winner_generator": result.winner_generator,
+            "total_tokens": result.total_tokens,
+            "total_cost_usd": result.total_cost_usd,
+            "latency_ms": result.latency_ms,
+            "winner_generator": result.winner_generator,
             "correction_rounds": result.correction_rounds,
             "trace": result.trace.to_dict() if result.trace else None,
         }
@@ -330,23 +387,32 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
         # model is always used regardless of the startup config value.
         _user_settings = _state.get("user_settings", {})
         _selected_model = _user_settings.get("model", "")
-        if _selected_model and hasattr(agent, '_services') and agent._services and hasattr(agent._services, 'llm'):
+        if (
+            _selected_model
+            and hasattr(agent, "_services")
+            and agent._services
+            and hasattr(agent._services, "llm")
+        ):
             agent._services.llm.model = _selected_model
         # Sync auto_learn setting to agent
-        if hasattr(agent, '_auto_learn'):
+        if hasattr(agent, "_auto_learn"):
             agent._auto_learn = _user_settings.get("auto_learn", True) is not False
 
-        # Build multi-turn context string — keep original query for task storage
+        # Keep original query clean for display; pass conversation_history as structured state
         original_query = query
-        context_str = ""
-        if context:
-            for turn in context[-6:]:
-                if turn.get("role") == "user":
-                    context_str += f"User asked: {turn.get('text','')}\n"
-                elif turn.get("role") == "assistant":
-                    context_str += f"Agent answered with SQL: {turn.get('sql','')[:100]}\n"
-            if context_str:
-                query = f"Previous conversation:\n{context_str}\nCurrent question: {query}"
+        # Normalize context turns to the conversation_history schema
+        conversation_history = []
+        for turn in (context or [])[-10:]:
+            role = turn.get("role", "")
+            if role in ("user", "assistant"):
+                conversation_history.append(
+                    {
+                        "role": role,
+                        "text": turn.get("text", ""),
+                        "sql": turn.get("sql", ""),
+                        "nl_response": turn.get("nl_response") or turn.get("response", ""),
+                    }
+                )
 
         async def event_stream():
             import asyncio as _aio
@@ -365,9 +431,11 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
             # Use query_stream for true per-node streaming
             # Pass original_query as display_nl_query so task records store the clean question
             async for event in agent.query_stream(
-                nl_query=query, user_id=user.user_id,
+                nl_query=query,
+                user_id=user.user_id,
                 workspace_id=workspace_id,
                 display_nl_query=original_query,
+                conversation_history=conversation_history,
             ):
                 event_type = event["type"]
                 event_data = event["data"]
@@ -394,14 +462,28 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
         for sid, conn in agent.services.connectors.items():
             try:
                 snap = await conn.introspect()
-                schemas.append({
-                    "source_id": sid, "dialect": snap.dialect,
-                    "tables": [
-                        {"name": t.name, "row_count": t.row_count_estimate,
-                         "columns": [{"name": c.name, "data_type": c.data_type, "is_pk": c.is_primary_key, "is_fk": c.is_foreign_key} for c in t.columns]}
-                        for t in snap.tables
-                    ],
-                })
+                schemas.append(
+                    {
+                        "source_id": sid,
+                        "dialect": snap.dialect,
+                        "tables": [
+                            {
+                                "name": t.name,
+                                "row_count": t.row_count_estimate,
+                                "columns": [
+                                    {
+                                        "name": c.name,
+                                        "data_type": c.data_type,
+                                        "is_pk": c.is_primary_key,
+                                        "is_fk": c.is_foreign_key,
+                                    }
+                                    for c in t.columns
+                                ],
+                            }
+                            for t in snap.tables
+                        ],
+                    }
+                )
             except Exception as exc:
                 logger.debug("server.operation_failed", error=str(exc))
         return {"sources": schemas}
@@ -419,14 +501,18 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
             return {**_state[kg_key].to_dict(), "analyzed": True}
 
         # Try loading from disk (survives server restarts)
-        import json as _json, pathlib as _pl
+        import json as _json
+        import pathlib as _pl
         import os as _os2
-        _kg_file = _pl.Path(_os2.path.expanduser("~/.sqlagent/kg")) / f"{workspace_id or 'default'}.json"
+
+        _kg_file = (
+            _pl.Path(_os2.path.expanduser("~/.sqlagent/kg")) / f"{workspace_id or 'default'}.json"
+        )
         if _kg_file.exists():
             try:
                 return _json.loads(_kg_file.read_text())
             except Exception as exc:
-                logger.debug("server.operation_failed", error=str(exc))  
+                logger.debug("server.operation_failed", error=str(exc))
 
         # Build basic graph from raw introspection (no LLM)
         nodes = []
@@ -435,40 +521,63 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
             try:
                 snap = await conn.introspect()
                 for t in snap.tables:
-                    nodes.append({
-                        "id": f"tbl:{t.name}", "type": "table", "name": t.name,
-                        "source_id": sid, "x": 0, "y": 0,
-                        "properties": {
-                            "row_count": t.row_count_estimate,
-                            "column_count": len(t.columns),
-                            "columns": [{"name": c.name, "data_type": c.data_type, "is_pk": c.is_primary_key, "is_fk": c.is_foreign_key,
-                                          "fk_ref": c.foreign_key_ref} for c in t.columns],
-                        },
-                    })
+                    nodes.append(
+                        {
+                            "id": f"tbl:{t.name}",
+                            "type": "table",
+                            "name": t.name,
+                            "source_id": sid,
+                            "x": 0,
+                            "y": 0,
+                            "properties": {
+                                "row_count": t.row_count_estimate,
+                                "column_count": len(t.columns),
+                                "columns": [
+                                    {
+                                        "name": c.name,
+                                        "data_type": c.data_type,
+                                        "is_pk": c.is_primary_key,
+                                        "is_fk": c.is_foreign_key,
+                                        "fk_ref": c.foreign_key_ref,
+                                    }
+                                    for c in t.columns
+                                ],
+                            },
+                        }
+                    )
                 for fk in snap.foreign_keys:
-                    edges.append({
-                        "id": f"fk:{fk.from_table}.{fk.from_column}->{fk.to_table}.{fk.to_column}",
-                        "source": f"tbl:{fk.from_table}", "target": f"tbl:{fk.to_table}",
-                        "type": "declared_fk",
-                        "label": f"{fk.from_column} → {fk.to_column}",
-                        "description": f"{fk.from_table} belongs to {fk.to_table} (via {fk.from_column})",
-                        "from_table": fk.from_table, "to_table": fk.to_table,
-                        "from_column": fk.from_column, "to_column": fk.to_column,
-                        "confidence": 1.0,
-                    })
+                    edges.append(
+                        {
+                            "id": f"fk:{fk.from_table}.{fk.from_column}->{fk.to_table}.{fk.to_column}",
+                            "source": f"tbl:{fk.from_table}",
+                            "target": f"tbl:{fk.to_table}",
+                            "type": "declared_fk",
+                            "label": f"{fk.from_column} → {fk.to_column}",
+                            "description": f"{fk.from_table} belongs to {fk.to_table} (via {fk.from_column})",
+                            "from_table": fk.from_table,
+                            "to_table": fk.to_table,
+                            "from_column": fk.from_column,
+                            "to_column": fk.to_column,
+                            "confidence": 1.0,
+                        }
+                    )
             except Exception as exc:
                 logger.debug("server.operation_failed", error=str(exc))
 
         return {"nodes": nodes, "edges": edges, "layers": [], "analyzed": False}
 
     @app.post("/schema/analyze", tags=["schema"])
-    async def run_schema_analysis(request: Request, workspace_id: str = "", user=Depends(get_current_user)):
+    async def run_schema_analysis(
+        request: Request, workspace_id: str = "", user=Depends(get_current_user)
+    ):
         """Trigger the SchemaAgent LLM analysis pipeline. Returns the knowledge graph."""
         try:
             body = await request.json()
             workspace_id = body.get("workspace_id", workspace_id)
         except Exception as exc:
-            logger.debug("server.operation_failed", error=str(exc))    # No body is fine — workspace_id comes from query param
+            logger.debug(
+                "server.operation_failed", error=str(exc)
+            )  # No body is fine — workspace_id comes from query param
         agent = await _get_or_create_agent(workspace_id, user.user_id)
         if not agent.services:
             return {"error": "No data sources connected"}
@@ -489,6 +598,7 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
 
         # Run the SchemaAgent
         from sqlagent.agents import SchemaAgent
+
         schema_agent = SchemaAgent(llm=agent.services.llm, embedder=agent.services.embedder)
         kg = await schema_agent.analyze(
             workspace_id=workspace_id or "default",
@@ -502,11 +612,14 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
 
         # Cache enriched snapshots (with SchemaColumn.examples) on the agent's services
         # so prune_node can use them for future queries without re-sampling
-        if hasattr(agent, 'services') and agent.services:
+        if hasattr(agent, "services") and agent.services:
             agent.services._enriched_snapshots = snapshots
 
         # Persist to disk so server restarts don't lose analysis
-        import json as _json, pathlib as _pl, os as _os2
+        import json as _json
+        import pathlib as _pl
+        import os as _os2
+
         _kg_dir = _pl.Path(_os2.path.expanduser("~/.sqlagent/kg"))
         _kg_dir.mkdir(parents=True, exist_ok=True)
         _kg_file = _kg_dir / f"{workspace_id or 'default'}.json"
@@ -521,6 +634,7 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
     async def schema_chat(request: Request, workspace_id: str = "", user=Depends(get_current_user)):
         """Chat with the Schema Agent about the data schema. Q&As feed into SQL Agent context."""
         import re as _re
+
         body = await request.json()
         workspace_id = body.get("workspace_id", workspace_id) or ""
         message = body.get("message", "").strip()
@@ -538,8 +652,14 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
 
         # Try disk cache if not in memory
         if not kg_obj:
-            import json as _json2, pathlib as _pl2, os as _os3
-            _kg_f = _pl2.Path(_os3.path.expanduser("~/.sqlagent/kg")) / f"{workspace_id or 'default'}.json"
+            import json as _json2
+            import pathlib as _pl2
+            import os as _os3
+
+            _kg_f = (
+                _pl2.Path(_os3.path.expanduser("~/.sqlagent/kg"))
+                / f"{workspace_id or 'default'}.json"
+            )
             if _kg_f.exists():
                 try:
                     raw = _json2.loads(_kg_f.read_text())
@@ -548,14 +668,23 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
                     for n in raw.get("nodes", []):
                         if n.get("type") == "table":
                             p = n.get("properties", {})
-                            cols = ", ".join(f"{c['name']} ({c.get('data_type','')})" for c in p.get("columns", [])[:12])
-                            schema_context_parts.append(f"**{n['name']}** ({p.get('row_count',0):,} rows): {cols}")
+                            cols = ", ".join(
+                                f"{c['name']} ({c.get('data_type', '')})"
+                                for c in p.get("columns", [])[:12]
+                            )
+                            schema_context_parts.append(
+                                f"**{n['name']}** ({p.get('row_count', 0):,} rows): {cols}"
+                            )
                     for layer in raw.get("layers", []):
-                        schema_context_parts.append(f"\nEntity Group **{layer['name']}**: {layer.get('description','')}")
+                        schema_context_parts.append(
+                            f"\nEntity Group **{layer['name']}**: {layer.get('description', '')}"
+                        )
                     for edge in raw.get("edges", [])[:20]:
-                        schema_context_parts.append(f"Relationship: {edge.get('description','')}")
+                        schema_context_parts.append(f"Relationship: {edge.get('description', '')}")
                     for entry in raw.get("glossary", []):
-                        schema_context_parts.append(f"Glossary — **{entry['term']}**: {entry.get('definition','')}")
+                        schema_context_parts.append(
+                            f"Glossary — **{entry['term']}**: {entry.get('definition', '')}"
+                        )
                 except Exception as exc:
                     logger.debug("server.operation_failed", error=str(exc))
 
@@ -564,18 +693,33 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
             for n in kg_obj.nodes:
                 if n.type == "table":
                     cols_info = n.properties.get("columns", [])
-                    col_str = ", ".join(f"{c['name']} ({c.get('data_type','')})" for c in cols_info[:12])
+                    col_str = ", ".join(
+                        f"{c['name']} ({c.get('data_type', '')})" for c in cols_info[:12]
+                    )
                     if not col_str:
                         # fall back to column-type KGNodes
-                        col_nodes = [x for x in kg_obj.nodes if x.type == "column" and
-                                     x.id.startswith(f"col:{n.source_id}.{n.name}.")]
-                        col_str = ", ".join(f"{x.name} ({x.properties.get('data_type','')})" for x in col_nodes[:12])
-                    schema_context_parts.append(f"**{n.name}** ({n.properties.get('row_count',0):,} rows): {col_str}")
+                        col_nodes = [
+                            x
+                            for x in kg_obj.nodes
+                            if x.type == "column"
+                            and x.id.startswith(f"col:{n.source_id}.{n.name}.")
+                        ]
+                        col_str = ", ".join(
+                            f"{x.name} ({x.properties.get('data_type', '')})"
+                            for x in col_nodes[:12]
+                        )
+                    schema_context_parts.append(
+                        f"**{n.name}** ({n.properties.get('row_count', 0):,} rows): {col_str}"
+                    )
             for layer in kg_obj.layers:
                 schema_context_parts.append(f"\nEntity Group **{layer.name}**: {layer.description}")
-                schema_context_parts.append(f"  Tables: {', '.join(t.split('.')[-1] for t in layer.tables)}")
+                schema_context_parts.append(
+                    f"  Tables: {', '.join(t.split('.')[-1] for t in layer.tables)}"
+                )
             for edge in kg_obj.edges[:20]:
-                schema_context_parts.append(f"Relationship: {edge.description} ({int(edge.confidence*100)}% confidence)")
+                schema_context_parts.append(
+                    f"Relationship: {edge.description} ({int(edge.confidence * 100)}% confidence)"
+                )
             if kg_obj.glossary:
                 schema_context_parts.append("\n## Existing Glossary")
                 for entry in kg_obj.glossary:
@@ -623,20 +767,27 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
 
             # Extract GLOSSARY: lines
             glossary_updates = []
-            for match in _re.finditer(r'GLOSSARY:\s*([^=\n]+?)\s*=\s*([^\n]+)', raw_answer):
-                glossary_updates.append({"term": match.group(1).strip(), "definition": match.group(2).strip()})
-            clean_answer = _re.sub(r'\nGLOSSARY:.*', '', raw_answer).strip()
+            for match in _re.finditer(r"GLOSSARY:\s*([^=\n]+?)\s*=\s*([^\n]+)", raw_answer):
+                glossary_updates.append(
+                    {"term": match.group(1).strip(), "definition": match.group(2).strip()}
+                )
+            clean_answer = _re.sub(r"\nGLOSSARY:.*", "", raw_answer).strip()
 
             # Persist new glossary entries to the KG
             if glossary_updates:
                 from sqlagent.models import SemanticEntry
-                import json as _json3, pathlib as _pl3, os as _os4
+                import json as _json3
+                import pathlib as _pl3
+                import os as _os4
+
                 target_kg = _state.get(kg_key)
                 if target_kg:
                     existing = {g.term.lower() for g in target_kg.glossary}
                     for gu in glossary_updates:
                         if gu["term"].lower() not in existing:
-                            target_kg.glossary.append(SemanticEntry(term=gu["term"], definition=gu["definition"]))
+                            target_kg.glossary.append(
+                                SemanticEntry(term=gu["term"], definition=gu["definition"])
+                            )
                             existing.add(gu["term"].lower())
                     # Persist to disk
                     _kg_dir2 = _pl3.Path(_os4.path.expanduser("~/.sqlagent/kg"))
@@ -646,14 +797,21 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
                             _json3.dumps({**target_kg.to_dict(), "analyzed": True}, default=str)
                         )
                     except Exception as exc:
-                        logger.debug("server.operation_failed", error=str(exc))  
+                        logger.debug("server.operation_failed", error=str(exc))
                 # Also store as schema insight on agent services semantic layer
-                if hasattr(agent, 'services') and agent.services and hasattr(agent.services, '_semantic_layer'):
+                if (
+                    hasattr(agent, "services")
+                    and agent.services
+                    and hasattr(agent.services, "_semantic_layer")
+                ):
                     sl = agent.services._semantic_layer
-                    if hasattr(sl, 'glossary') and isinstance(sl.glossary, list):
+                    if hasattr(sl, "glossary") and isinstance(sl.glossary, list):
                         from sqlagent.schema.semantic_layer import GlossaryEntry
+
                         for gu in glossary_updates:
-                            sl.glossary.append(GlossaryEntry(term=gu["term"], definition=gu["definition"]))
+                            sl.glossary.append(
+                                GlossaryEntry(term=gu["term"], definition=gu["definition"])
+                            )
 
             return {"answer": clean_answer, "glossary_updates": glossary_updates}
         except Exception as exc:
@@ -675,34 +833,34 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
 
     # ── Training routes ───────────────────────────────────────────────────────
 
-
     @app.post("/train/sql", tags=["train"])
     async def train_sql(request: Request, user=Depends(get_current_user)):
         body = await request.json()
         workspace_id = body.get("workspace_id", "")
         agent = await _get_or_create_agent(workspace_id, user.user_id)
-        nl           = body.get("nl_query", "")
-        sql          = body.get("sql", "")
-        source       = body.get("source", body.get("source_id", ""))
+        nl = body.get("nl_query", "")
+        sql = body.get("sql", "")
+        source = body.get("source", body.get("source_id", ""))
         correction_note = body.get("correction_note", "")
         original_sql = body.get("original_sql", "")
         failure_type = body.get("failure_type", "")
-        failed_node  = body.get("failed_node", "")
+        failed_node = body.get("failed_node", "")
         trace_events = body.get("trace_events", [])
 
         from sqlagent.agents import LearningLoop
+
         loop = LearningLoop(agent.services.example_store)
 
         if source == "correction":
             # ── Correction path: save training pair + LessonRecord ────────────
             extracted_lesson = body.get("extracted_lesson", "")
-            domain_insight   = body.get("domain_insight", "")
-            what_changed     = body.get("what_changed", "")
-            rows_preview     = body.get("rows_preview", [])
-            columns_preview  = body.get("columns_preview", [])
+            domain_insight = body.get("domain_insight", "")
+            what_changed = body.get("what_changed", "")
+            rows_preview = body.get("rows_preview", [])
+            columns_preview = body.get("columns_preview", [])
             row_count_preview = body.get("row_count_preview", 0)
             tokens_used_regen = body.get("tokens_used", 0)
-            cost_usd_regen   = body.get("cost_usd", 0.0)
+            cost_usd_regen = body.get("cost_usd", 0.0)
 
             result = await loop.on_correction(
                 nl_query=nl,
@@ -716,7 +874,7 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
 
             # ── Persist semantic lesson to workspace context (in-memory + note) ─
             lesson_to_save = extracted_lesson or correction_note
-            if lesson_to_save and hasattr(agent, '_data_context_notes'):
+            if lesson_to_save and hasattr(agent, "_data_context_notes"):
                 if lesson_to_save not in agent._data_context_notes:
                     agent._data_context_notes.append(lesson_to_save)
                     if len(agent._data_context_notes) > 20:
@@ -725,29 +883,30 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
 
             # ── Persist LessonRecord to SQLite ────────────────────────────────
             # This is the full chain: original → domain insight → rule → corrected SQL
-            import uuid as _uuid, json as _json
+            import uuid as _uuid
+            import json as _json
             from datetime import datetime, timezone as _tz
             from sqlagent.telemetry import LessonRecord
 
             lesson_record = LessonRecord(
-                lesson_id     = "lesson_" + _uuid.uuid4().hex[:12],
-                workspace_id  = workspace_id or "",
-                user_id       = user.user_id,
-                nl_query      = nl,
-                original_sql  = original_sql,
-                corrected_sql = sql,
-                domain_insight= domain_insight,
-                context_rule  = lesson_to_save or "",
-                what_changed  = what_changed,
-                rows_preview  = _json.dumps(rows_preview[:5]),
-                columns       = _json.dumps(columns_preview),
-                row_count     = row_count_preview,
-                failed_stage  = result.get("failed_stage", ""),
-                failed_node   = failed_node,
-                pair_id       = result.get("pair_id", ""),
-                tokens_used   = tokens_used_regen,
-                cost_usd      = cost_usd_regen,
-                created_at    = datetime.now(_tz.utc).isoformat(),
+                lesson_id="lesson_" + _uuid.uuid4().hex[:12],
+                workspace_id=workspace_id or "",
+                user_id=user.user_id,
+                nl_query=nl,
+                original_sql=original_sql,
+                corrected_sql=sql,
+                domain_insight=domain_insight,
+                context_rule=lesson_to_save or "",
+                what_changed=what_changed,
+                rows_preview=_json.dumps(rows_preview[:5]),
+                columns=_json.dumps(columns_preview),
+                row_count=row_count_preview,
+                failed_stage=result.get("failed_stage", ""),
+                failed_node=failed_node,
+                pair_id=result.get("pair_id", ""),
+                tokens_used=tokens_used_regen,
+                cost_usd=cost_usd_regen,
+                created_at=datetime.now(_tz.utc).isoformat(),
             )
             try:
                 await _state["lesson_store"].save(lesson_record)
@@ -755,24 +914,29 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
                 logger.warn("learn.lesson_store_save_failed", error=str(_e))
 
             # Push to agent activity feed (in-memory ring buffer)
-            if hasattr(agent, '_learn_activity'):
-                agent._learn_activity.insert(0, {
-                    "action":       "correction",
-                    "nl_query":     nl[:60],
-                    "failed_stage": result.get("failed_stage", ""),
-                    "lesson":       lesson_to_save[:80] if lesson_to_save else "",
-                    "ts":           datetime.now(_tz.utc).isoformat(),
-                })
+            if hasattr(agent, "_learn_activity"):
+                agent._learn_activity.insert(
+                    0,
+                    {
+                        "action": "correction",
+                        "nl_query": nl[:60],
+                        "failed_stage": result.get("failed_stage", ""),
+                        "lesson": lesson_to_save[:80] if lesson_to_save else "",
+                        "ts": datetime.now(_tz.utc).isoformat(),
+                    },
+                )
                 agent._learn_activity = agent._learn_activity[:50]
 
-            logger.info("learning.correction",
-                        failed_stage=result.get("failed_stage"),
-                        has_lesson=bool(lesson_to_save),
-                        lesson_id=lesson_record.lesson_id)
+            logger.info(
+                "learning.correction",
+                failed_stage=result.get("failed_stage"),
+                has_lesson=bool(lesson_to_save),
+                lesson_id=lesson_record.lesson_id,
+            )
             return {
-                "example_id":   result.get("pair_id", ""),
-                "lesson_id":    lesson_record.lesson_id,
-                "message":      result.get("message", "Correction saved"),
+                "example_id": result.get("pair_id", ""),
+                "lesson_id": lesson_record.lesson_id,
+                "message": result.get("message", "Correction saved"),
                 "failed_stage": result.get("failed_stage", ""),
                 "lesson_saved": lesson_to_save[:80] if lesson_to_save else "",
             }
@@ -799,18 +963,19 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
         agent = await _get_or_create_agent(workspace_id, user.user_id)
 
         from sqlagent.graph.learn_graph import LearnState
+
         initial_state: LearnState = {
-            "nl_query":        body.get("nl_query", ""),
-            "original_sql":    body.get("original_sql", ""),
-            "failure_type":    body.get("failure_type", ""),
-            "failed_node":     body.get("failed_node", ""),
+            "nl_query": body.get("nl_query", ""),
+            "original_sql": body.get("original_sql", ""),
+            "failure_type": body.get("failure_type", ""),
+            "failed_node": body.get("failed_node", ""),
             "correction_note": body.get("correction_note", ""),
-            "trace_events":    body.get("trace_events", []),
-            "workspace_id":    workspace_id,
-            "user_id":         user.user_id,
-            "source_id":       body.get("source_id", ""),
-            "tokens_used":     0,
-            "cost_usd":        0.0,
+            "trace_events": body.get("trace_events", []),
+            "workspace_id": workspace_id,
+            "user_id": user.user_id,
+            "source_id": body.get("source_id", ""),
+            "tokens_used": 0,
+            "cost_usd": 0.0,
             "learn_trace_events": [],
         }
 
@@ -818,7 +983,9 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
         try:
             learn_graph = getattr(agent, "_learn_graph", None)
             if learn_graph is None:
-                raise HTTPException(status_code=501, detail="Learn Agent not initialized for this workspace")
+                raise HTTPException(
+                    status_code=501, detail="Learn Agent not initialized for this workspace"
+                )
             final_state = await learn_graph.ainvoke(initial_state)
         except HTTPException:
             raise
@@ -835,22 +1002,22 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
         )
 
         return {
-            "regenerated_sql":   final_state.get("rewritten_sql", ""),
-            "what_changed":      final_state.get("what_changed", ""),
-            "domain_insight":    final_state.get("domain_insight", ""),
-            "extracted_lesson":  final_state.get("extracted_lesson", ""),
-            "rows":              final_state.get("rows", []),
-            "columns":           final_state.get("columns", []),
-            "row_count":         final_state.get("row_count", 0),
-            "exec_error":        final_state.get("exec_error", ""),
-            "tokens_used":       final_state.get("tokens_used", 0),
+            "regenerated_sql": final_state.get("rewritten_sql", ""),
+            "what_changed": final_state.get("what_changed", ""),
+            "domain_insight": final_state.get("domain_insight", ""),
+            "extracted_lesson": final_state.get("extracted_lesson", ""),
+            "rows": final_state.get("rows", []),
+            "columns": final_state.get("columns", []),
+            "row_count": final_state.get("row_count", 0),
+            "exec_error": final_state.get("exec_error", ""),
+            "tokens_used": final_state.get("tokens_used", 0),
             "learn_trace_events": final_state.get("learn_trace_events", []),
         }
-
 
     @app.get("/hub/packs", tags=["hub"])
     async def list_hub_packs():
         from sqlagent.hub import list_packs
+
         return {"packs": list_packs()}
 
     @app.post("/hub/install", tags=["hub"])
@@ -858,6 +1025,7 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
         body = await request.json()
         agent = await _get_or_create_agent("", user.user_id)
         from sqlagent.hub import install_pack
+
         pack_name = body.get("pack_name", "")
         count = await install_pack(pack_name, agent.services.example_store)
         return {"installed": count, "pack": pack_name}
@@ -869,12 +1037,13 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
         body = await request.json()
         agent = await _get_or_create_agent("", user.user_id)
         from sqlagent.agents import LearningLoop
+
         loop = LearningLoop(agent.services.example_store)
         if body.get("feedback") == "thumbs_up":
-            await loop.on_thumbs_up(body.get("nl_query",""), body.get("sql",""))
+            await loop.on_thumbs_up(body.get("nl_query", ""), body.get("sql", ""))
             return {"message": "Training pair saved from positive feedback"}
         elif body.get("feedback") == "thumbs_down" and body.get("corrected_sql"):
-            await loop.on_correction(body.get("nl_query",""), body.get("corrected_sql",""))
+            await loop.on_correction(body.get("nl_query", ""), body.get("corrected_sql", ""))
             return {"message": "Corrected training pair saved"}
         return {"message": "Feedback recorded"}
 
@@ -885,7 +1054,7 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
         try:
             agent = await _get_or_create_agent(workspace_id, user.user_id)
         except Exception as exc:
-            logger.debug("server.operation_failed", error=str(exc))  
+            logger.debug("server.operation_failed", error=str(exc))
 
         # Training pair count from vector store
         training_pairs = 0
@@ -899,7 +1068,7 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
         # SOUL profile
         soul_profile = None
         query_count = 0
-        soul_evolutions = getattr(agent, '_soul_evolutions', 0) if agent else 0
+        soul_evolutions = getattr(agent, "_soul_evolutions", 0) if agent else 0
         if agent and agent.services.soul:
             try:
                 sp = agent.services.soul._profiles.get(user.user_id or "local")
@@ -912,23 +1081,23 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
                     }
                     query_count = sp.query_count
             except Exception as exc:
-                logger.debug("server.operation_failed", error=str(exc))  
+                logger.debug("server.operation_failed", error=str(exc))
 
         # Recent activity from agent (in-memory ring buffer)
-        recent_activity = getattr(agent, '_learn_activity', [])[:10] if agent else []
+        recent_activity = getattr(agent, "_learn_activity", [])[:10] if agent else []
 
         # SOUL progress toward next evolution (every 20 queries)
         soul_next_in = max(0, 20 - (query_count % 20)) if query_count > 0 else 20
 
         # Auto-learn enabled?
-        if agent and hasattr(agent, '_auto_learn'):
+        if agent and hasattr(agent, "_auto_learn"):
             auto_learn_enabled = bool(agent._auto_learn)
         else:
             raw = _state.get("user_settings", {}).get("auto_learn", True)
             auto_learn_enabled = bool(raw) if raw is not None else True
 
         # Workspace semantic context notes (from user corrections — in-memory)
-        data_context_notes = getattr(agent, '_data_context_notes', []) if agent else []
+        data_context_notes = getattr(agent, "_data_context_notes", []) if agent else []
 
         # Persistent correction count from LessonStore (survives server restarts)
         correction_count = 0
@@ -946,17 +1115,17 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
             "status": "active" if auto_learn_enabled else "paused",
             "auto_learn_enabled": auto_learn_enabled,
             # Real counts — no fake accuracy stat
-            "training_pairs":    training_pairs,       # from vector store
-            "correction_count":  correction_count,     # from LessonStore (SQLite)
+            "training_pairs": training_pairs,  # from vector store
+            "correction_count": correction_count,  # from LessonStore (SQLite)
             "context_rules_count": len(data_context_notes),
-            "soul_query_count":  query_count,
-            "soul_next_in":      soul_next_in,
+            "soul_query_count": query_count,
+            "soul_next_in": soul_next_in,
             "soul_progress_pct": min(100, round((20 - soul_next_in) / 20 * 100)),
-            "soul_evolutions":   soul_evolutions,
-            "recent_activity":   recent_activity,
-            "soul_profile":      soul_profile,
+            "soul_evolutions": soul_evolutions,
+            "recent_activity": recent_activity,
+            "soul_profile": soul_profile,
             "data_context_notes": data_context_notes,
-            "lesson_records":    lesson_records,       # full chain, shown as Lesson Cards in UI
+            "lesson_records": lesson_records,  # full chain, shown as Lesson Cards in UI
         }
 
     @app.get("/api/learning/stats", tags=["train"])
@@ -967,7 +1136,9 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
     # ── Flat task endpoints (workspace-agnostic, for UI convenience) ──────────
 
     @app.get("/api/tasks", tags=["tasks"])
-    async def list_all_tasks(limit: int = 50, workspace_id: str = "", user=Depends(get_current_user)):
+    async def list_all_tasks(
+        limit: int = 50, workspace_id: str = "", user=Depends(get_current_user)
+    ):
         """Flat task list across all workspaces (or filtered by workspace_id query param).
         Convenience wrapper around /workspaces/{id}/tasks for the Tasks view."""
         try:
@@ -978,9 +1149,15 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
                 workspaces = await _state["workspace_store"].list_for_user(user.user_id)
                 traces = []
                 for ws in workspaces:
-                    ws_traces = await _state["trace_store"].list_for_workspace(ws.workspace_id, limit=limit)
+                    ws_traces = await _state["trace_store"].list_for_workspace(
+                        ws.workspace_id, limit=limit
+                    )
                     traces.extend(ws_traces)
-                traces = sorted(traces, key=lambda t: t.get("created_at") or t.get("started_at") or "", reverse=True)[:limit]
+                traces = sorted(
+                    traces,
+                    key=lambda t: t.get("created_at") or t.get("started_at") or "",
+                    reverse=True,
+                )[:limit]
         except Exception as exc:
             logger.debug("api_tasks.failed", error=str(exc))
             traces = []
@@ -1016,7 +1193,7 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
         except Exception as exc:
             logger.debug("server.operation_failed", error=str(exc))
             raise HTTPException(status_code=404, detail="Agent not found")
-        notes = getattr(agent, '_data_context_notes', [])
+        notes = getattr(agent, "_data_context_notes", [])
         if idx < 0 or idx >= len(notes):
             raise HTTPException(status_code=404, detail="Rule index out of range")
         agent._data_context_notes = [n for i, n in enumerate(notes) if i != idx]
@@ -1051,11 +1228,15 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
 
         # Always use the fastest available model for greetings regardless of selected query model
         # This keeps TTFT under ~300ms. Query model is used for actual SQL work.
-        anthropic_key = user_settings.get("anthropic_key") or os.environ.get("ANTHROPIC_API_KEY", "")
+        anthropic_key = user_settings.get("anthropic_key") or os.environ.get(
+            "ANTHROPIC_API_KEY", ""
+        )
         openai_key = user_settings.get("openai_key") or os.environ.get("OPENAI_API_KEY", "")
 
         if anthropic_key:
-            greet_model = configured_model if "claude" in configured_model.lower() else "claude-haiku-4-5"
+            greet_model = (
+                configured_model if "claude" in configured_model.lower() else "claude-haiku-4-5"
+            )
             api_key = anthropic_key
         elif openai_key:
             greet_model = "gpt-4o-mini"
@@ -1069,11 +1250,15 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
         async def _generate():
             try:
                 import litellm
+
                 kwargs: dict = {
                     "model": greet_model,
                     "messages": [
                         {"role": "system", "content": _GREET_SYSTEM},
-                        {"role": "user", "content": f"User name: {user_name}. Write the greeting now."},
+                        {
+                            "role": "user",
+                            "content": f"User name: {user_name}. Write the greeting now.",
+                        },
                     ],
                     "stream": True,
                     "max_tokens": 130,
@@ -1108,12 +1293,13 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
         if workspace_id not in _state["setup_agents"]:
             from sqlagent.agents import SetupAgent
             from sqlagent.llm import LiteLLMProvider
+
             llm = LiteLLMProvider(model=model)
             _state["setup_agents"][workspace_id] = SetupAgent(llm=llm)
 
         agent = _state["setup_agents"][workspace_id]
         # Always sync the model in case settings changed since the agent was created
-        if hasattr(agent._llm, 'model') and agent._llm.model != model:
+        if hasattr(agent._llm, "model") and agent._llm.model != model:
             agent._llm.model = model
 
         message = body.get("message", "")
@@ -1133,14 +1319,20 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
     # ── File Upload ────────────────────────────────────────────────────────────
 
     @app.post("/api/upload", tags=["settings"])
-    async def upload_file(file: UploadFile = File(...), workspace_id: str = Form(""), user=Depends(get_current_user)):
+    async def upload_file(
+        file: UploadFile = File(...), workspace_id: str = Form(""), user=Depends(get_current_user)
+    ):
         """Upload CSV/XLSX/Parquet file → save to workspace uploads dir, return metadata."""
         import shutil
-        upload_dir = os.path.join(os.path.expanduser("~"), ".sqlagent", "uploads", workspace_id or "default")
+
+        upload_dir = os.path.join(
+            os.path.expanduser("~"), ".sqlagent", "uploads", workspace_id or "default"
+        )
         os.makedirs(upload_dir, exist_ok=True)
 
         # Sanitize filename to prevent path traversal
         import re as _re
+
         safe_name = os.path.basename(file.filename or "upload")
         safe_name = _re.sub(r"[^\w.\-]", "_", safe_name)
         if not safe_name or safe_name.startswith("."):
@@ -1193,12 +1385,16 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
                         casts=list(read_config.cast_exprs.keys()),
                     )
                 except Exception as profile_exc:
-                    logger.warning("upload.profile_failed", file=file.filename, error=str(profile_exc))
+                    logger.warning(
+                        "upload.profile_failed", file=file.filename, error=str(profile_exc)
+                    )
                     read_config = None
 
             # Build connector — pass read_config if it's a file we can profile
             if read_config is not None:
-                conn = FileConnector(source_id=source_id, file_path=file_path, read_config=read_config)
+                conn = FileConnector(
+                    source_id=source_id, file_path=file_path, read_config=read_config
+                )
             else:
                 conn = ConnectorRegistry.from_url(source_id, file_path)
 
@@ -1213,16 +1409,21 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
             # Persist source to workspace store so it survives agent recreation
             if workspace_id:
                 try:
-                    await _state["workspace_store"].add_source(workspace_id, {
-                        "source_id": source_id,
-                        "type": "file",
-                        "file_path": file_path,
-                        "filename": safe_name,
-                        "dialect": snap.dialect,
-                    })
+                    await _state["workspace_store"].add_source(
+                        workspace_id,
+                        {
+                            "source_id": source_id,
+                            "type": "file",
+                            "file_path": file_path,
+                            "filename": safe_name,
+                            "dialect": snap.dialect,
+                        },
+                    )
                     logger.info("upload.source_persisted", workspace=workspace_id, source=source_id)
                 except Exception as e:
-                    logger.error("upload.source_persist_failed", workspace=workspace_id, error=str(e))
+                    logger.error(
+                        "upload.source_persist_failed", workspace=workspace_id, error=str(e)
+                    )
 
             # Invalidate cached knowledge graph + agent (new data = rebuild everything)
             kg_key = f"kg_{workspace_id or 'default'}"
@@ -1236,7 +1437,9 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
             if read_config is not None:
                 fixes = []
                 if read_config.extra_null_strings:
-                    fixes.append(f"{len(read_config.extra_null_strings)} null encoding(s) normalised")
+                    fixes.append(
+                        f"{len(read_config.extra_null_strings)} null encoding(s) normalised"
+                    )
                 if read_config.cast_exprs:
                     fixes.append(f"{len(read_config.cast_exprs)} column type(s) fixed")
                 if read_config.duckdb_args.get("dateformat"):
@@ -1251,7 +1454,10 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
                 "dialect": snap.dialect,
                 "table_count": snap.table_count,
                 "column_count": snap.column_count,
-                "tables": [{"name": t.name, "row_count": t.row_count_estimate, "columns": len(t.columns)} for t in snap.tables],
+                "tables": [
+                    {"name": t.name, "row_count": t.row_count_estimate, "columns": len(t.columns)}
+                    for t in snap.tables
+                ],
             }
         except Exception as e:
             return {"filename": safe_name, "file_path": file_path, "error": str(e)}
@@ -1261,6 +1467,7 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
     @app.get("/api/settings", tags=["settings"])
     async def get_settings(user=Depends(get_current_user)):
         import os as _os
+
         stored = dict(_state.get("user_settings", {}))
         # Tell the UI which env vars are active so it can show helpful hints
         stored["_env_anthropic"] = bool(_os.environ.get("ANTHROPIC_API_KEY", "").strip())
@@ -1276,24 +1483,35 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
         _state["user_settings"] = current
         body = current
         # Apply API keys to environment
-        import os, json as _json
-        if body.get("openai_key"): os.environ["OPENAI_API_KEY"] = body["openai_key"]
-        if body.get("anthropic_key"): os.environ["ANTHROPIC_API_KEY"] = body["anthropic_key"]
+        import os
+        import json as _json
+
+        if body.get("openai_key"):
+            os.environ["OPENAI_API_KEY"] = body["openai_key"]
+        if body.get("anthropic_key"):
+            os.environ["ANTHROPIC_API_KEY"] = body["anthropic_key"]
         # Persist to disk so settings survive server restarts
         try:
-            _settings_path = os.path.join(os.path.expanduser("~"), ".sqlagent", "user_settings.json")
+            _settings_path = os.path.join(
+                os.path.expanduser("~"), ".sqlagent", "user_settings.json"
+            )
             os.makedirs(os.path.dirname(_settings_path), exist_ok=True)
             with open(_settings_path, "w") as _f:
                 _json.dump(body, _f, indent=2)
         except Exception as exc:
-            logger.debug("server.operation_failed", error=str(exc))  
+            logger.debug("server.operation_failed", error=str(exc))
         # Apply model and auto_learn to all cached agents immediately
         selected_model = body.get("model", "")
         auto_learn = body.get("auto_learn", None)
         for agent_obj in _state.get("agents", {}).values():
-            if selected_model and hasattr(agent_obj, '_services') and agent_obj._services and hasattr(agent_obj._services, 'llm'):
+            if (
+                selected_model
+                and hasattr(agent_obj, "_services")
+                and agent_obj._services
+                and hasattr(agent_obj._services, "llm")
+            ):
                 agent_obj._services.llm.model = selected_model
-            if auto_learn is not None and hasattr(agent_obj, '_auto_learn'):
+            if auto_learn is not None and hasattr(agent_obj, "_auto_learn"):
                 agent_obj._auto_learn = auto_learn is not False
         # Full invalidation when API keys or model change — agents must be recreated
         if body.get("openai_key") or body.get("anthropic_key") or body.get("model"):
@@ -1311,9 +1529,10 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
             return {"valid": False, "error": "No key provided"}
         try:
             import litellm
+
             model_id = "claude-haiku-4-5" if provider == "anthropic" else "gpt-4o-mini"
             # litellm.completion is sync — run in a thread so we don't block the event loop
-            resp = await asyncio.to_thread(
+            await asyncio.to_thread(
                 litellm.completion,
                 model=model_id,
                 messages=[{"role": "user", "content": "Hi"}],
@@ -1354,9 +1573,14 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
             mid = t.get("model_id") or "unknown"
             if mid not in by_model:
                 by_model[mid] = {
-                    "model": mid, "queries": 0, "succeeded": 0,
-                    "total_tokens": 0, "tokens_input": 0, "tokens_output": 0,
-                    "total_cost_usd": 0.0, "latencies": [],
+                    "model": mid,
+                    "queries": 0,
+                    "succeeded": 0,
+                    "total_tokens": 0,
+                    "tokens_input": 0,
+                    "tokens_output": 0,
+                    "total_cost_usd": 0.0,
+                    "latencies": [],
                 }
             s = by_model[mid]
             s["queries"] += 1
@@ -1372,7 +1596,11 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
         for s in by_model.values():
             lats = s.pop("latencies")
             s["avg_latency_ms"] = round(sum(lats) / len(lats)) if lats else 0
-            s["p95_latency_ms"] = round(sorted(lats)[int(len(lats) * 0.95)]) if len(lats) >= 5 else s["avg_latency_ms"]
+            s["p95_latency_ms"] = (
+                round(sorted(lats)[int(len(lats) * 0.95)])
+                if len(lats) >= 5
+                else s["avg_latency_ms"]
+            )
             s["success_rate"] = round(s["succeeded"] / s["queries"] * 100, 1) if s["queries"] else 0
             s["total_cost_usd"] = round(s["total_cost_usd"], 6)
             result.append(s)
@@ -1382,6 +1610,7 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
     @app.post("/api/settings/verify-key", tags=["settings"])
     async def verify_api_key(request: Request, user=Depends(get_current_user)):
         import os as _os
+
         body = await request.json()
         provider = body.get("provider")  # "anthropic" or "openai"
         api_key = body.get("api_key", "").strip()
@@ -1393,10 +1622,14 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
             elif provider == "openai":
                 api_key = _os.environ.get("OPENAI_API_KEY", "")
         if not api_key:
-            return {"valid": False, "error": "No API key provided. Paste your key above and click Verify Key."}
+            return {
+                "valid": False,
+                "error": "No API key provided. Paste your key above and click Verify Key.",
+            }
 
         try:
             import litellm
+
             if provider == "anthropic":
                 model = "claude-haiku-4-5"
                 resp = await asyncio.to_thread(
@@ -1422,11 +1655,27 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
             return {"valid": True, "model": model_used}
         except Exception as ex:
             err = str(ex)
-            logger.warning("verify_key.failed", provider=provider, error_type=type(ex).__name__, error=err[:200])
-            if "401" in err or "invalid_api_key" in err.lower() or "authentication" in err.lower() or "x-api-key" in err.lower():
-                return {"valid": False, "error": "Key rejected — authentication failed. Paste a fresh key."}
+            logger.warning(
+                "verify_key.failed",
+                provider=provider,
+                error_type=type(ex).__name__,
+                error=err[:200],
+            )
+            if (
+                "401" in err
+                or "invalid_api_key" in err.lower()
+                or "authentication" in err.lower()
+                or "x-api-key" in err.lower()
+            ):
+                return {
+                    "valid": False,
+                    "error": "Key rejected — authentication failed. Paste a fresh key.",
+                }
             elif "not_found" in err.lower() or "model_not_found" in err.lower():
-                return {"valid": False, "error": f"Model not found. Try a different model. ({err[:80]})"}
+                return {
+                    "valid": False,
+                    "error": f"Model not found. Try a different model. ({err[:80]})",
+                }
             elif "429" in err or "rate_limit" in err.lower():
                 return {"valid": True, "warning": "Key is valid (rate limited)"}
             elif "connect" in err.lower() or "network" in err.lower() or "timeout" in err.lower():
@@ -1443,14 +1692,12 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
         _has_anthropic = bool(
             user_settings.get("anthropic_key") or os.environ.get("ANTHROPIC_API_KEY", "")
         )
-        _has_openai = bool(
-            user_settings.get("openai_key") or os.environ.get("OPENAI_API_KEY", "")
-        )
+        _has_openai = bool(user_settings.get("openai_key") or os.environ.get("OPENAI_API_KEY", ""))
         return {
             "status": "ok",
             "version": "2.0.0",
             "timestamp": datetime.now(timezone.utc).isoformat(),
-            "auth_required": cfg.auth_enabled,   # False by default — frontend skips login
+            "auth_required": cfg.auth_enabled,  # False by default — frontend skips login
             "has_llm_key": _has_anthropic or _has_openai,
             "llm_providers": {
                 "anthropic": _has_anthropic,
@@ -1497,11 +1744,13 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
     @app.get("/metrics", tags=["observability"])
     async def metrics():
         from sqlagent.telemetry import get_prometheus_metrics, get_prometheus_content_type
+
         return Response(content=get_prometheus_metrics(), media_type=get_prometheus_content_type())
 
     @app.get("/debug/traces", tags=["observability"])
     async def debug_traces(user=Depends(get_current_user)):
         from sqlagent.telemetry import get_recent_traces
+
         return {"traces": get_recent_traces()}
 
     @app.get("/debug/audit", tags=["observability"])
@@ -1515,6 +1764,7 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
     async def api_history_stats(workspace_id: str = "", user=Depends(get_current_user)):
         """Aggregate query stats for the Home dashboard KPI cards."""
         from datetime import timedelta
+
         try:
             traces = await _state["trace_store"].list_for_workspace(workspace_id or "", limit=5000)
         except Exception:
@@ -1554,7 +1804,9 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
     # ── Chat sessions ──────────────────────────────────────────────────────────
 
     @app.get("/api/chat/sessions", tags=["settings"])
-    async def list_chat_sessions(workspace_id: str = "", limit: int = 20, user=Depends(get_current_user)):
+    async def list_chat_sessions(
+        workspace_id: str = "", limit: int = 20, user=Depends(get_current_user)
+    ):
         """Return recent sessions (one per unique session_id in trace store)."""
         try:
             traces = await _state["trace_store"].list_for_workspace(workspace_id or "", limit=500)
@@ -1579,7 +1831,9 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
         return {"sessions": sessions, "total": len(sessions)}
 
     @app.get("/api/chat/messages", tags=["settings"])
-    async def get_chat_messages(session_id: str = "", workspace_id: str = "", user=Depends(get_current_user)):
+    async def get_chat_messages(
+        session_id: str = "", workspace_id: str = "", user=Depends(get_current_user)
+    ):
         """Return all trace entries for a given session (used to restore chat history)."""
         if not session_id:
             return {"messages": []}
@@ -1592,20 +1846,24 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
         for t in traces:
             if t.get("session_id") != session_id and t.get("trace_id") != session_id:
                 continue
-            messages.append({
-                "role": "user",
-                "content": t.get("nl_query", ""),
-                "timestamp": t.get("created_at") or t.get("started_at") or "",
-            })
-            if t.get("response") or t.get("answer"):
-                messages.append({
-                    "role": "assistant",
-                    "content": t.get("response") or t.get("answer") or "",
-                    "sql": t.get("sql") or t.get("final_sql") or "",
-                    "row_count": t.get("row_count", 0),
-                    "succeeded": t.get("succeeded", False),
+            messages.append(
+                {
+                    "role": "user",
+                    "content": t.get("nl_query", ""),
                     "timestamp": t.get("created_at") or t.get("started_at") or "",
-                })
+                }
+            )
+            if t.get("response") or t.get("answer"):
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "content": t.get("response") or t.get("answer") or "",
+                        "sql": t.get("sql") or t.get("final_sql") or "",
+                        "row_count": t.get("row_count", 0),
+                        "succeeded": t.get("succeeded", False),
+                        "timestamp": t.get("created_at") or t.get("started_at") or "",
+                    }
+                )
         return {"messages": messages}
 
     # ── Schema refresh / validate-link / diff ─────────────────────────────────
@@ -1621,7 +1879,9 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
                 agent.services.schema_cache[sid] = snap
                 snapshots.append({"source_id": sid, "table_count": len(snap.tables)})
             # Bust cached knowledge graph
-            kg_path = os.path.join(os.path.expanduser("~"), ".sqlagent", "kg", f"{workspace_id or 'default'}.json")
+            kg_path = os.path.join(
+                os.path.expanduser("~"), ".sqlagent", "kg", f"{workspace_id or 'default'}.json"
+            )
             if os.path.exists(kg_path):
                 os.remove(kg_path)
             return {"status": "refreshed", "sources": snapshots}
@@ -1645,11 +1905,15 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
             ws = await _state["workspace_store"].get(workspace_id)
             validated = ws.metadata.get("validated_links", []) if ws.metadata else []
             # Remove existing entry for same pair
-            validated = [v for v in validated if not (
-                v.get("from_table") == link["from_table"] and
-                v.get("from_col") == link["from_col"] and
-                v.get("to_table") == link["to_table"]
-            )]
+            validated = [
+                v
+                for v in validated
+                if not (
+                    v.get("from_table") == link["from_table"]
+                    and v.get("from_col") == link["from_col"]
+                    and v.get("to_table") == link["to_table"]
+                )
+            ]
             validated.append(link)
             if not ws.metadata:
                 ws.metadata = {}
@@ -1676,11 +1940,13 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
                 added = current_tables - cached_tables
                 removed = cached_tables - current_tables
                 if added or removed:
-                    diffs.append({
-                        "source_id": sid,
-                        "tables_added": list(added),
-                        "tables_removed": list(removed),
-                    })
+                    diffs.append(
+                        {
+                            "source_id": sid,
+                            "tables_added": list(added),
+                            "tables_removed": list(removed),
+                        }
+                    )
             return {"diffs": diffs, "has_changes": bool(diffs)}
         except Exception as exc:
             return {"diffs": [], "has_changes": False, "error": str(exc)}
@@ -1690,6 +1956,7 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
     @app.get("/soul/{user_id}", tags=["soul"])
     async def get_soul(user_id: str):
         from sqlagent.soul import UserSOUL
+
         soul = UserSOUL()
         profile = soul.get_profile(user_id)
         return {
@@ -1704,6 +1971,7 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
     @app.get("/soul/{user_id}/md", tags=["soul"])
     async def get_soul_md(user_id: str):
         from sqlagent.soul import UserSOUL
+
         soul = UserSOUL()
         profile = soul.get_profile(user_id)
         return Response(content=profile.to_markdown(), media_type="text/markdown")
@@ -1767,6 +2035,7 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
     @app.get("/docs", include_in_schema=False)
     async def custom_swagger_ui():
         from fastapi.responses import HTMLResponse
+
         html = """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -2334,6 +2603,7 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
 # HELPERS
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 async def _get_or_create_agent(workspace_id: str, user_id: str) -> Any:
     """Get or create a SQLAgent for a workspace.
 
@@ -2344,6 +2614,7 @@ async def _get_or_create_agent(workspace_id: str, user_id: str) -> Any:
         return _state["agents"][key]
 
     from sqlagent.agent import SQLAgent
+
     cfg = _state.get("config")
     default_db = _state.get("default_db", "")
 
@@ -2354,7 +2625,7 @@ async def _get_or_create_agent(workspace_id: str, user_id: str) -> Any:
             ws = await _state["workspace_store"].get(workspace_id)
             ws_sources = ws.sources or []
         except Exception as exc:
-            logger.debug("server.operation_failed", error=str(exc))  
+            logger.debug("server.operation_failed", error=str(exc))
 
     # Only use default_db if there's NO workspace (direct API use) or workspace has sources
     # New workspaces start EMPTY — they should not inherit the CLI default_db
@@ -2375,15 +2646,20 @@ async def _get_or_create_agent(workspace_id: str, user_id: str) -> Any:
         if url:
             try:
                 from sqlagent.connectors import ConnectorRegistry
-                conn = ConnectorRegistry.from_url(sid or f"src_{len(agent.services.connectors)}", url)
+
+                conn = ConnectorRegistry.from_url(
+                    sid or f"src_{len(agent.services.connectors)}", url
+                )
                 await conn.connect()
                 agent.services.connectors[sid] = conn
             except Exception as e:
                 import structlog
+
                 structlog.get_logger().warn("agent.source_load_failed", source=sid, error=str(e))
 
     _state.setdefault("agents", {})[key] = agent
     return agent
+
 
 # Module-level app instance for uvicorn/gunicorn: 'uvicorn sqlagent.server:app'
 app = create_app()

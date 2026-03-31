@@ -9,7 +9,6 @@ Checkpoint: session serialization to SQLite
 from __future__ import annotations
 
 import re
-import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -24,13 +23,14 @@ logger = structlog.get_logger()
 # POLICY GATEWAY (deterministic — NO LLM, cannot be hallucinated around)
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 @dataclass
 class PolicyResult:
     passed: bool = True
     rule_id: str = ""
     reason: str = ""
-    action: str = ""           # "block" | "warn" | "redact" | "modify"
-    modified_sql: str = ""     # Non-empty if policy modified the SQL (e.g., added LIMIT)
+    action: str = ""  # "block" | "warn" | "redact" | "modify"
+    modified_sql: str = ""  # Non-empty if policy modified the SQL (e.g., added LIMIT)
 
 
 class PolicyGateway:
@@ -45,11 +45,11 @@ class PolicyGateway:
     """
 
     _DDL_PATTERN = re.compile(
-        r'\b(DROP|TRUNCATE|ALTER|CREATE|DELETE|UPDATE|INSERT|GRANT|REVOKE)\b',
+        r"\b(DROP|TRUNCATE|ALTER|CREATE|DELETE|UPDATE|INSERT|GRANT|REVOKE)\b",
         re.IGNORECASE,
     )
     _SELECT_PATTERN = re.compile(
-        r'^\s*(SELECT|WITH)\b',
+        r"^\s*(SELECT|WITH)\b",
         re.IGNORECASE,
     )
 
@@ -71,7 +71,8 @@ class PolicyGateway:
             match = self._DDL_PATTERN.search(sql)
             keyword = match.group(1) if match else "DDL"
             return PolicyResult(
-                passed=False, rule_id="no_ddl",
+                passed=False,
+                rule_id="no_ddl",
                 reason=f"{keyword} statements are not allowed",
                 action="block",
             )
@@ -79,7 +80,8 @@ class PolicyGateway:
         # Rule: select_only
         if self._select_only and not self._SELECT_PATTERN.match(sql.strip()):
             return PolicyResult(
-                passed=False, rule_id="select_only",
+                passed=False,
+                rule_id="select_only",
                 reason="Only SELECT/WITH queries are allowed",
                 action="block",
             )
@@ -88,7 +90,8 @@ class PolicyGateway:
         session_cost = state.get("cost_usd", 0.0)
         if session_cost >= self._cost_ceiling:
             return PolicyResult(
-                passed=False, rule_id="cost_ceiling",
+                passed=False,
+                rule_id="cost_ceiling",
                 reason=f"Session cost ${session_cost:.4f} exceeds ceiling ${self._cost_ceiling:.2f}",
                 action="block",
             )
@@ -99,7 +102,8 @@ class PolicyGateway:
             for pii_col in self._pii_columns:
                 if pii_col.lower() in sql_lower:
                     return PolicyResult(
-                        passed=False, rule_id="pii_columns",
+                        passed=False,
+                        rule_id="pii_columns",
                         reason=f"Query references PII column: {pii_col}",
                         action="block",
                     )
@@ -116,9 +120,11 @@ class PolicyGateway:
 # QUERY SESSION
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 @dataclass
 class TokenBudget:
     """Tracks token/cost spending per session."""
+
     max_tokens: int = 100_000
     max_cost_usd: float = 10.0
     tokens_used: int = 0
@@ -144,8 +150,9 @@ class TokenBudget:
 @dataclass
 class Turn:
     """A single turn in a multi-turn conversation."""
+
     turn_id: str = ""
-    role: str = ""             # "user" | "assistant"
+    role: str = ""  # "user" | "assistant"
     nl_query: str = ""
     sql: str = ""
     nl_response: str = ""
@@ -158,13 +165,14 @@ class Turn:
 @dataclass
 class QuerySession:
     """Multi-turn query session with conversation memory and budget tracking."""
+
     session_id: str = ""
     user_id: str = ""
     workspace_id: str = ""
     db_targets: list[str] = field(default_factory=list)
     conversation: list[Turn] = field(default_factory=list)
     token_budget: TokenBudget = field(default_factory=TokenBudget)
-    status: str = "active"     # "active" | "suspended" | "closed"
+    status: str = "active"  # "active" | "suspended" | "closed"
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def add_turn(self, turn: Turn) -> None:
@@ -198,6 +206,7 @@ class QuerySession:
 # MEMORY (3-tier)
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class WorkingMemory:
     """Tier 1: Session-scoped in-memory store. Dies when session ends."""
 
@@ -216,7 +225,7 @@ class WorkingMemory:
     def record_tables(self, tables: list[str]) -> None:
         existing = self._store.get("recent_tables", [])
         updated = list(dict.fromkeys(existing + tables))  # preserve order, dedup
-        self._store["recent_tables"] = updated[-20:]       # keep last 20
+        self._store["recent_tables"] = updated[-20:]  # keep last 20
 
 
 class EpisodicMemory:
@@ -228,6 +237,7 @@ class EpisodicMemory:
 
     def __init__(self, db_path: str = ""):
         import os
+
         if not db_path:
             db_path = os.path.join(os.path.expanduser("~"), ".sqlagent", "episodic.db")
         self._db_path = db_path
@@ -238,6 +248,7 @@ class EpisodicMemory:
             return
         import os
         import aiosqlite
+
         os.makedirs(os.path.dirname(self._db_path), exist_ok=True)
         async with aiosqlite.connect(self._db_path) as db:
             await db.executescript("""
@@ -270,12 +281,20 @@ class EpisodicMemory:
     ) -> None:
         await self.init()
         import aiosqlite
+
         async with aiosqlite.connect(self._db_path) as db:
             await db.execute(
                 "INSERT INTO query_log (user_id, nl_query, sql, tables_used, generator, succeeded, created_at) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (user_id, nl_query, sql, ",".join(tables), generator,
-                 int(succeeded), datetime.now(timezone.utc).isoformat()),
+                (
+                    user_id,
+                    nl_query,
+                    sql,
+                    ",".join(tables),
+                    generator,
+                    int(succeeded),
+                    datetime.now(timezone.utc).isoformat(),
+                ),
             )
             for table in tables:
                 await db.execute(
@@ -294,6 +313,7 @@ class EpisodicMemory:
     async def get_top_tables(self, user_id: str, limit: int = 10) -> list[tuple[str, int]]:
         await self.init()
         import aiosqlite
+
         async with aiosqlite.connect(self._db_path) as db:
             cursor = await db.execute(
                 "SELECT table_name, count FROM table_frequency "
@@ -305,6 +325,7 @@ class EpisodicMemory:
     async def get_query_count(self, user_id: str) -> int:
         await self.init()
         import aiosqlite
+
         async with aiosqlite.connect(self._db_path) as db:
             cursor = await db.execute(
                 "SELECT COUNT(*) FROM query_log WHERE user_id = ?", (user_id,)
@@ -316,7 +337,9 @@ class EpisodicMemory:
 class MemoryManager:
     """Coordinates all memory tiers."""
 
-    def __init__(self, working: WorkingMemory | None = None, episodic: EpisodicMemory | None = None):
+    def __init__(
+        self, working: WorkingMemory | None = None, episodic: EpisodicMemory | None = None
+    ):
         self.working = working or WorkingMemory()
         self.episodic = episodic or EpisodicMemory()
 
@@ -335,8 +358,12 @@ class MemoryManager:
         # Episodic memory
         try:
             await self.episodic.record_query(
-                user_id=user_id, nl_query=nl_query, sql=sql,
-                tables=tables, generator=generator, succeeded=succeeded,
+                user_id=user_id,
+                nl_query=nl_query,
+                sql=sql,
+                tables=tables,
+                generator=generator,
+                succeeded=succeeded,
             )
         except Exception as e:
             logger.warn("episodic.write_failed", error=str(e))

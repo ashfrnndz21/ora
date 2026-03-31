@@ -36,28 +36,29 @@ from sqlagent.telemetry import traced_node
 # LEARN STATE
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class LearnState(TypedDict, total=False):
     """State flowing through the Learn Agent correction graph."""
 
     # ── Input ─────────────────────────────────────────────────────────────────
     nl_query: str
     original_sql: str
-    failure_type: str          # wrong_tables | wrong_columns | wrong_filter | wrong_logic
-    failed_node: str           # prune | retrieve | plan | generate | execute | correct
-    correction_note: str       # user's plain-English description of what was wrong
-    trace_events: list[dict]   # full trace_events from the original query run
+    failure_type: str  # wrong_tables | wrong_columns | wrong_filter | wrong_logic
+    failed_node: str  # prune | retrieve | plan | generate | execute | correct
+    correction_note: str  # user's plain-English description of what was wrong
+    trace_events: list[dict]  # full trace_events from the original query run
     workspace_id: str
     user_id: str
-    source_id: str             # which source to execute corrected SQL against
+    source_id: str  # which source to execute corrected SQL against
 
     # ── Analysis ──────────────────────────────────────────────────────────────
-    failed_stage: str          # mapped: schema | retrieval | planning | generation | filtering
-    schema_context: str        # serialized schema passed to the rewrite LLM
+    failed_stage: str  # mapped: schema | retrieval | planning | generation | filtering
+    schema_context: str  # serialized schema passed to the rewrite LLM
 
     # ── Rewrite ───────────────────────────────────────────────────────────────
     rewritten_sql: str
-    what_changed: str          # one sentence: technical explanation of the fix
-    domain_insight: str        # what the agent discovered about the DATA DOMAIN
+    what_changed: str  # one sentence: technical explanation of the fix
+    domain_insight: str  # what the agent discovered about the DATA DOMAIN
 
     # ── Execution ─────────────────────────────────────────────────────────────
     rows: list[dict]
@@ -66,7 +67,7 @@ class LearnState(TypedDict, total=False):
     exec_error: str
 
     # ── Lesson ────────────────────────────────────────────────────────────────
-    extracted_lesson: str      # ONE sentence general rule — injected into all future queries
+    extracted_lesson: str  # ONE sentence general rule — injected into all future queries
 
     # ── Budget ────────────────────────────────────────────────────────────────
     tokens_used: int
@@ -81,22 +82,22 @@ class LearnState(TypedDict, total=False):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 _FAILURE_TYPE_TO_STAGE = {
-    "wrong_tables":      "schema",
-    "wrong_columns":     "schema",
-    "bad_example":       "retrieval",
-    "wrong_plan":        "planning",
-    "wrong_logic":       "generation",
-    "wrong_filter":      "filtering",
+    "wrong_tables": "schema",
+    "wrong_columns": "schema",
+    "bad_example": "retrieval",
+    "wrong_plan": "planning",
+    "wrong_logic": "generation",
+    "wrong_filter": "filtering",
     "wrong_aggregation": "generation",
 }
 
 _NODE_TO_STAGE = {
-    "prune":    "schema",
+    "prune": "schema",
     "retrieve": "retrieval",
-    "plan":     "planning",
+    "plan": "planning",
     "generate": "generation",
-    "execute":  "generation",
-    "correct":  "generation",
+    "execute": "generation",
+    "correct": "generation",
 }
 
 
@@ -130,12 +131,14 @@ def make_understand_correction_node(services: Any):
         latency = int((time.monotonic() - started) * 1000)
         return {
             "failed_stage": failed_stage,
-            "learn_trace_events": [{
-                "node": "learn.understand",
-                "status": "completed",
-                "latency_ms": latency,
-                "summary": f"Failure mapped → stage: {failed_stage}",
-            }],
+            "learn_trace_events": [
+                {
+                    "node": "learn.understand",
+                    "status": "completed",
+                    "latency_ms": latency,
+                    "summary": f"Failure mapped → stage: {failed_stage}",
+                }
+            ],
         }
 
     return understand_correction_node
@@ -159,9 +162,7 @@ def make_analyze_schema_node(services: Any):
                 snap = await conn.introspect()
                 lines = []
                 for t in snap.tables[:25]:
-                    col_list = ", ".join(
-                        f"{c.name} ({c.data_type})" for c in t.columns[:20]
-                    )
+                    col_list = ", ".join(f"{c.name} ({c.data_type})" for c in t.columns[:20])
                     lines.append(f"  {t.name}: [{col_list}]")
                     # Add any sample values we have (helps with aggregate row detection)
                     if hasattr(t, "sample_values") and t.sample_values:
@@ -174,12 +175,15 @@ def make_analyze_schema_node(services: Any):
         latency = int((time.monotonic() - started) * 1000)
         return {
             "schema_context": schema_context,
-            "learn_trace_events": state.get("learn_trace_events", []) + [{
-                "node": "learn.analyze_schema",
-                "status": "completed",
-                "latency_ms": latency,
-                "summary": f"Schema loaded — {len(schema_context.splitlines())} table definitions",
-            }],
+            "learn_trace_events": state.get("learn_trace_events", [])
+            + [
+                {
+                    "node": "learn.analyze_schema",
+                    "status": "completed",
+                    "latency_ms": latency,
+                    "summary": f"Schema loaded — {len(schema_context.splitlines())} table definitions",
+                }
+            ],
         }
 
     return analyze_schema_node
@@ -209,7 +213,7 @@ def make_rewrite_sql_node(services: Any):
             '{"rewritten_sql": "...", '
             '"what_changed": "One sentence: exactly what SQL change fixes the problem.", '
             '"domain_insight": "One sentence: what is true about the DATA DOMAIN that caused '
-            'the original mistake (e.g., column X contains aggregate rows, table Y uses a '
+            "the original mistake (e.g., column X contains aggregate rows, table Y uses a "
             'surrogate key, etc.)."}'
         )
 
@@ -239,17 +243,20 @@ def make_rewrite_sql_node(services: Any):
 
         return {
             "rewritten_sql": parsed.get("rewritten_sql", ""),
-            "what_changed":  parsed.get("what_changed", ""),
+            "what_changed": parsed.get("what_changed", ""),
             "domain_insight": parsed.get("domain_insight", ""),
             "tokens_used": state.get("tokens_used", 0) + tokens,
-            "cost_usd":    state.get("cost_usd", 0.0) + resp.cost_usd,
-            "learn_trace_events": state.get("learn_trace_events", []) + [{
-                "node": "learn.rewrite_sql",
-                "status": "completed",
-                "latency_ms": latency,
-                "tokens": tokens,
-                "summary": parsed.get("what_changed", "SQL rewritten")[:80],
-            }],
+            "cost_usd": state.get("cost_usd", 0.0) + resp.cost_usd,
+            "learn_trace_events": state.get("learn_trace_events", [])
+            + [
+                {
+                    "node": "learn.rewrite_sql",
+                    "status": "completed",
+                    "latency_ms": latency,
+                    "tokens": tokens,
+                    "summary": parsed.get("what_changed", "SQL rewritten")[:80],
+                }
+            ],
         }
 
     return rewrite_sql_node
@@ -266,13 +273,18 @@ def make_execute_corrected_node(services: Any):
         if not sql:
             return {
                 "exec_error": "No SQL to execute",
-                "rows": [], "columns": [], "row_count": 0,
-                "learn_trace_events": state.get("learn_trace_events", []) + [{
-                    "node": "learn.execute_corrected",
-                    "status": "failed",
-                    "latency_ms": 0,
-                    "summary": "No SQL produced by rewrite step",
-                }],
+                "rows": [],
+                "columns": [],
+                "row_count": 0,
+                "learn_trace_events": state.get("learn_trace_events", [])
+                + [
+                    {
+                        "node": "learn.execute_corrected",
+                        "status": "failed",
+                        "latency_ms": 0,
+                        "summary": "No SQL produced by rewrite step",
+                    }
+                ],
             }
 
         source_id = state.get("source_id", "")
@@ -283,57 +295,71 @@ def make_execute_corrected_node(services: Any):
         if not conn:
             return {
                 "exec_error": "No database connector available",
-                "rows": [], "columns": [], "row_count": 0,
-                "learn_trace_events": state.get("learn_trace_events", []) + [{
-                    "node": "learn.execute_corrected",
-                    "status": "failed",
-                    "latency_ms": 0,
-                    "summary": "No connector for source",
-                }],
+                "rows": [],
+                "columns": [],
+                "row_count": 0,
+                "learn_trace_events": state.get("learn_trace_events", [])
+                + [
+                    {
+                        "node": "learn.execute_corrected",
+                        "status": "failed",
+                        "latency_ms": 0,
+                        "summary": "No connector for source",
+                    }
+                ],
             }
 
         try:
             import pandas as _pd
+
             # conn.execute() returns pd.DataFrame for DuckDB/file connectors
             result = await conn.execute(sql, timeout_s=30)
             latency = int((time.monotonic() - started) * 1000)
 
             # Normalise: DataFrame → rows/columns/row_count
             if isinstance(result, _pd.DataFrame):
-                rows    = result.head(20).to_dict("records")
+                rows = result.head(20).to_dict("records")
                 columns = list(result.columns)
                 row_count = len(result)
             elif hasattr(result, "rows"):
                 # ExecutionResult or similar dataclass with .rows
-                rows      = list(result.rows)[:20]
-                columns   = list(getattr(result, "columns", []))
+                rows = list(result.rows)[:20]
+                columns = list(getattr(result, "columns", []))
                 row_count = getattr(result, "row_count", len(rows))
             else:
                 rows, columns, row_count = [], [], 0
 
             return {
-                "rows":      rows,
-                "columns":   columns,
+                "rows": rows,
+                "columns": columns,
                 "row_count": row_count,
                 "exec_error": "",
-                "learn_trace_events": state.get("learn_trace_events", []) + [{
-                    "node": "learn.execute_corrected",
-                    "status": "completed",
-                    "latency_ms": latency,
-                    "summary": f"{row_count} rows returned",
-                }],
+                "learn_trace_events": state.get("learn_trace_events", [])
+                + [
+                    {
+                        "node": "learn.execute_corrected",
+                        "status": "completed",
+                        "latency_ms": latency,
+                        "summary": f"{row_count} rows returned",
+                    }
+                ],
             }
         except Exception as exc:
             latency = int((time.monotonic() - started) * 1000)
             return {
                 "exec_error": str(exc),
-                "rows": [], "columns": [], "row_count": 0,
-                "learn_trace_events": state.get("learn_trace_events", []) + [{
-                    "node": "learn.execute_corrected",
-                    "status": "failed",
-                    "latency_ms": latency,
-                    "summary": f"Execution error: {str(exc)[:60]}",
-                }],
+                "rows": [],
+                "columns": [],
+                "row_count": 0,
+                "learn_trace_events": state.get("learn_trace_events", [])
+                + [
+                    {
+                        "node": "learn.execute_corrected",
+                        "status": "failed",
+                        "latency_ms": latency,
+                        "summary": f"Execution error: {str(exc)[:60]}",
+                    }
+                ],
             }
 
     return execute_corrected_node
@@ -379,14 +405,17 @@ def make_extract_lesson_node(services: Any):
         return {
             "extracted_lesson": lesson,
             "tokens_used": state.get("tokens_used", 0) + tokens,
-            "cost_usd":    state.get("cost_usd", 0.0) + resp.cost_usd,
-            "learn_trace_events": state.get("learn_trace_events", []) + [{
-                "node": "learn.extract_lesson",
-                "status": "completed",
-                "latency_ms": latency,
-                "tokens": tokens,
-                "summary": f"Rule: {lesson[:70]}",
-            }],
+            "cost_usd": state.get("cost_usd", 0.0) + resp.cost_usd,
+            "learn_trace_events": state.get("learn_trace_events", [])
+            + [
+                {
+                    "node": "learn.extract_lesson",
+                    "status": "completed",
+                    "latency_ms": latency,
+                    "tokens": tokens,
+                    "summary": f"Rule: {lesson[:70]}",
+                }
+            ],
         }
 
     return extract_lesson_node
@@ -395,6 +424,7 @@ def make_extract_lesson_node(services: Any):
 # ═══════════════════════════════════════════════════════════════════════════════
 # GRAPH COMPILATION
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 def compile_learn_graph(services: Any) -> Any:
     """Compile the Learn Agent correction graph.
@@ -419,16 +449,16 @@ def compile_learn_graph(services: Any) -> Any:
     graph = StateGraph(LearnState)
 
     graph.add_node("understand_correction", make_understand_correction_node(services))
-    graph.add_node("analyze_schema",        make_analyze_schema_node(services))
-    graph.add_node("rewrite_sql",           make_rewrite_sql_node(services))
-    graph.add_node("execute_corrected",     make_execute_corrected_node(services))
-    graph.add_node("extract_lesson",        make_extract_lesson_node(services))
+    graph.add_node("analyze_schema", make_analyze_schema_node(services))
+    graph.add_node("rewrite_sql", make_rewrite_sql_node(services))
+    graph.add_node("execute_corrected", make_execute_corrected_node(services))
+    graph.add_node("extract_lesson", make_extract_lesson_node(services))
 
     graph.set_entry_point("understand_correction")
     graph.add_edge("understand_correction", "analyze_schema")
-    graph.add_edge("analyze_schema",        "rewrite_sql")
-    graph.add_edge("rewrite_sql",           "execute_corrected")
-    graph.add_edge("execute_corrected",     "extract_lesson")
-    graph.add_edge("extract_lesson",        END)
+    graph.add_edge("analyze_schema", "rewrite_sql")
+    graph.add_edge("rewrite_sql", "execute_corrected")
+    graph.add_edge("execute_corrected", "extract_lesson")
+    graph.add_edge("extract_lesson", END)
 
     return graph.compile()
