@@ -2262,7 +2262,7 @@ def make_synthesize_node(services: Any):
                 last_error = str(exc)
 
         sql = ""
-        last_error = last_error if is_independent else ""
+        last_error = ""  # always initialize before the generation loop
         # Generate → execute → reflect loop (up to 3 rounds)
         for attempt in range(3):
             if attempt == 0:
