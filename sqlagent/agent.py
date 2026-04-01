@@ -48,6 +48,8 @@ class PipelineServices:
     trace_store: Any = None
     audit_log: Any = None
     lesson_store: Any = None  # LessonStore — persists Learn Agent correction records
+    _semantic_cache: Any = None   # SemanticCache — vector cache for SemanticResolution
+    _semantic_memory: Any = None  # SemanticMemory — SQLite persistent source facts
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -82,6 +84,9 @@ class SQLAgent:
         # Workspace semantic context — lessons learned from user corrections.
         # Injected into EVERY SQL generation prompt so the LLM never repeats the same mistake.
         self._data_context_notes: list[str] = []
+        # Semantic context blocks — one per connected source, built by SemanticAnalysisAgent
+        # at connect time. Injected into every SQL generation prompt.
+        self._semantic_context_notes: list[str] = []
         # Learn graph (compiled alongside query graph, used by /learn/regenerate)
         self._learn_graph = None
 
@@ -183,6 +188,18 @@ class SQLAgent:
         services.lesson_store = LessonStore()
         await services.lesson_store.init()
 
+        # Semantic cache (dedicated Qdrant store with its own collection)
+        from sqlagent.semantic_layer import SemanticCache, SemanticMemory
+        from sqlagent.retrieval import QdrantVectorStore as _QdrantVS
+        semantic_vs = _QdrantVS(collection_name="semantic_cache")
+        services._semantic_cache = SemanticCache(
+            vector_store=semantic_vs,
+            embedder=services.embedder,
+        )
+
+        # Semantic memory (SQLite persistent facts about each source)
+        services._semantic_memory = SemanticMemory()
+
         self._services = services
 
         # Compile the query orchestration LangGraph
@@ -206,6 +223,7 @@ class SQLAgent:
         user_id: str = "default",
         workspace_id: str = "",
         session_id: str = "",
+        conversation_history: list | None = None,
     ) -> PipelineResult:
         """Run a natural language query through the full agentic pipeline."""
         await self._ensure_ready()
@@ -228,6 +246,8 @@ class SQLAgent:
             "budget_exhausted": False,
             "correction_round": 0,
             "max_corrections": self._config.max_corrections,
+            "conversation_history": conversation_history or [],
+            "data_context_notes": list(self._data_context_notes) + list(self._semantic_context_notes),
         }
 
         # Optional Langfuse callback
@@ -358,9 +378,9 @@ class SQLAgent:
             "budget_exhausted": False,
             "correction_round": 0,
             "max_corrections": self._config.max_corrections,
-            # Workspace-specific semantic lessons from user corrections
+            # Workspace-specific semantic lessons + source semantic context
             # These inject into every SQL generation so the LLM never repeats known mistakes
-            "data_context_notes": list(self._data_context_notes),
+            "data_context_notes": list(self._data_context_notes) + list(self._semantic_context_notes),
             # Structured conversation history for multi-turn intent classification
             "conversation_history": conversation_history or [],
         }
@@ -425,6 +445,9 @@ class SQLAgent:
 
         learn_event = {"action": None, "soul_evolved": False}
 
+        _rows_for_gate = final_state.get("rows", [])
+        _row_count_for_gate = final_state.get("row_count", 0)
+
         async def _background_learn():
             # 1. Auto-learn: save successful query as training pair
             if (
@@ -433,24 +456,51 @@ class SQLAgent:
                 and _sql_for_learn
                 and self._services.example_store
             ):
-                try:
-                    from sqlagent.agents import LearningLoop
+                # LLM gate: verify the result actually answers the question.
+                # Pure agentic reflection — no hardcoded rules about columns or values.
+                _gate_passed = True
+                if self._services.llm and _row_count_for_gate > 0:
+                    try:
+                        sample_rows = _rows_for_gate[:3]
+                        gate_prompt = (
+                            f"Question: {_nl_for_learn}\n\n"
+                            f"SQL executed:\n{_sql_for_learn}\n\n"
+                            f"Result: {_row_count_for_gate} rows. Sample: {sample_rows}\n\n"
+                            "Does this result directly answer the question? "
+                            "Reply with YES or NO only."
+                        )
+                        gate_resp = await self._services.llm.complete(
+                            [{"role": "user", "content": gate_prompt}],
+                            max_tokens=5,
+                        )
+                        answer = gate_resp.content.strip().upper()
+                        _gate_passed = answer.startswith("Y")
+                    except Exception:
+                        _gate_passed = True  # on error, default to saving
+                elif _row_count_for_gate == 0:
+                    _gate_passed = False  # empty result — never train on this
 
-                    loop = LearningLoop(self._services.example_store)
-                    await loop.on_thumbs_up(_nl_for_learn, _sql_for_learn)
-                    self._auto_learns_total += 1
-                    _activity = {
-                        "action": "auto_learned",
-                        "nl_query": _nl_for_learn[:80],
-                        "generator": final_state.get("winner_generator", ""),
-                        "ts": datetime.now(timezone.utc).isoformat(),
-                    }
-                    self._learn_activity.insert(0, _activity)
-                    if len(self._learn_activity) > 50:
-                        self._learn_activity.pop()
-                    learn_event["action"] = "auto_learned"
-                except Exception as exc:
-                    logger.debug("agent.operation_failed", error=str(exc))
+                if not _gate_passed:
+                    logger.debug("agent.auto_learn_gate_rejected", nl_query=_nl_for_learn[:80])
+                else:
+                    try:
+                        from sqlagent.agents import LearningLoop
+
+                        loop = LearningLoop(self._services.example_store)
+                        await loop.on_thumbs_up(_nl_for_learn, _sql_for_learn)
+                        self._auto_learns_total += 1
+                        _activity = {
+                            "action": "auto_learned",
+                            "nl_query": _nl_for_learn[:80],
+                            "generator": final_state.get("winner_generator", ""),
+                            "ts": datetime.now(timezone.utc).isoformat(),
+                        }
+                        self._learn_activity.insert(0, _activity)
+                        if len(self._learn_activity) > 50:
+                            self._learn_activity.pop()
+                        learn_event["action"] = "auto_learned"
+                    except Exception as exc:
+                        logger.debug("agent.operation_failed", error=str(exc))
 
             # 2. SOUL observation: runs after every query (tracks patterns)
             if self._services.soul:
@@ -458,8 +508,8 @@ class SQLAgent:
                     tables = final_state.get("pruned_tables") or []
                     await self._services.soul.observe(
                         user_id=user_id or "local",
-                        nl_query=_nl_for_learn,
-                        tables_used=tables,
+                        query=_nl_for_learn,
+                        tables=tables,
                     )
                     # Check if SOUL evolved (query_count hit a 20-multiple)
                     soul_profile = self._services.soul._profiles.get(user_id or "local")

@@ -2,7 +2,7 @@
 
 from sqlagent.graph.state import QueryState
 from sqlagent.graph.builder import (
-    route_after_understand,
+    route_after_ora,
     route_after_execute,
     route_after_correct,
     compile_query_graph,
@@ -11,14 +11,26 @@ from sqlagent.graph.builder import (
 
 # ── Routing edge functions ────────────────────────────────────────────────────
 
-def test_route_single_source():
-    state: QueryState = {"is_cross_source": False}
-    assert route_after_understand(state) == "prune"
+def test_route_ora_simple_goes_to_prune():
+    """Ora routes to prune when no sub_queries (simple single-source path)."""
+    assert route_after_ora({"is_cross_source": False}) == "prune"
+    assert route_after_ora({"sub_queries": []}) == "prune"
+    assert route_after_ora({}) == "prune"
 
 
-def test_route_cross_source():
-    state: QueryState = {"is_cross_source": True}
-    assert route_after_understand(state) == "decompose"
+def test_route_ora_cross_source_goes_to_fan_out():
+    """Ora routes to fan_out when sub_queries are present."""
+    state: QueryState = {"sub_queries": [{"id": "sq_a", "source_id": "src1"}]}
+    assert route_after_ora(state) == "fan_out"
+
+
+def test_route_ora_compound_goes_to_fan_out():
+    """Ora routes to fan_out for compound queries with multiple sub_queries."""
+    state: QueryState = {
+        "is_compound_query": True,
+        "sub_queries": [{"id": "sq_a"}, {"id": "sq_b"}],
+    }
+    assert route_after_ora(state) == "fan_out"
 
 
 def test_route_execute_success():

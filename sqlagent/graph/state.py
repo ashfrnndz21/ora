@@ -40,6 +40,7 @@ class QueryState(TypedDict, total=False):
 
     # ── Routing (understand_node) ─────────────────────────────────────────────
     is_cross_source: bool
+    is_compound_query: bool  # single-source query with multiple distinct analytical questions
     target_sources: list[str]  # which sources this query needs
     complexity: str  # "simple" | "moderate" | "complex"
     routing_reasoning: str
@@ -87,6 +88,7 @@ class QueryState(TypedDict, total=False):
     correction_error: str  # Error from failed correction
 
     # ── Cross-source decomposition ────────────────────────────────────────────
+    entity_filters: list[str]  # Entities extracted by understand_node (e.g. ["Malaysia", "Vietnam"])
     decomposition_plan: dict | None  # DecompositionPlan as dict
     sub_queries: list[dict]  # SubProblem dicts
     sub_results: list[SubQueryResult]  # Results from parallel sub-queries
@@ -106,13 +108,25 @@ class QueryState(TypedDict, total=False):
     # ── Trace events (accumulated by all nodes) ───────────────────────────────
     trace_events: list[dict]  # TraceNode dicts emitted by @traced_node
 
+    # ── Semantic reasoning (semantic_resolve_node) ───────────────────────────────
+    semantic_resolution: dict | None  # SemanticResolution as dict (cache hit or agent output)
+    semantic_cache_hit: bool          # True if resolution came from cache
+
     # ── Learned context (from user corrections — injected into every generation) ─
     data_context_notes: list[str]  # Workspace-level semantic lessons learned
+
+    # ── Schema pruning query ──────────────────────────────────────────────────
+    nl_query_for_pruning: str  # Query used for LSH pruning (may differ from display)
 
     # ── Conversation history (multi-turn, passed from client) ─────────────────
     conversation_history: list[dict]  # [{role, text, sql, nl_response}, ...] last N turns
     intent: str  # "data_query" | "cross_source" | "conversational"
     conversational_answer: str  # Set when intent=conversational, skips SQL pipeline
+
+    # ── Ora orchestrator ─────────────────────────────────────────────────────
+    analytical_intent: str      # "correlation"|"comparison"|"trend"|"ranking"|"aggregate"|"describe"
+    data_warnings: list[str]    # entities/concepts not found in any source — surfaced to user
+    ora_reasoning: str          # Ora's full chain-of-thought (for trace)
 
     # ── Meta ──────────────────────────────────────────────────────────────────
     query_id: str

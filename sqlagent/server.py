@@ -338,20 +338,116 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
         ws = await _state["workspace_store"].update(workspace_id, **body)
         return {"workspace_id": ws.workspace_id, "name": ws.name, "status": ws.status.value}
 
+    # ── Data source management ────────────────────────────────────────────────
+
+    @app.get("/workspaces/{workspace_id}/sources", tags=["workspaces"])
+    async def list_sources(workspace_id: str, user=Depends(get_current_user)):
+        """List all data sources for a workspace with live connection status."""
+        ws = await _state["workspace_store"].get(workspace_id)
+        sources = ws.sources if ws else []
+        agent = _state.get("agents", {}).get(workspace_id)
+        result = []
+        for src in sources:
+            sid = src.get("source_id", "")
+            is_connected = bool(agent and sid in agent.services.connectors) if agent else False
+            result.append({**src, "connected": is_connected})
+        return {"sources": result}
+
+    @app.post("/workspaces/{workspace_id}/sources", tags=["workspaces"])
+    async def add_source(workspace_id: str, request: Request, user=Depends(get_current_user)):
+        """Add a database connection to a workspace by URL."""
+        body = await request.json()
+        connection_string = body.get("connection_string", "").strip()
+        if not connection_string:
+            from fastapi import HTTPException
+            raise HTTPException(400, "connection_string is required")
+
+        # Auto-detect type from scheme
+        scheme = connection_string.split("://")[0].lower() if "://" in connection_string else "unknown"
+        type_map = {
+            "postgresql": "postgres", "postgres": "postgres",
+            "mysql": "mysql", "sqlite": "sqlite",
+            "snowflake": "snowflake", "bigquery": "bigquery",
+            "redshift+psycopg2": "redshift", "redshift": "redshift",
+            "duckdb": "duckdb",
+        }
+        src_type = body.get("type") or type_map.get(scheme, "sql")
+
+        # Derive source_id from hostname/db name or use provided
+        if body.get("source_id"):
+            source_id = body["source_id"]
+        else:
+            try:
+                from urllib.parse import urlparse
+                parsed = urlparse(connection_string)
+                db_name = (parsed.path or "").lstrip("/").split("/")[0] or parsed.hostname or "db"
+                source_id = f"{src_type}_{db_name}".replace("-", "_").replace(".", "_")[:32]
+            except Exception:
+                source_id = f"{src_type}_source"
+
+        # Test the connection before persisting
+        try:
+            from sqlagent.connectors import ConnectorRegistry
+            conn = ConnectorRegistry.from_url(source_id, connection_string)
+            await conn.connect()
+        except Exception as exc:
+            from fastapi import HTTPException
+            raise HTTPException(400, f"Connection failed: {exc}")
+
+        # Persist to workspace store
+        source_config = {
+            "source_id": source_id,
+            "type": src_type,
+            "connection_string": connection_string,
+        }
+        await _state["workspace_store"].add_source(workspace_id, source_config)
+
+        # Hot-add to running agent if one exists
+        agent = _state.get("agents", {}).get(workspace_id)
+        if agent and agent.services:
+            agent.services.connectors[source_id] = conn
+
+        # Evict cached agent so next request reloads with the new source
+        _state.get("agents", {}).pop(workspace_id, None)
+
+        return {"source_id": source_id, "type": src_type, "connected": True}
+
+    @app.delete("/workspaces/{workspace_id}/sources/{source_id}", tags=["workspaces"])
+    async def remove_source(workspace_id: str, source_id: str, user=Depends(get_current_user)):
+        """Remove a data source from a workspace."""
+        ws = await _state["workspace_store"].get(workspace_id)
+        if ws:
+            remaining = [s for s in ws.sources if s.get("source_id") != source_id]
+            await _state["workspace_store"].update(
+                workspace_id, sources_json=__import__("json").dumps(remaining)
+            )
+
+        # Remove from running agent
+        agent = _state.get("agents", {}).get(workspace_id)
+        if agent and agent.services:
+            agent.services.connectors.pop(source_id, None)
+
+        # Evict cached agent
+        _state.get("agents", {}).pop(workspace_id, None)
+
+        return {"removed": source_id}
+
     # ── Query routes ──────────────────────────────────────────────────────────
 
     @app.post("/query", tags=["query"])
     async def run_query(request: Request, user=Depends(get_current_user)):
         body = await request.json()
-        query = body.get("query", "")
+        query = body.get("nl_query") or body.get("query", "")
         workspace_id = body.get("workspace_id", "")
         session_id = body.get("session_id", "")
+        conversation_history = body.get("conversation_history", [])
         agent = await _get_or_create_agent(workspace_id, user.user_id)
         result = await agent.query(
             nl_query=query,
             user_id=user.user_id,
             workspace_id=workspace_id,
             session_id=session_id,
+            conversation_history=conversation_history or None,
         )
         return {
             "query_id": result.query_id,
@@ -1406,6 +1502,24 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
             await agent._ensure_ready()
             agent.services.connectors[source_id] = conn
 
+            # Run semantic analysis for this source (one-time, at connect time)
+            try:
+                from sqlagent.semantic_agent import analyze_source, persist_context
+
+                sem_ctx = await analyze_source(source_id, conn, agent.services.llm)
+                if sem_ctx:
+                    persist_context(sem_ctx, workspace_id or "default")
+                    block = sem_ctx.to_context_block()
+                    if block and block not in agent._semantic_context_notes:
+                        agent._semantic_context_notes.append(block)
+                    logger.info(
+                        "upload.semantic_analyzed",
+                        source=source_id,
+                        domain=sem_ctx.domain,
+                    )
+            except Exception as sem_exc:
+                logger.warning("upload.semantic_failed", source=source_id, error=str(sem_exc))
+
             # Persist source to workspace store so it survives agent recreation
             if workspace_id:
                 try:
@@ -1455,7 +1569,13 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
                 "table_count": snap.table_count,
                 "column_count": snap.column_count,
                 "tables": [
-                    {"name": t.name, "row_count": t.row_count_estimate, "columns": len(t.columns)}
+                    {
+                        "name": t.name,
+                        "row_count": t.row_count_estimate,
+                        "columns": len(t.columns),
+                        "column_names": [c.name for c in t.columns],
+                        "column_types": {c.name: c.data_type for c in t.columns},
+                    }
                     for t in snap.tables
                 ],
             }
@@ -1870,14 +1990,26 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
 
     @app.post("/schema/refresh", tags=["schema"])
     async def schema_refresh(workspace_id: str = "", user=Depends(get_current_user)):
-        """Force re-introspect all connectors for a workspace."""
+        """Force re-introspect all connectors and re-run semantic analysis for a workspace."""
         try:
             agent = await _get_or_create_agent(workspace_id, user.user_id)
             snapshots = []
+            agent._semantic_context_notes = []  # reset so re-analysis replaces old context
             for sid, conn in agent.services.connectors.items():
                 snap = await conn.introspect()
                 agent.services.schema_cache[sid] = snap
                 snapshots.append({"source_id": sid, "table_count": len(snap.tables)})
+                # Re-run semantic analysis — picks up any schema/data changes
+                try:
+                    from sqlagent.semantic_agent import analyze_source, persist_context
+                    sem_ctx = await analyze_source(sid, conn, agent.services.llm)
+                    if sem_ctx:
+                        persist_context(sem_ctx, workspace_id or "default")
+                        block = sem_ctx.to_context_block()
+                        if block and block not in agent._semantic_context_notes:
+                            agent._semantic_context_notes.append(block)
+                except Exception as sem_exc:
+                    logger.warning("refresh.semantic_failed", source=sid, error=str(sem_exc))
             # Bust cached knowledge graph
             kg_path = os.path.join(
                 os.path.expanduser("~"), ".sqlagent", "kg", f"{workspace_id or 'default'}.json"
@@ -1980,37 +2112,24 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
 
     _ui_dir = os.path.join(os.path.dirname(__file__), "ui")
 
+    _no_cache = {"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache", "Expires": "0"}
+
     @app.get("/")
     async def serve_landing():
-        """Landing page — the main home for all users."""
+        """Landing page — served for both local and cloud installs."""
         bp_path = os.path.join(_ui_dir, "preview_bp.html")
         if os.path.exists(bp_path):
-            return FileResponse(
-                bp_path,
-                headers={
-                    "Cache-Control": "no-cache, no-store, must-revalidate",
-                    "Pragma": "no-cache",
-                    "Expires": "0",
-                },
-            )
+            return FileResponse(bp_path, headers=_no_cache)
         html_path = os.path.join(_ui_dir, "app.html")
         if os.path.exists(html_path):
-            return FileResponse(html_path, headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache", "Expires": "0"})
-        return {"message": "sqlagent API", "docs": "/docs", "guide": "/guide", "version": "2.0.0"}
+            return FileResponse(html_path, headers=_no_cache)
+        return {"message": "sqlagent API", "docs": "/docs", "version": "2.0.0"}
 
     @app.get("/app")
     async def serve_workspace_app():
-        """Workspace app — entered via + New Workspace on the landing page."""
         html_path = os.path.join(_ui_dir, "app.html")
         if os.path.exists(html_path):
-            return FileResponse(
-                html_path,
-                headers={
-                    "Cache-Control": "no-cache, no-store, must-revalidate",
-                    "Pragma": "no-cache",
-                    "Expires": "0",
-                },
-            )
+            return FileResponse(html_path, headers=_no_cache)
         return {"message": "Workspace app not found"}
 
     @app.get("/guide")
@@ -2656,6 +2775,19 @@ async def _get_or_create_agent(workspace_id: str, user_id: str) -> Any:
                 import structlog
 
                 structlog.get_logger().warn("agent.source_load_failed", source=sid, error=str(e))
+
+        # Load persisted semantic context for this source
+        if sid:
+            try:
+                from sqlagent.semantic_agent import load_context
+
+                sem_ctx = load_context(sid, workspace_id)
+                if sem_ctx:
+                    block = sem_ctx.to_context_block()
+                    if block and block not in agent._semantic_context_notes:
+                        agent._semantic_context_notes.append(block)
+            except Exception:
+                pass
 
     _state.setdefault("agents", {})[key] = agent
     return agent

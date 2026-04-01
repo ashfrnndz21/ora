@@ -128,8 +128,8 @@ body {
   display: flex; flex-direction: column;
   position: fixed; height: 100vh; z-index: 10;
 }
-.main      { margin-left: var(--sidebar-width); flex: 1; padding: 24px 32px; min-height: 100vh; }
-.main-full { margin-left: var(--sidebar-width); flex: 1; min-height: 100vh; padding: 0; overflow: hidden; display: flex; flex-direction: column; }
+.main      { margin-left: var(--sidebar-width); flex: 1; padding: 24px 32px; min-height: 100vh; overflow-x: hidden; min-width: 0; max-width: calc(100vw - var(--sidebar-width)); }
+.main-full { margin-left: var(--sidebar-width); flex: 1; min-height: 100vh; padding: 0; overflow: hidden; display: flex; flex-direction: column; min-width: 0; }
 
 /* ── Sidebar nav ── */
 .sidebar-logo      { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
@@ -295,7 +295,7 @@ body {
 .result-tab.active { color: var(--blue-text); border-bottom-color: var(--blue); font-weight: 500; }
 
 .result-sql     { background: var(--canvas); border: 1.5px solid var(--glass-border); border-radius: var(--radius-md); padding: 16px; overflow-x: auto; }
-.result-sql pre { font-family: var(--font-mono); font-size: 12px; line-height: 1.6; color: var(--text-secondary); white-space: pre-wrap; }
+.result-sql pre { font-family: var(--font-mono); font-size: 12px; line-height: 1.6; color: var(--text-secondary); white-space: pre-wrap; word-break: break-word; overflow-wrap: break-word; }
 .sql-kw   { color: #7aa2f7; font-weight: 600; }   /* SELECT FROM WHERE JOIN ON GROUP BY ORDER */
 .sql-fn   { color: #7dcfff; }                       /* AVG SUM COUNT MAX MIN COALESCE */
 .sql-str  { color: #9ece6a; }                       /* 'string literals' */
@@ -777,6 +777,57 @@ function OraLogo({ className = 'sidebar-logo-text' }) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+   ORA TYPE WRITER — cycles through Ora's capabilities in the pipeline card
+   ═══════════════════════════════════════════════════════════════════════════ */
+function OraTypeWriter() {
+  const PHRASES = [
+    'anaphora resolution',
+    'intent classification',
+    'entity alias mapping',
+    'data coverage analysis',
+    'semantic resolution',
+    'query decomposition',
+    'cross-source planning',
+  ];
+  const [phraseIdx, setPhraseIdx] = useState(0);
+  const [chars, setChars] = useState(0);
+  const [phase, setPhase] = useState('typing'); // typing | hold | erasing | pause
+  const full = PHRASES[phraseIdx];
+
+  useEffect(() => {
+    let t;
+    if (phase === 'typing') {
+      if (chars < full.length) {
+        t = setTimeout(() => setChars(c => c + 1), 48);
+      } else {
+        t = setTimeout(() => setPhase('hold'), 1400);
+      }
+    } else if (phase === 'hold') {
+      t = setTimeout(() => setPhase('erasing'), 100);
+    } else if (phase === 'erasing') {
+      if (chars > 0) {
+        t = setTimeout(() => setChars(c => c - 1), 28);
+      } else {
+        t = setTimeout(() => { setPhraseIdx(i => (i + 1) % PHRASES.length); setPhase('pause'); }, 180);
+      }
+    } else if (phase === 'pause') {
+      t = setTimeout(() => setPhase('typing'), 140);
+    }
+    return () => clearTimeout(t);
+  }, [phase, chars, full]);
+
+  return e('span', { style: { fontFamily: 'var(--font-mono)', fontSize: 11, color: '#4f7df9' } },
+    full.slice(0, chars),
+    e('span', { style: {
+      display: 'inline-block', width: 1, height: '0.9em', background: '#4f7df9',
+      marginLeft: 1, verticalAlign: 'text-bottom',
+      animation: phase === 'hold' ? 'oraCursor 1s ease-in-out infinite' : 'none',
+      opacity: phase === 'hold' ? undefined : 1,
+    }}),
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
    PIPELINE VIEW — architecture stages + live conversation lineage
    ═══════════════════════════════════════════════════════════════════════════ */
 function PipelineView({ workspace }) {
@@ -877,10 +928,29 @@ function PipelineView({ workspace }) {
   const allTurns = [...mergedTurns.map((t, i) => ({ ...t, turnNum: i + 1, type: 'done' }))];
   const totalTurns = allTurns.length + (activeTurn ? 1 : 0);
 
+  // Ora section expand/collapse
+  const [oraExpanded, setOraExpanded] = useState(true);
+
   // Pipeline section data
   const SECTIONS = [
     {
-      id: '01', name: 'Schema Agent', sub: 'knowledge graph · FK topology · vector index · M-Schema',
+      id: '01', name: 'Ora', sub: 'orchestrator · single entry point for every query',
+      badge: 'orchestrator', isOra: true,
+      stages: [
+        { num: 'Phase 1', title: 'Intent & Entities',  sub: 'classify · extract · ISO aliases' },
+        { num: 'Phase 2', title: 'Group Expansion',    sub: 'ASEAN → 10 members · G7 · EU' },
+        { num: 'Phase 3', title: 'Data Coverage',      sub: 'SemanticMemory · live SQL scan' },
+        { num: 'Phase 4', title: 'Semantic Resolve',   sub: 'entity map · synonyms · SQL hints' },
+        { num: 'Phase 5', title: 'Plan',               sub: 'decompose · route · fan-out', green: true },
+      ],
+      pills: [
+        { label:'LangGraph', color:'#e85d04' }, { label:'LiteLLM', color:'#a855f7' },
+        { label:'SemanticMemory', color:'#4f7df9' }, { label:'SQLite', color:'#06b6d4' },
+        { label:'OTel', color:'#22c55e' },
+      ],
+    },
+    {
+      id: '02', name: 'Schema Agent', sub: 'knowledge graph · FK topology · vector index · M-Schema',
       badge: 'active',
       stages: [
         { num: 'Stage 1', title: 'DB Introspect',    sub: 'DDL · FK · cardinality' },
@@ -895,7 +965,7 @@ function PipelineView({ workspace }) {
       ],
     },
     {
-      id: '02', name: 'Query Pipeline', sub: 'LangGraph StateGraph · self-correcting · CHESS + ReFoRCE',
+      id: '03', name: 'Query Pipeline', sub: 'LangGraph StateGraph · self-correcting · CHESS + ReFoRCE',
       stages: [
         { num: 'Stage 1', title: 'Schema Linker',   sub: 'CHESS LSH · RAG' },
         { num: 'Stage 2', title: 'SQL Generator',   sub: '3 candidates · parallel' },
@@ -909,7 +979,7 @@ function PipelineView({ workspace }) {
       ],
     },
     {
-      id: '03', name: 'Specialist Agents', sub: 'decompose · synthesize · respond · learn',
+      id: '04', name: 'Specialist Agents', sub: 'decompose · synthesize · respond · learn',
       stages: [
         { num: 'Agent', title: 'DecomposeAgent',    sub: 'cross-source · DAG planner' },
         { num: 'Agent', title: 'SynthesisAgent',    sub: 'DuckDB JOIN · in-memory' },
@@ -923,55 +993,105 @@ function PipelineView({ workspace }) {
     },
   ];
 
-  const CONNECTORS = ['Query Orchestration', 'Specialist Agents'];
+  const CONNECTORS = ['Schema Analysis', 'Semantic Resolution', 'Query Orchestration'];
 
   return e('div', { className:'pipeline-view' },
     /* ── LEFT: Stages ── */
     e('div', { className:'pipeline-stages' },
       SECTIONS.map((sec, si) =>
         e(React.Fragment, { key: sec.id },
-          e('div', { className:'pipe-section' },
+          e('div', {
+            className: 'pipe-section',
+            style: sec.isOra ? {
+              border: '1px solid rgba(79,125,249,0.4)',
+              background: 'rgba(79,125,249,0.03)',
+              boxShadow: '0 0 20px rgba(79,125,249,0.06)',
+            } : {},
+          },
             /* Section header */
-            e('div', { className:'pipe-section-hdr' },
-              e('div', null,
-                e('div', { className:'pipe-section-id' }, sec.id + ' · ' + sec.name.toUpperCase()),
-                e('div', { className:'pipe-section-name' }, sec.name),
-                e('div', { className:'pipe-section-sub' }, sec.sub),
+            e('div', {
+              className: 'pipe-section-hdr',
+              style: sec.isOra ? {
+                borderBottom: oraExpanded ? '1px solid rgba(79,125,249,0.2)' : 'none',
+                background: 'rgba(79,125,249,0.06)',
+                cursor: 'pointer',
+                userSelect: 'none',
+              } : {},
+              onClick: sec.isOra ? () => setOraExpanded(x => !x) : undefined,
+            },
+              e('div', { style: { flex: 1 } },
+                e('div', { className: 'pipe-section-id', style: sec.isOra ? { color: '#4f7df9' } : {} },
+                  sec.isOra ? '◈ ' : '',
+                  sec.id + ' · ' + sec.name.toUpperCase(),
+                ),
+                e('div', { className: 'pipe-section-name', style: sec.isOra ? { color: '#4f7df9' } : {} },
+                  sec.name,
+                ),
+                /* Animated type writer for Ora, static sub for others */
+                sec.isOra
+                  ? e('div', { className: 'pipe-section-sub', style: { display: 'flex', alignItems: 'center', gap: 6 } },
+                      e('span', { style: { color: 'var(--text-muted)' } }, 'currently: '),
+                      e(OraTypeWriter),
+                    )
+                  : e('div', { className: 'pipe-section-sub' }, sec.sub),
               ),
-              sec.badge && e('span', { className:'badge badge-info', style:{fontSize:10} }, sec.badge),
+              e('div', { style: { display: 'flex', alignItems: 'center', gap: 8 } },
+                sec.badge && e('span', {
+                  className: sec.isOra ? 'badge' : 'badge badge-info',
+                  style: sec.isOra ? {
+                    fontSize: 10, background: 'rgba(79,125,249,0.15)', color: '#4f7df9',
+                    border: '1px solid rgba(79,125,249,0.3)', borderRadius: 4, padding: '2px 8px',
+                  } : { fontSize: 10 },
+                }, sec.badge),
+                sec.isOra && e('span', { style: {
+                  fontSize: 11, color: 'var(--text-muted)', marginLeft: 4,
+                  display: 'inline-block', transition: 'transform 0.2s',
+                  transform: oraExpanded ? 'rotate(180deg)' : 'none',
+                }}, '▼'),
+              ),
             ),
-            /* Stage flow */
-            e('div', { className:'pipe-body' },
-              e('div', { className:'pipe-flow' },
+            /* Stage flow — always shown for non-Ora; collapsible for Ora */
+            (sec.isOra ? oraExpanded : true) && e('div', { className: 'pipe-body' },
+              e('div', { className: 'pipe-flow' },
                 sec.stages.map((st, i) =>
                   e(React.Fragment, { key: i },
-                    e('div', { className:'pipe-stage done', style: st.green ? {borderColor:'rgba(45,157,106,.3)',background:'rgba(45,157,106,.05)'} : {} },
-                      e('div', { className:'pipe-stage-num' }, st.num),
-                      e('div', { className:'pipe-stage-title' }, st.title),
-                      e('div', { className:'pipe-stage-sub' }, st.sub),
+                    e('div', {
+                      className: 'pipe-stage done',
+                      style: st.green
+                        ? { borderColor:'rgba(45,157,106,.3)', background:'rgba(45,157,106,.05)' }
+                        : sec.isOra
+                          ? { borderColor:'rgba(79,125,249,0.2)', background:'rgba(79,125,249,0.04)' }
+                          : {},
+                    },
+                      e('div', { className: 'pipe-stage-num', style: sec.isOra ? { color: '#4f7df9' } : {} }, st.num),
+                      e('div', { className: 'pipe-stage-title' }, st.title),
+                      e('div', { className: 'pipe-stage-sub' }, st.sub),
                     ),
-                    i < sec.stages.length - 1 && e('div', { className:'pipe-arrow' }, '→'),
+                    i < sec.stages.length - 1 && e('div', {
+                      className: 'pipe-arrow',
+                      style: sec.isOra ? { color: '#4f7df9', opacity: 0.6 } : {},
+                    }, '→'),
                   )
                 ),
               ),
             ),
             /* Tech pills */
-            e('div', { className:'pipe-pills' },
+            e('div', { className: 'pipe-pills' },
               sec.pills.map(p =>
-                e('div', { key:p.label, className:'pipe-pill' },
-                  e('div', { className:'pipe-dot', style:{background:p.color} }),
+                e('div', { key: p.label, className: 'pipe-pill' },
+                  e('div', { className: 'pipe-dot', style: { background: p.color } }),
                   p.label,
                 )
               ),
             ),
           ),
           /* Connector between sections */
-          si < SECTIONS.length - 1 && e('div', { className:'pipe-connector' },
-            e('div', { className:'pipe-conn-line' }),
-            e('div', { className:'pipe-conn-dot' }),
-            e('div', { className:'pipe-conn-label' }, CONNECTORS[si]),
-            e('div', { className:'pipe-conn-dot' }),
-            e('div', { className:'pipe-conn-line' }),
+          si < SECTIONS.length - 1 && e('div', { className: 'pipe-connector' },
+            e('div', { className: 'pipe-conn-line' }),
+            e('div', { className: 'pipe-conn-dot' }),
+            e('div', { className: 'pipe-conn-label' }, CONNECTORS[si]),
+            e('div', { className: 'pipe-conn-dot' }),
+            e('div', { className: 'pipe-conn-line' }),
           ),
         )
       ),
@@ -1078,6 +1198,7 @@ function CmdKSearch({workspace, schema, onNavigate, onQuery, onClose}) {
   const NAV_ITEMS = [
     {type:'nav', label:'Home',     icon:'△', view:'home'},
     {type:'nav', label:'Ask',      icon:'◎', view:'ask'},
+    {type:'nav', label:'Sources',  icon:'⊕', view:'sources'},
     {type:'nav', label:'Data',     icon:'⬡', view:'data'},
     {type:'nav', label:'Tasks',    icon:'☰', view:'tasks'},
     {type:'nav', label:'Learn',    icon:'↑', view:'learn'},
@@ -1524,6 +1645,7 @@ function Icon({name, size=16}) {
     filter: 'M22 3H2l8 9.46V19l4 2v-8.54L22 3z',
     search: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z',
     pipeline: 'M5 12h2m0 0a2 2 0 104 0m-4 0a2 2 0 104 0m0 0h2m2 0h2m0 0a2 2 0 104 0m-4 0a2 2 0 104 0M3 6h18M3 18h18',
+    sources: 'M4 6a2 2 0 012-2h12a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM4 14a2 2 0 012-2h12a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM8 6h.01M8 14h.01',
   };
   const d = paths[name] || paths.home;
   const isFilled = ['home'].includes(name);
@@ -1608,6 +1730,7 @@ function Sidebar({view, setView, workspace, user, onBack}) {
   const navItems = [
     {id:'home',     icon:'home',     label:'Home'},
     {id:'ask',      icon:'chat',     label:'Ask'},
+    {id:'sources',  icon:'sources',  label:'Sources'},
     {id:'data',     icon:'data',     label:'Data'},
     {id:'tasks',    icon:'tasks',    label:'Tasks'},
     {id:'learn',    icon:'learn',    label:'Learn'},
@@ -1615,8 +1738,10 @@ function Sidebar({view, setView, workspace, user, onBack}) {
   ];
 
   const agents = [
+    {name:'Ora', status:'active', desc:'Orchestrates the full pipeline end-to-end', color:'#4f7df9', icon:'◈'},
     {name:'SQL Agent', status:'active', desc:'Writes + executes SQL'},
     {name:'Schema Agent', status:'active', desc:'Analyzes tables + detects relationships'},
+    {name:'Semantic Agent', status:'active', desc:'Maps entities + synonyms from real data'},
     {name:'Planner', status:'active', desc:'Plans strategy + decomposes'},
     {
       name:'Learn Agent',
@@ -1643,8 +1768,18 @@ function Sidebar({view, setView, workspace, user, onBack}) {
         background:'var(--blue)',borderRadius:2,padding:'1px 4px',
       }}, 'alpha'),
     ),
-    e('div', {className:'sidebar-workspace', style:{cursor:'pointer'}, onClick:onBack, title:'Switch workspace'},
-      '← ', workspace?.name || 'No workspace',
+    e('div', {
+      style:{padding:'4px 16px 6px',display:'flex',alignItems:'center',gap:6,cursor:'pointer',
+        borderRadius:6,margin:'0 8px',transition:'background 0.15s'},
+      onClick:onBack,
+      title:'All workspaces',
+      onMouseEnter:ev=>{ev.currentTarget.style.background='var(--glass-hover)';},
+      onMouseLeave:ev=>{ev.currentTarget.style.background='transparent';},
+    },
+      e('span', {style:{fontSize:12,color:'var(--text-muted)',lineHeight:1}}, '←'),
+      e('span', {style:{fontSize:12,fontWeight:500,color:'var(--text-secondary)',flex:1,minWidth:0,
+        overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},
+        workspace?.name || 'No workspace'),
     ),
     e('div', {className:'sidebar-meta'}, (workspace?.sources?.length||0)+' sources'),
     e('div', {className:'sidebar-section'}, 'WORKSPACE'),
@@ -1655,30 +1790,40 @@ function Sidebar({view, setView, workspace, user, onBack}) {
       )
     ),
     e('div', {className:'sidebar-section'}, 'YOUR AGENTS'),
-    agents.map(a =>
-      e('div', {key:a.name, style:{
-        padding:'6px 12px',marginBottom:4,borderRadius:'var(--radius-md)',cursor:'pointer',
+    agents.map(a => {
+      const isOra = a.name === 'Ora';
+      return e('div', {key:a.name, style:{
+        padding: isOra ? '7px 12px' : '6px 12px',
+        marginBottom: isOra ? 6 : 4,
+        borderRadius:'var(--radius-md)',cursor:'pointer',
         transition:'all 150ms',
-        background: a.pulse ? 'rgba(192,132,252,0.08)' : 'transparent',
-        borderLeft: a.pulse ? '2px solid rgba(192,132,252,0.5)' : '2px solid transparent',
+        background: isOra ? 'rgba(74,144,217,0.08)' : a.pulse ? 'rgba(192,132,252,0.08)' : 'transparent',
+        borderLeft: isOra ? '2px solid rgba(74,144,217,0.5)' : a.pulse ? '2px solid rgba(192,132,252,0.5)' : '2px solid transparent',
+        borderBottom: isOra ? '1px solid rgba(74,144,217,0.15)' : 'none',
       },
-        onMouseOver:ev=>{ev.currentTarget.style.background='var(--glass-hover)'},
-        onMouseOut:ev=>{ev.currentTarget.style.background= a.pulse ? 'rgba(192,132,252,0.08)' : 'transparent'},
+        onMouseOver:ev=>{ev.currentTarget.style.background= isOra ? 'rgba(74,144,217,0.13)' : 'var(--glass-hover)'},
+        onMouseOut:ev=>{ev.currentTarget.style.background= isOra ? 'rgba(74,144,217,0.08)' : a.pulse ? 'rgba(192,132,252,0.08)' : 'transparent'},
         onClick:()=>{ if(typeof setView==='function') setView('agents'); },
       },
         e('div', {style:{display:'flex',alignItems:'center',gap:6}},
+          isOra
+            ? e('span', {style:{fontSize:11,color:'#4f7df9',flexShrink:0,fontWeight:700}}, '◈')
+            : e('span', {style:{
+                width:7,height:7,borderRadius:'50%',
+                background: a.color || (a.status==='active'?'var(--green)':'var(--text-muted)'),
+                flexShrink:0,
+                animation: a.pulse ? 'pulse 1.2s ease-in-out' : 'none',
+              }}),
           e('span', {style:{
-            width:7,height:7,borderRadius:'50%',
-            background: a.color || (a.status==='active'?'var(--green)':'var(--text-muted)'),
-            flexShrink:0,
-            animation: a.pulse ? 'pulse 1.2s ease-in-out' : 'none',
-          }}),
-          e('span', {style:{fontSize:12,fontWeight:500,color: a.pulse ? '#c084fc' : 'var(--text-secondary)'}}, a.name),
-          a.pulse && e('span', {style:{fontSize:9,color:'#c084fc',fontFamily:'var(--font-mono)',marginLeft:2}}, '✦ learned'),
+            fontSize: isOra ? 12 : 12, fontWeight: isOra ? 600 : 500,
+            color: isOra ? '#4f7df9' : a.pulse ? '#c084fc' : 'var(--text-secondary)',
+          }}, a.name),
+          isOra && e('span', {style:{fontSize:9,color:'#4f7df9',fontFamily:'var(--font-mono)',marginLeft:'auto',opacity:0.7}}, 'orchestrator'),
+          a.pulse && !isOra && e('span', {style:{fontSize:9,color:'#c084fc',fontFamily:'var(--font-mono)',marginLeft:2}}, '✦ learned'),
         ),
-        e('div', {style:{fontSize:10,color:'var(--text-muted)',paddingLeft:13,marginTop:2}}, a.desc),
-      )
-    ),
+        e('div', {style:{fontSize:10,color:'var(--text-muted)',paddingLeft: isOra ? 17 : 13,marginTop:2}}, a.desc),
+      );
+    }),
     e('div', {className:'sidebar-bottom'},
       e(SidebarStatus),
       e('div', {
@@ -1725,6 +1870,13 @@ function traceNodeLabel(evt) {
   if (key === 'understand') {
     if (summary.includes('spans') || summary.includes('datasets') || summary.includes('cross')) return 'Spans multiple datasets';
     return 'Reading your question';
+  }
+  if (key === 'semantic_resolve') {
+    if (evt.cache_hit) return 'Semantic context — from cache';
+    const em = evt.entity_maps ?? (summary.match(/(\d+) entity/)?.[1]);
+    const syn = evt.synonyms ?? (summary.match(/(\d+) synonym/)?.[1]);
+    if (em > 0 || syn > 0) return `Mapped entities + synonyms`;
+    return 'Reasoning about data context';
   }
   if (key === 'prune') {
     const cols = evt.columns_after;
@@ -1853,63 +2005,110 @@ function TraceTimeline({trace, collapsed}) {
       e('span', {className:'badge badge-'+(trace.succeeded?'success':'error')}, trace.succeeded?'Completed':'Failed'),
     ),
 
-    // Expanded trace nodes
-    expanded && nodes.map((node, i) => {
-      const isExpanded = expandedNode === i;
-      const hasFailed = node.status === 'failed';
-      const tokens = node.tokens || node.detail?.tokens || 0;
-      const agentLabel = node.agent ? node.agent.replace('_',' ') : '';
+    // Expanded trace nodes — grouped by agent
+    expanded && (() => {
+      // Agent display metadata
+      const agentMeta = {
+        '':          {label:'Orchestration', color:'#4f7df9', bg:'rgba(79,125,249,.12)',  icon:'◈'},
+        'ora':       {label:'Ora',           color:'#4f7df9', bg:'rgba(79,125,249,.15)',  icon:'◈'},
+        'semantic':  {label:'Semantic Agent',color:'#10b981', bg:'rgba(16,185,129,.12)', icon:'◎'},
+        'schema':    {label:'Schema Agent',  color:'#6366f1', bg:'rgba(99,102,241,.12)', icon:'⬡'},
+        'memory':    {label:'Memory',        color:'#c084fc', bg:'rgba(192,132,252,.12)',icon:'✦'},
+        'planner':   {label:'Planner',       color:'#f59e0b', bg:'rgba(245,158,11,.12)', icon:'◇'},
+        'SQL agent': {label:'SQL Agent',     color:'#22c55e', bg:'rgba(34,197,94,.12)',  icon:'▸'},
+        'self-heal': {label:'Self-Heal',     color:'#ef4444', bg:'rgba(239,68,68,.12)',  icon:'↺'},
+        'writer':    {label:'Writer',        color:'#38bdf8', bg:'rgba(56,189,248,.12)', icon:'✎'},
+        'DuckDB':    {label:'DuckDB Synth',  color:'#06b6d4', bg:'rgba(6,182,212,.12)',  icon:'⊕'},
+      };
 
-      return e('div', {key:i, className:'trace-node', style:{animation:'fadeUp 200ms ease '+(i*50)+'ms both'}},
-        // Status dot
-        e('div', {className:'trace-dot '+(node.status||'completed')}, statusIcon[node.status]||'✓'),
+      // Group consecutive nodes with the same agent value
+      const groups = [];
+      nodes.forEach((node, i) => {
+        const key = node.agent || '';
+        if (groups.length > 0 && groups[groups.length-1].agent === key) {
+          groups[groups.length-1].nodes.push({node, i});
+        } else {
+          groups.push({agent: key, nodes: [{node, i}]});
+        }
+      });
 
-        // Main content
-        e('div', {className:'trace-info', style:{flex:1,minWidth:0}},
-          // Name + agent badge
-          e('div', {style:{display:'flex',alignItems:'center',gap:6}},
-            e('span', {className:'trace-name'}, node.name),
-            agentLabel && e('span', {style:{fontSize:10,color:'var(--text-muted)',background:'var(--glass)',padding:'1px 6px',borderRadius:4}}, agentLabel),
+      return groups.map((group, gi) => {
+        const meta = agentMeta[group.agent] || {label: group.agent || 'Orchestration', color:'#4f7df9', bg:'rgba(79,125,249,.12)', icon:'◈'};
+        const groupMs = group.nodes.reduce((s,{node})=>s+(node.latency_ms||0),0);
+        const groupFailed = group.nodes.some(({node})=>node.status==='failed');
+
+        return e('div', {key:gi, style:{marginBottom:4}},
+          // Agent section header
+          e('div', {style:{
+            display:'flex', alignItems:'center', gap:8,
+            padding:'5px 12px 5px 8px',
+            marginBottom:2,
+            borderRadius:6,
+            background: meta.bg,
+            borderLeft: `2px solid ${meta.color}`,
+            animation:`fadeUp 180ms ease ${gi*60}ms both`,
+          }},
+            e('span', {style:{fontSize:13, color: meta.color, fontWeight:600, letterSpacing:0.2}}, meta.icon),
+            e('span', {style:{fontSize:11, fontWeight:600, color: meta.color, letterSpacing:0.3}}, meta.label),
+            e('span', {style:{fontSize:10, color:'var(--text-muted)', marginLeft:2}}, group.nodes.length + ' step' + (group.nodes.length===1?'':'s')),
+            e('span', {style:{marginLeft:'auto', fontSize:10, color:'var(--text-muted)', fontFamily:'var(--font-mono)'}}, groupMs + 'ms'),
+            groupFailed && e('span', {style:{fontSize:10, color:'var(--red-text)'}}, '✕'),
           ),
 
-          // Summary
-          e('div', {className:'trace-summary'}, node.summary||''),
+          // Steps within this agent group
+          e('div', {style:{paddingLeft:16, borderLeft:`1px solid ${meta.color}22`, marginLeft:9}},
+            group.nodes.map(({node, i}) => {
+              const isExpanded = expandedNode === i;
+              const hasFailed = node.status === 'failed';
+              const tokens = node.tokens || node.detail?.tokens || 0;
 
-          // Agent thinking/reasoning (if available)
-          (node.detail?.thinking || node.thinking) && e('div', {style:{fontSize:12,color:'var(--text-secondary)',marginTop:4,fontStyle:'italic',lineHeight:1.5,maxHeight:60,overflow:'hidden'}},
-            '"' + (node.detail?.thinking || node.thinking) + '"',
+              return e('div', {key:i, className:'trace-node', style:{animation:'fadeUp 200ms ease '+(i*40+gi*60)+'ms both'}},
+                // Status dot
+                e('div', {className:'trace-dot '+(node.status||'completed')}, statusIcon[node.status]||'✓'),
+
+                // Main content
+                e('div', {className:'trace-info', style:{flex:1,minWidth:0}},
+                  e('div', {style:{display:'flex',alignItems:'center',gap:6}},
+                    e('span', {className:'trace-name'}, node.name),
+                  ),
+
+                  e('div', {className:'trace-summary'}, node.summary||''),
+
+                  (node.detail?.thinking || node.thinking) && e('div', {style:{fontSize:12,color:'var(--text-secondary)',marginTop:4,fontStyle:'italic',lineHeight:1.5,maxHeight:60,overflow:'hidden'}},
+                    '"' + (node.detail?.thinking || node.thinking) + '"',
+                  ),
+
+                  hasFailed && e('div', {style:{fontSize:12,color:'var(--red-text)',marginTop:4}}, node.detail?.summary || 'Step failed'),
+
+                  isExpanded && node.detail && e('div', {style:{marginTop:8,padding:8,background:'var(--canvas-elevated)',borderRadius:6,fontSize:12,fontFamily:'var(--font-mono)',color:'var(--text-secondary)',whiteSpace:'pre-wrap',maxHeight:200,overflowY:'auto'}},
+                    JSON.stringify(node.detail, null, 2),
+                  ),
+
+                  node.children && node.children.length > 0 && e('div', {style:{marginTop:6,paddingLeft:12,borderLeft:'1px solid var(--glass-border)'}},
+                    node.children.map((child, ci) =>
+                      e('div', {key:ci, style:{display:'flex',alignItems:'center',gap:6,padding:'2px 0',fontSize:12}},
+                        e('span', {style:{color:child.status==='completed'?'var(--green-text)':'var(--red-text)'}}, statusIcon[child.status]||'?'),
+                        e('span', {style:{color:'var(--text-secondary)'}}, child.name || child.summary || 'sub-step'),
+                      )
+                    ),
+                  ),
+                ),
+
+                // Right side: timing + tokens + expand toggle
+                e('div', {style:{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:2,flexShrink:0}},
+                  e('div', {className:'trace-timing'}, (node.latency_ms||0)+'ms'),
+                  tokens > 0 && e('div', {style:{fontSize:10,color:'var(--text-muted)',fontFamily:'var(--font-mono)'}}, tokens+' tokens'),
+                  e('div', {
+                    style:{fontSize:10,color:'var(--blue-text)',cursor:'pointer',marginTop:2},
+                    onClick:ev=>{ev.stopPropagation();setExpandedNode(isExpanded?null:i)},
+                  }, isExpanded?'hide':'detail'),
+                ),
+              );
+            }),
           ),
-
-          // Failed = show error prominently
-          hasFailed && e('div', {style:{fontSize:12,color:'var(--red-text)',marginTop:4}}, node.detail?.summary || 'Step failed'),
-
-          // Expandable detail
-          isExpanded && node.detail && e('div', {style:{marginTop:8,padding:8,background:'var(--canvas-elevated)',borderRadius:6,fontSize:12,fontFamily:'var(--font-mono)',color:'var(--text-secondary)',whiteSpace:'pre-wrap',maxHeight:200,overflowY:'auto'}},
-            JSON.stringify(node.detail, null, 2),
-          ),
-
-          // Sub-steps (for fan_out/decompose)
-          node.children && node.children.length > 0 && e('div', {style:{marginTop:6,paddingLeft:12,borderLeft:'1px solid var(--glass-border)'}},
-            node.children.map((child, ci) =>
-              e('div', {key:ci, style:{display:'flex',alignItems:'center',gap:6,padding:'2px 0',fontSize:12}},
-                e('span', {style:{color:child.status==='completed'?'var(--green-text)':'var(--red-text)'}}, statusIcon[child.status]||'?'),
-                e('span', {style:{color:'var(--text-secondary)'}}, child.name || child.summary || 'sub-step'),
-              )
-            ),
-          ),
-        ),
-
-        // Right side: timing + tokens + expand toggle
-        e('div', {style:{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:2,flexShrink:0}},
-          e('div', {className:'trace-timing'}, (node.latency_ms||0)+'ms'),
-          tokens > 0 && e('div', {style:{fontSize:10,color:'var(--text-muted)',fontFamily:'var(--font-mono)'}}, tokens+' tokens'),
-          e('div', {
-            style:{fontSize:10,color:'var(--blue-text)',cursor:'pointer',marginTop:2},
-            onClick:ev=>{ev.stopPropagation();setExpandedNode(isExpanded?null:i)},
-          }, isExpanded?'hide':'detail'),
-        ),
-      );
-    }),
+        );
+      });
+    })(),
 
     // Synthetic memory node — appears after every successful query
     expanded && trace.succeeded && e('div', {
@@ -2130,9 +2329,11 @@ function ConversationLineage({ workspace }) {
         isExpanded && (function() {
           // Map each LangGraph node key to a pipeline stage group
           const STAGE_GROUPS = [
-            { num: '01', label: 'Schema Agent',   keys: ['understand','prune','retrieve'] },
-            { num: '02', label: 'Query Pipeline', keys: ['plan','generate','execute','correct','decompose','fan_out','synthesize'] },
-            { num: '03', label: 'Response',       keys: ['respond','learn'] },
+            { num: '01', label: 'Ora — Orchestrator', keys: ['ora'], accent: '#4f7df9' },
+            { num: '02', label: 'Schema Agent',    keys: ['understand','prune','retrieve'] },
+            { num: '03', label: 'Semantic Agent',  keys: ['semantic_resolve'] },
+            { num: '04', label: 'Query Pipeline',  keys: ['plan','generate','execute','correct','decompose','fan_out','synthesize'] },
+            { num: '05', label: 'Response',        keys: ['respond','learn'] },
           ];
           function nodeKey(n) { return (n.detail && n.detail.node) || n.node || ''; }
           // Bucket nodes into groups
@@ -2163,28 +2364,37 @@ function ConversationLineage({ workspace }) {
           return e('div', { style: { borderTop: '1px solid var(--glass-border)', background: 'var(--canvas-deep)', padding: '12px 14px' } },
             grouped.map((group, gi) => {
               const isLastGroup = gi === grouped.length - 1;
+              const isOraGroup = group.num === '01' && group.label.startsWith('Ora');
+              const accentColor = group.accent || null;
               return e('div', { key: group.num },
                 // Stage section box
                 e('div', { style: {
-                  border: '1px solid var(--glass-border)',
+                  border: isOraGroup ? '1px solid rgba(79,125,249,0.35)' : '1px solid var(--glass-border)',
                   borderRadius: 6,
-                  background: 'var(--canvas-elevated)',
+                  background: isOraGroup ? 'rgba(79,125,249,0.03)' : 'var(--canvas-elevated)',
                   overflow: 'hidden',
                 }},
                   // Section header
                   e('div', { style: {
                     display: 'flex', alignItems: 'center', gap: 8,
                     padding: '7px 12px',
-                    borderBottom: '1px solid var(--glass-border)',
-                    background: 'var(--canvas-deep)',
+                    borderBottom: isOraGroup ? '1px solid rgba(79,125,249,0.2)' : '1px solid var(--glass-border)',
+                    background: isOraGroup ? 'rgba(79,125,249,0.06)' : 'var(--canvas-deep)',
                   }},
+                    isOraGroup && e('span', {style:{fontSize:12,color:'#4f7df9',fontWeight:700,flexShrink:0}}, '◈'),
                     e('span', { style: {
                       fontSize: 9, fontWeight: 700, fontFamily: 'var(--font-mono)',
-                      color: 'var(--text-muted)', letterSpacing: '0.08em',
-                      background: 'var(--canvas-deep)', border: '1px solid var(--glass-border)',
+                      color: accentColor || 'var(--text-muted)', letterSpacing: '0.08em',
+                      background: accentColor ? 'rgba(79,125,249,0.10)' : 'var(--canvas-deep)',
+                      border: accentColor ? '1px solid rgba(79,125,249,0.25)' : '1px solid var(--glass-border)',
                       borderRadius: 3, padding: '1px 5px',
                     }}, group.num),
-                    e('span', { style: { fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', letterSpacing: '0.04em', textTransform: 'uppercase' } }, group.label),
+                    e('span', { style: {
+                      fontSize: 11, fontWeight: isOraGroup ? 700 : 600,
+                      color: accentColor || 'var(--text-secondary)',
+                      letterSpacing: '0.04em', textTransform: 'uppercase',
+                    } }, group.label),
+                    isOraGroup && e('span', {style:{fontSize:9,color:'rgba(79,125,249,0.6)',fontFamily:'var(--font-mono)',marginLeft:'auto'}}, 'entry point'),
                   ),
                   // Nodes inside this stage
                   e('div', { style: { padding: '0' } },
@@ -2302,7 +2512,7 @@ function HomeView({workspace, onNavigate}) {
     api.get('/api/current-model').then(setCurrentModel).catch(()=>{});
   }, [workspace]);
 
-  return e('div', null,
+  return e('div', {style:{width:'100%', minWidth:0, overflowX:'hidden'}},
     e('div', {className:'home-header'},
       e('h1', null, workspace?.name || 'Workspace'),
       e('p', null, (workspace?.sources?.length||0)+' sources connected'),
@@ -2816,9 +3026,10 @@ function ResultBlock({data: d, addToast, setQuery, workspace}) {
               fontSize:11, padding:'8px', borderRadius:6, margin:0,
               background:'rgba(239,68,68,0.05)', border:'1px solid rgba(239,68,68,0.15)',
               color:'rgba(248,113,113,0.7)', fontFamily:'var(--font-mono)',
-              overflow:'auto', maxHeight:120, opacity:0.7,
+              overflow:'hidden', maxHeight:80, opacity:0.7,
               textDecoration:'line-through',
-            }}, (d.sql||'').trim()),
+              whiteSpace:'pre-wrap', overflowWrap:'break-word', wordBreak:'break-word',
+            }}, (d.sql||'').substring(0, 300).trim() + ((d.sql||'').length > 300 ? '…' : '')),
           ),
           // Regenerated (editable)
           e('div', null,
@@ -3034,6 +3245,10 @@ function AskView({workspace, addToast, messages: parentMessages, setMessages: se
       setMessages(m => { msgIdx.current = m.length; return [...m, {role:'assistant', data:{_streaming:true, _traceNodes:[], succeeded:null}}]; });
 
       let streamError = null;
+      // eventType MUST be outside the while loop — large payloads (e.g. query.result with
+      // 10k rows) arrive across multiple read() chunks. Resetting inside the loop would
+      // clear the event type before the data: line is received, silently dropping the result.
+      let eventType = '';
 
       while (true) {
         const {done, value} = await reader.read();
@@ -3043,7 +3258,6 @@ function AskView({workspace, addToast, messages: parentMessages, setMessages: se
         // Parse SSE events from buffer
         const lines = buffer.split('\n');
         buffer = lines.pop() || '';
-        let eventType = '';
         for (const line of lines) {
           if (line.startsWith(':')) { continue; } // SSE comment / keep-alive — ignore
           if (line.startsWith('event: ')) { eventType = line.substring(7).trim(); }
@@ -4110,6 +4324,25 @@ function AgentsView({workspace}) {
 
   const agentDefs = [
     {
+      id: 'ora',
+      name: 'Ora',
+      version: 'v1.0.0',
+      status: 'active',
+      maturity: 'production',
+      description: 'The unified orchestrator. Runs every query end-to-end: anaphora resolution, intent classification, data coverage analysis, semantic resolution, and decomposition — all in one node before the pipeline starts.',
+      capabilities: [
+        {name: 'Anaphora Resolution', desc: 'Rewrites follow-up questions ("these 2", "the same trend") into fully self-contained queries using conversation history', maturity: 'production'},
+        {name: 'Intent Classification', desc: 'LLM detects compound/cross-source structure and analytical_intent (correlation, comparison, trend, ranking)', maturity: 'production'},
+        {name: 'Group Expansion', desc: 'Expands ASEAN → 10 countries, G7 → 7, EU → 27, etc. deterministically — no LLM call', maturity: 'production'},
+        {name: 'Data Coverage Analysis', desc: 'Checks SemanticMemory first, then runs live SQL scans to verify which entities actually exist in which source before running the pipeline', maturity: 'production'},
+        {name: 'SemanticMemory', desc: 'SQLite-backed persistent store of source facts — entity column location, known entity values, concept→column maps. Persists across sessions.', maturity: 'production'},
+        {name: 'Semantic Resolution', desc: 'Orchestrates the Semantic Agent per source — combines entity_map + synonyms + sql_fragments across all sources', maturity: 'production'},
+        {name: 'Decomposition Planning', desc: 'For cross-source or compound queries: plans sub-queries with all context pre-verified — avoids INSUFFICIENT_DATA failures', maturity: 'production'},
+      ],
+      spec: 'agent_id: ora\nversion: 1.0.0\nrole: entry-point orchestrator\nreplaces: understand → semantic_resolve → decompose chain\nphases: [anaphora, intent, group_expand, coverage, semantic, decompose]\nsemanticmemory: SQLite ~/.sqlagent/semantic_memory.db\ncache: SemanticCache (Qdrant) + SemanticMemory (SQLite)\noutput: nl_query, entity_filters, analytical_intent, sub_queries, data_warnings',
+      stats: {phases: '6', llmCalls: '1–2', coverage: 'pre-verified'},
+    },
+    {
       id: 'sql_agent',
       name: 'SQL Agent',
       version: 'v2.0.0',
@@ -4160,6 +4393,23 @@ function AgentsView({workspace}) {
       stats: {avgLatency: '50-200ms', strategies: '4', parallelism: 'asyncio.gather'},
     },
     {
+      id: 'semantic_agent',
+      name: 'Semantic Agent',
+      version: 'v2.0.0',
+      status: 'active',
+      maturity: 'production',
+      description: 'Bridges the gap between how users phrase questions and how data is actually stored. Maps entities, synonyms, and codes dynamically from real schema samples.',
+      capabilities: [
+        {name: 'Entity Mapping', desc: 'Resolves user terms to actual stored values — e.g. "MY" → "MYS", "Malaysia" → "MYS"', maturity: 'production'},
+        {name: 'Synonym Resolution', desc: 'Maps natural language field names to actual column names — e.g. "unemployment" → "obs_value"', maturity: 'production'},
+        {name: 'SQL Fragment Hints', desc: 'Generates ready-to-use SQL fragments like iso_code IN (\'MYS\',\'VNM\')', maturity: 'production'},
+        {name: 'Semantic Cache', desc: 'Qdrant-backed cosine cache (≥0.85 threshold) — reuses known mappings without LLM calls', maturity: 'production'},
+        {name: 'Zero Hardcoded Rules', desc: 'Reasons dynamically from actual sample values — no static lookup dicts', maturity: 'production'},
+      ],
+      spec: 'agent_id: semantic-agent\nversion: 2.0.0\ntrigger: every query — between understand and prune nodes\ncache: Qdrant collection "semantic_cache"\ncache_threshold: cosine ≥ 0.85\nllm_calls: 1 on cache miss, 0 on hit\noutput: entity_map, synonyms, filter_hints, sql_fragments',
+      stats: {trigger: 'every query', cache: 'Qdrant cosine', threshold: '≥ 0.85'},
+    },
+    {
       id: 'learn_agent',
       name: 'Learn Agent',
       version: 'v2.0.0',
@@ -4190,21 +4440,37 @@ function AgentsView({workspace}) {
 
   return e('div', null,
     e('h2', {style:{fontSize:18,fontWeight:600,marginBottom:4}}, 'Agent Hub'),
-    e('p', {style:{fontSize:13,color:'var(--text-secondary)',marginBottom:20}}, '4 specialized agents powering the Ora pipeline · Apache 2.0'),
+    e('p', {style:{fontSize:13,color:'var(--text-secondary)',marginBottom:20}}, '6 agents powering the Ora pipeline · Apache 2.0'),
 
     // Agent cards grid
     e('div', {style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(320px,1fr))',gap:16}},
       agentDefs.map(agent => {
         const isExpanded = expandedAgent === agent.id;
-        return e('div', {key:agent.id, className:'card card-static', style:{padding:0,overflow:'hidden'}},
+        const isOra = agent.id === 'ora';
+        return e('div', {key:agent.id, className:'card card-static', style:{
+          padding:0, overflow:'hidden',
+          border: isOra ? '1px solid rgba(79,125,249,0.4)' : undefined,
+          boxShadow: isOra ? '0 0 0 1px rgba(79,125,249,0.08), 0 2px 8px rgba(79,125,249,0.08)' : undefined,
+        }},
           // Header
-          e('div', {style:{padding:'16px 16px 12px',borderBottom:'1px solid var(--glass-border)'}},
+          e('div', {style:{
+            padding:'16px 16px 12px',
+            borderBottom:'1px solid var(--glass-border)',
+            background: isOra ? 'rgba(79,125,249,0.04)' : undefined,
+          }},
             e('div', {style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}},
-              e('div', null,
+              e('div', {style:{flex:1}},
                 e('div', {style:{display:'flex',alignItems:'center',gap:8,marginBottom:4}},
-                  e('span', {style:{width:8,height:8,borderRadius:'50%',background:agent.status==='active'?'var(--green)':'var(--text-muted)'}}),
-                  e('span', {style:{fontSize:15,fontWeight:600}}, agent.name),
+                  isOra
+                    ? e('span', {style:{fontSize:14,color:'#4f7df9',fontWeight:700}}, '◈')
+                    : e('span', {style:{width:8,height:8,borderRadius:'50%',background:agent.status==='active'?'var(--green)':'var(--text-muted)'}}),
+                  e('span', {style:{fontSize:15,fontWeight:600, color: isOra ? '#4f7df9' : undefined}}, agent.name),
                   e('span', {style:{fontSize:11,color:'var(--text-muted)'}}, agent.version),
+                  isOra && e('span', {style:{
+                    fontSize:9,padding:'1px 6px',borderRadius:10,
+                    background:'rgba(79,125,249,0.12)',color:'#4f7df9',
+                    fontFamily:'var(--font-mono)',marginLeft:2,
+                  }}, 'orchestrator'),
                 ),
                 e('div', {style:{fontSize:12,color:'var(--text-secondary)',marginBottom:8}}, agent.description),
               ),
@@ -4214,6 +4480,7 @@ function AgentsView({workspace}) {
               e('span', {style:{fontSize:10,padding:'2px 8px',borderRadius:100,background:maturityBg[agent.maturity],color:maturityColor[agent.maturity]}}, agent.maturity),
               e('span', {className:'badge badge-info'}, 'LangGraph'),
               e('span', {className:'badge badge-info'}, 'OTel'),
+              isOra && e('span', {className:'badge badge-info', style:{background:'rgba(79,125,249,0.1)',color:'#4f7df9',border:'1px solid rgba(79,125,249,0.25)'}}, 'entry-point'),
             ),
           ),
 
@@ -4487,14 +4754,15 @@ function TrainHistoryList({tasks, addToast, refreshLearnStatus, workspace}) {
         e('div', {style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',
           padding:'8px 0', borderBottom: trained ? 'none' : '1px solid var(--glass-border)', gap:8}},
           e('div', {style:{flex:1,minWidth:0}},
-            e('div', {style:{fontSize:13,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',
-              color: trained ? '#c084fc' : 'var(--text)'}},
+            e('div', {style:{fontSize:13,color: trained ? '#c084fc' : 'var(--text)',
+              whiteSpace:'normal',wordBreak:'break-word',lineHeight:1.4}},
               extractQuestion(t.nl_query)
             ),
-            e('div', {style:{display:'flex',alignItems:'center',gap:6,marginTop:2}},
-              e('div', {style:{fontSize:11,fontFamily:'var(--font-mono)',
-                overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',flex:1},
-                dangerouslySetInnerHTML:{__html: highlightSql((t.sql||'').substring(0,60)) + ((t.sql||'').length > 60 ? '<span style="color:var(--text-muted)">…</span>' : '')}}),
+            e('div', {style:{display:'flex',alignItems:'flex-start',gap:6,marginTop:4}},
+              e('div', {style:{fontSize:11,fontFamily:'var(--font-mono)',flex:1,
+                whiteSpace:'pre-wrap',wordBreak:'break-word',lineHeight:1.4,
+                color:'var(--text-secondary)'},
+                dangerouslySetInnerHTML:{__html: highlightSql(t.sql||'')}}),
               modelLabel && e('span', {style:{fontSize:10,padding:'1px 6px',borderRadius:8,
                 background:'rgba(255,255,255,0.04)',border:'1px solid rgba(255,255,255,0.07)',
                 color:modelColor,flexShrink:0,fontFamily:'var(--font-mono)'}}, modelLabel),
@@ -4882,9 +5150,10 @@ function LearnView({addToast, workspace, setView}) {
                         fontSize:11,fontFamily:'var(--font-mono)',
                         padding:'8px 10px',borderRadius:6,margin:0,
                         background:'rgba(239,68,68,0.04)',border:'1px solid rgba(239,68,68,0.12)',
-                        overflow:'auto',maxHeight:120,
+                        overflowY:'auto',overflowX:'hidden',maxHeight:120,
                         textDecoration:'line-through',opacity:0.7,
-                      }, dangerouslySetInnerHTML:{__html: highlightSql((lesson.original_sql||'').substring(0,300))}}),
+                        whiteSpace:'pre-wrap',wordBreak:'break-word',
+                      }, dangerouslySetInnerHTML:{__html: highlightSql(lesson.original_sql||'')}}),
                     ),
                     // Corrected
                     e('div', null,
@@ -4893,8 +5162,9 @@ function LearnView({addToast, workspace, setView}) {
                         fontSize:11,fontFamily:'var(--font-mono)',
                         padding:'8px 10px',borderRadius:6,margin:0,
                         background:'rgba(34,197,94,0.04)',border:'1px solid rgba(34,197,94,0.12)',
-                        overflow:'auto',maxHeight:120,
-                      }, dangerouslySetInnerHTML:{__html: highlightSql((lesson.corrected_sql||'').substring(0,300))}}),
+                        overflowY:'auto',overflowX:'hidden',maxHeight:120,
+                        whiteSpace:'pre-wrap',wordBreak:'break-word',
+                      }, dangerouslySetInnerHTML:{__html: highlightSql(lesson.corrected_sql||'')}}),
                     ),
                   ),
 
@@ -5378,6 +5648,259 @@ function SettingsView({addToast}) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+   SOURCES VIEW — manage database connections + file uploads for the workspace
+   ═══════════════════════════════════════════════════════════════════════════ */
+function SourcesView({workspace, addToast}) {
+  const [sources, setSources]     = useState([]);
+  const [loading, setLoading]     = useState(true);
+  const [url, setUrl]             = useState('');
+  const [srcId, setSrcId]         = useState('');
+  const [testing, setTesting]     = useState(false);
+  const [testResult, setTestResult] = useState(null); // null | 'ok' | string(error)
+  const [adding, setAdding]       = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [removing, setRemoving]   = useState('');
+
+  const wsId = workspace?.workspace_id;
+
+  // Dialect icon + colour derived from URL scheme
+  function dialectMeta(src) {
+    const url = src.connection_string || src.file_path || '';
+    const scheme = url.split('://')[0].toLowerCase();
+    const file = (src.filename || src.source_id || '').toLowerCase();
+    if (scheme === 'postgresql' || scheme === 'postgres' || src.type === 'postgres')
+      return {icon:'🐘', color:'#4f7df9', label:'PostgreSQL'};
+    if (scheme === 'mysql' || src.type === 'mysql')
+      return {icon:'🐬', color:'#f59e0b', label:'MySQL'};
+    if (scheme === 'snowflake' || src.type === 'snowflake')
+      return {icon:'❄', color:'#a5b4fc', label:'Snowflake'};
+    if (scheme === 'bigquery' || src.type === 'bigquery')
+      return {icon:'☁', color:'#22c55e', label:'BigQuery'};
+    if (scheme === 'redshift' || src.type === 'redshift')
+      return {icon:'🔶', color:'#f97316', label:'Redshift'};
+    if (scheme === 'sqlite' || src.type === 'sqlite')
+      return {icon:'📦', color:'#8b92a8', label:'SQLite'};
+    if (file.endsWith('.csv'))  return {icon:'📄', color:'#22c55e', label:'CSV'};
+    if (file.endsWith('.xlsx') || file.endsWith('.xls'))
+      return {icon:'📊', color:'#22c55e', label:'Excel'};
+    if (file.endsWith('.parquet')) return {icon:'📦', color:'#a5b4fc', label:'Parquet'};
+    return {icon:'🗄', color:'#8b92a8', label:'Database'};
+  }
+
+  async function loadSources() {
+    setLoading(true);
+    try {
+      const r = await api.get('/workspaces/'+wsId+'/sources');
+      setSources(r.sources || []);
+    } catch(e) { setSources([]); }
+    setLoading(false);
+  }
+  useEffect(() => { if (wsId) loadSources(); }, [wsId]);
+
+  // Auto-fill source_id when URL changes
+  useEffect(() => {
+    if (!url) { setSrcId(''); setTestResult(null); return; }
+    try {
+      const parsed = new URL(url);
+      const db = (parsed.pathname||'').replace(/^\/+/,'').split('/')[0] || parsed.hostname || 'db';
+      const scheme = parsed.protocol.replace(':','').split('+')[0];
+      const auto = `${scheme}_${db}`.replace(/[^a-z0-9_]/gi,'_').substring(0,32).toLowerCase();
+      setSrcId(prev => prev || auto);
+    } catch(e) {}
+    setTestResult(null);
+  }, [url]);
+
+  async function testConnection() {
+    if (!url) return;
+    setTesting(true); setTestResult(null);
+    try {
+      const r = await api.post('/workspaces/'+wsId+'/sources', {
+        connection_string: url, source_id: srcId || undefined,
+      });
+      setTestResult('ok');
+      addToast('Connection successful — source added', 'success');
+      setUrl(''); setSrcId(''); setAdding(false);
+      loadSources();
+    } catch(err) {
+      const msg = err?.message || String(err);
+      setTestResult(msg.includes('Connection failed:') ? msg.replace('Connection failed:','').trim() : msg);
+    }
+    setTesting(false);
+  }
+
+  async function removeSource(sid) {
+    setRemoving(sid);
+    try {
+      await api.del('/workspaces/'+wsId+'/sources/'+sid);
+      addToast('Source removed', 'info');
+      loadSources();
+    } catch(e) { addToast('Could not remove source', 'error'); }
+    setRemoving('');
+  }
+
+  async function uploadFile(file) {
+    setUploading(true);
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      form.append('workspace_id', wsId);
+      const tok = api._tokensen;
+      const hdrs = tok ? {'Authorization':'Bearer '+tok} : {};
+      const resp = await fetch(API+'/api/upload', {method:'POST', body:form, headers:hdrs});
+      const data = await resp.json();
+      if (data.error) throw new Error(data.error);
+      addToast(`${file.name} connected`, 'success');
+      loadSources();
+    } catch(err) {
+      addToast('Upload failed: '+(err.message||err), 'error');
+    }
+    setUploading(false);
+  }
+
+  const card = {
+    background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.06)',
+    borderRadius:12, padding:20, marginBottom:12,
+  };
+  const inputStyle = {
+    width:'100%', padding:'9px 12px', borderRadius:8, fontSize:13,
+    background:'rgba(255,255,255,0.06)', border:'1px solid rgba(255,255,255,0.1)',
+    color:'#e8eaf0', outline:'none', fontFamily:'inherit',
+  };
+  const btnPrimary = {
+    padding:'9px 20px', borderRadius:8, border:'none', cursor:'pointer',
+    background:'#4f7df9', color:'#fff', fontSize:13, fontWeight:500,
+  };
+  const btnGhost = {
+    padding:'9px 16px', borderRadius:8, cursor:'pointer',
+    background:'transparent', border:'1px solid rgba(255,255,255,0.12)',
+    color:'#8b92a8', fontSize:13,
+  };
+
+  return e('div', {style:{padding:'28px 32px', maxWidth:780}},
+    e('h2', {style:{fontSize:18, fontWeight:600, marginBottom:4}}, 'Data Sources'),
+    e('p', {style:{fontSize:13, color:'#8b92a8', marginBottom:24}},
+      'Connect databases or upload files. Sources persist across sessions.'),
+
+    // ── Connected sources list ────────────────────────────────────────────
+    loading
+      ? e('div', {style:{color:'#4a5068', fontSize:13}}, 'Loading sources…')
+      : sources.length === 0
+        ? e('div', {style:{...card, textAlign:'center', padding:'32px 20px', color:'#4a5068'}},
+            e('div', {style:{fontSize:28, marginBottom:8}}, '⊕'),
+            e('div', {style:{fontSize:14}}, 'No sources connected yet'),
+            e('div', {style:{fontSize:12, marginTop:4}}, 'Add a database URL or upload a file below'),
+          )
+        : sources.map(src => {
+            const {icon, color, label} = dialectMeta(src);
+            const sid = src.source_id || '';
+            return e('div', {key:sid, style:{
+              ...card, display:'flex', alignItems:'center', gap:16,
+            }},
+              e('div', {style:{
+                width:40, height:40, borderRadius:10, fontSize:20,
+                display:'flex', alignItems:'center', justifyContent:'center',
+                background:`${color}18`, border:`1px solid ${color}30`, flexShrink:0,
+              }}, icon),
+              e('div', {style:{flex:1, minWidth:0}},
+                e('div', {style:{fontSize:14, fontWeight:600, color:'#e8eaf0', marginBottom:2}},
+                  sid),
+                e('div', {style:{fontSize:11, color:'#4a5068', fontFamily:'monospace', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}},
+                  src.connection_string
+                    ? src.connection_string.replace(/:\/\/[^@]+@/, '://*****@')
+                    : (src.filename || src.file_path || '—')
+                ),
+              ),
+              e('span', {style:{
+                padding:'3px 10px', borderRadius:100, fontSize:11, fontWeight:500,
+                background:`${color}18`, color, border:`1px solid ${color}30`, flexShrink:0,
+              }}, label),
+              e('span', {style:{
+                padding:'3px 10px', borderRadius:100, fontSize:11,
+                background: src.connected ? 'rgba(34,197,94,0.12)' : 'rgba(74,80,104,0.2)',
+                color: src.connected ? '#22c55e' : '#4a5068',
+                border: src.connected ? '1px solid rgba(34,197,94,0.25)' : '1px solid rgba(74,80,104,0.3)',
+                flexShrink:0,
+              }}, src.connected ? '● live' : '○ offline'),
+              e('button', {
+                onClick:()=>removeSource(sid),
+                disabled: removing===sid,
+                style:{...btnGhost, padding:'6px 12px', fontSize:12, color:'#ef4444', borderColor:'rgba(239,68,68,0.2)', flexShrink:0},
+              }, removing===sid ? '…' : 'Remove'),
+            );
+          }),
+
+    // ── Add database URL ─────────────────────────────────────────────────
+    e('div', {style:{...card, marginTop:16}},
+      e('div', {style:{display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom: adding ? 16 : 0}},
+        e('div', null,
+          e('div', {style:{fontSize:14, fontWeight:600, color:'#e8eaf0'}}, 'Add Database Connection'),
+          e('div', {style:{fontSize:12, color:'#4a5068', marginTop:2}},
+            'PostgreSQL · MySQL · SQLite · Snowflake · BigQuery · Redshift'),
+        ),
+        e('button', {
+          onClick:()=>{ setAdding(a=>!a); setUrl(''); setSrcId(''); setTestResult(null); },
+          style: adding ? {...btnGhost, fontSize:12} : {...btnPrimary, fontSize:12},
+        }, adding ? 'Cancel' : '+ Add Database'),
+      ),
+      adding && e('div', null,
+        e('div', {style:{marginBottom:10}},
+          e('label', {style:{fontSize:12, color:'#8b92a8', display:'block', marginBottom:4}}, 'Connection URL'),
+          e('input', {
+            style:{...inputStyle},
+            placeholder:'postgresql://user:pass@host:5432/dbname',
+            value:url, onChange:ev=>setUrl(ev.target.value),
+            onKeyDown:ev=>ev.key==='Enter'&&testConnection(),
+          }),
+        ),
+        e('div', {style:{marginBottom:14}},
+          e('label', {style:{fontSize:12, color:'#8b92a8', display:'block', marginBottom:4}}, 'Source ID (auto-filled)'),
+          e('input', {
+            style:{...inputStyle, fontFamily:'monospace'},
+            placeholder:'postgres_mydb',
+            value:srcId, onChange:ev=>setSrcId(ev.target.value),
+          }),
+        ),
+        e('div', {style:{display:'flex', gap:10, alignItems:'center'}},
+          e('button', {
+            onClick:testConnection, disabled:testing||!url,
+            style:{...btnPrimary, opacity:(testing||!url)?0.5:1},
+          }, testing ? 'Testing…' : 'Test & Connect'),
+          testResult==='ok' && e('span', {style:{fontSize:12, color:'#22c55e'}}, '✓ Connected'),
+          testResult && testResult!=='ok' && e('span', {style:{fontSize:12, color:'#ef4444', maxWidth:340}}, '✕ '+testResult),
+        ),
+      ),
+    ),
+
+    // ── Upload files ─────────────────────────────────────────────────────
+    e('div', {style:{...card}},
+      e('div', {style:{fontSize:14, fontWeight:600, color:'#e8eaf0', marginBottom:4}}, 'Upload Files'),
+      e('div', {style:{fontSize:12, color:'#4a5068', marginBottom:14}},
+        'CSV, XLSX, Parquet, JSON — analysed automatically'),
+      e('label', {
+        style:{
+          display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
+          gap:8, padding:'24px 20px', borderRadius:10, cursor:'pointer',
+          border:'1.5px dashed rgba(79,125,249,0.3)', background:'rgba(79,125,249,0.04)',
+          color:'#4a5068', fontSize:13, transition:'border-color 160ms, background 160ms',
+        },
+        onDragOver:ev=>{ ev.preventDefault(); ev.currentTarget.style.borderColor='rgba(79,125,249,0.6)'; ev.currentTarget.style.background='rgba(79,125,249,0.08)'; },
+        onDragLeave:ev=>{ ev.currentTarget.style.borderColor='rgba(79,125,249,0.3)'; ev.currentTarget.style.background='rgba(79,125,249,0.04)'; },
+        onDrop:async ev=>{ ev.preventDefault(); ev.currentTarget.style.borderColor='rgba(79,125,249,0.3)'; ev.currentTarget.style.background='rgba(79,125,249,0.04)'; for(const f of ev.dataTransfer.files) await uploadFile(f); },
+      },
+        uploading
+          ? e('span', {style:{color:'#4f7df9'}}, 'Uploading…')
+          : e(React.Fragment, null,
+              e('span', {style:{fontSize:24}}, '↑'),
+              e('span', null, 'Drag & drop files here, or click to browse'),
+            ),
+        e('input', {type:'file', style:{display:'none'}, multiple:true, accept:'.csv,.xlsx,.xls,.parquet,.json',
+          onChange:async ev=>{ for(const f of ev.target.files) await uploadFile(f); ev.target.value=''; }}),
+      ),
+    ),
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
    WORKSPACE PICKER (returning users)
    ═══════════════════════════════════════════════════════════════════════════ */
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -5559,7 +6082,13 @@ function SetupChat({workspace, onReady, onBack, user, hasLlmKey, onLlmKeyAdded})
 
       // Include uploaded sources context so the agent knows what's already connected
       const context = sources.length > 0
-        ? '\n[System: User has already uploaded these files: ' + sources.map(s=>s.filename+' ('+s.table_count+' tables, '+s.column_count+' cols)').join(', ') + '. Do NOT ask them to upload again. Help them name the workspace and finalize setup.]'
+        ? '\n[System: User has uploaded these files — answer questions about what the data contains based on this info:\n' +
+          sources.map(s => {
+            const cols = s.tables?.flatMap(t => t.column_names || []).join(', ') || '';
+            const rows = s.tables?.map(t=>t.name+' ('+t.row_count+' rows)').join(', ') || '';
+            return s.filename + ': tables=' + rows + (cols ? ', columns=' + cols : '');
+          }).join('\n') +
+          '\nDo NOT ask them to upload again. Answer any questions about the data, then help name the workspace.]'
         : '';
       const r = await api.post('/workspaces/'+workspace.workspace_id+'/setup/chat', {message:msg+context});
       const events = r.events || [];
@@ -6456,7 +6985,7 @@ function OraTypewriter() {
   );
 }
 
-function WorkspacePicker({user, onSelect, onCreate, onLogout}) {
+function WorkspacePicker({user, onSelect, onCreate, onLogout, returning}) {
   const [workspaces, setWorkspaces] = useState([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
@@ -6484,8 +7013,7 @@ function WorkspacePicker({user, onSelect, onCreate, onLogout}) {
         const list = Array.isArray(wsList) ? wsList : [];
         const ws = list.find(w => w.workspace_id === wsId);
         if (ws) {
-          if (doCreate === '1' || ws.status === 'setup') { onCreate && onCreate(); }
-          else { onSelect(ws); }
+          onSelect(ws);
         } else {
           // workspace not found — clean URL and show picker normally
           window.history.replaceState({}, '', '/app');
@@ -6527,6 +7055,81 @@ function WorkspacePicker({user, onSelect, onCreate, onLogout}) {
   }
 
   const firstName = (user?.display_name || user?.email?.split('@')[0] || 'there').split(' ')[0];
+
+  // ── Returning user (clicked ← back): show clean workspace list only ─────────
+  if (returning) {
+    return e('div', {style:{
+      minHeight:'100vh', background:'#faf9f6',
+      backgroundImage:'radial-gradient(circle, rgba(0,0,0,.045) 1px, transparent 1px)',
+      backgroundSize:'28px 28px',
+      display:'flex', flexDirection:'column', alignItems:'center',
+    }},
+      // Minimal top nav
+      e('div', {style:{
+        width:'100%', height:52, display:'flex', alignItems:'center', justifyContent:'space-between',
+        padding:'0 24px', background:'rgba(250,249,246,0.94)', backdropFilter:'blur(8px)',
+        WebkitBackdropFilter:'blur(8px)', borderBottom:'1px solid rgba(0,0,0,0.06)',
+        position:'sticky', top:0, zIndex:100, boxSizing:'border-box',
+      }},
+        e('div', {style:{display:'flex',alignItems:'center',gap:10}},
+          e('span', {style:{fontSize:15,fontWeight:400,letterSpacing:'0.02em',color:'#1a1a1a',fontFamily:'"DynaPuff","Inter",sans-serif'}}, 'Ora'),
+          e('span', {style:{fontSize:9,fontWeight:500,color:'rgba(79,125,249,0.9)',letterSpacing:'0.05em',border:'1px solid rgba(79,125,249,0.3)',borderRadius:3,padding:'1px 6px'}}, 'alpha'),
+        ),
+        e('span', {style:{fontSize:13,color:'var(--text-muted)'}}, firstName),
+      ),
+      // Workspace list — centered, max 560px
+      e('div', {style:{width:'100%', maxWidth:560, padding:'48px 24px'}},
+        e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:20}},
+          e('h2', {style:{fontSize:20,fontWeight:600,letterSpacing:'-0.02em',margin:0}}, 'Your workspaces'),
+          e('div', {style:{display:'flex',alignItems:'center',gap:8}},
+            workspaces.length > 1 && e('button', {
+              onClick: deleteAllWs,
+              style:{background:'rgba(239,68,68,0.08)',border:'1px solid rgba(239,68,68,0.2)',borderRadius:6,padding:'5px 13px',fontSize:12,color:'var(--red-text)',cursor:'pointer',fontFamily:'var(--font-ui)',fontWeight:500},
+            }, 'Delete all'),
+            e('button', {
+              onClick: onCreate,
+              style:{background:'rgba(79,125,249,0.12)',border:'1px solid rgba(79,125,249,0.2)',borderRadius:6,padding:'5px 13px',fontSize:12,color:'var(--blue-text)',cursor:'pointer',fontFamily:'var(--font-ui)',fontWeight:500},
+            }, '+ New workspace'),
+          ),
+        ),
+        loading
+          ? e('div', {style:{color:'var(--text-muted)',padding:'16px 0'}}, 'Loading...')
+          : workspaces.length === 0
+            ? e('div', {style:{border:'1.5px dashed #d4d4d4',borderRadius:8,padding:'40px',textAlign:'center',color:'var(--text-muted)',fontSize:14,background:'#ffffff'}},
+                'No workspaces yet. Create one to get started.')
+            : e('div', {style:{display:'flex',flexDirection:'column',gap:8}},
+                workspaces.map(ws =>
+                  e('div', {
+                    key: ws.workspace_id,
+                    onClick: () => onSelect(ws),
+                    style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'16px 18px',background:'#ffffff',border:'1.5px solid #d4d4d4',borderRadius:10,cursor:'pointer',transition:'all 150ms',boxShadow:'0 1px 3px rgba(0,0,0,.04)'},
+                    onMouseOver: ev=>{ ev.currentTarget.style.borderColor='#bdbdbd'; ev.currentTarget.style.boxShadow='0 2px 8px rgba(0,0,0,.09)'; },
+                    onMouseOut:  ev=>{ ev.currentTarget.style.borderColor='#d4d4d4'; ev.currentTarget.style.boxShadow='0 1px 3px rgba(0,0,0,.04)'; },
+                  },
+                    e('div', {style:{flex:1,minWidth:0}},
+                      e('div', {style:{fontSize:15,fontWeight:500}}, ws.name),
+                      e('div', {style:{fontSize:12,color:'var(--text-muted)',marginTop:3}},
+                        ws.status==='setup' ? 'Continue setup →' :
+                        [(ws.sources?.length||0)+' source'+(ws.sources?.length!==1?'s':''),
+                         (ws.query_count||0)+' quer'+(ws.query_count!==1?'ies':'y')].join(' · ')
+                      ),
+                    ),
+                    e('div', {style:{display:'flex',alignItems:'center',gap:8}},
+                      ws.status==='ready' && e('span', {style:{width:6,height:6,borderRadius:'50%',background:'var(--green)',boxShadow:'0 0 6px rgba(34,197,94,0.5)'}}),
+                      ws.status==='setup' && e('span', {style:{fontSize:11,color:'var(--amber-text)',background:'var(--amber-soft)',padding:'2px 8px',borderRadius:100}}, 'setup'),
+                      e('button', {
+                        onClick: ev => deleteWs(ev, ws.workspace_id),
+                        style:{background:'none',border:'none',color:'#cccccc',cursor:'pointer',fontSize:16,padding:'4px 6px',borderRadius:4,lineHeight:1},
+                        onMouseOver: ev=>ev.target.style.color='var(--red-text)',
+                        onMouseOut:  ev=>ev.target.style.color='#cccccc',
+                      }, '×'),
+                    ),
+                  )
+                ),
+              ),
+      ),
+    );
+  }
 
   return e('div', {style:{
     minHeight:'100vh',
@@ -6621,15 +7224,6 @@ function WorkspacePicker({user, onSelect, onCreate, onLogout}) {
       }}, 'LLM-agnostic · any database · 3 lines of code'),
     ),
 
-    // ── PIPELINE ANIMATION (full width, U-shape) ─────────────────────────
-    e('div', {style:{
-      width:'100%', height:430,
-      overflow:'hidden',
-      borderTop:'1px solid rgba(0,0,0,0.04)',
-      borderBottom:'1px solid rgba(0,0,0,0.05)',
-    }},
-      e(RightPanelCanvas),
-    ),
 
     // ── CONTENT (centered column) ─────────────────────────────────────────
     e('div', {style:{
@@ -6824,7 +7418,7 @@ function WorkspacePicker({user, onSelect, onCreate, onLogout}) {
                   workspaces.map(ws =>
                     e('div', {
                       key:ws.workspace_id,
-                      onClick:()=> ws.status==='setup' ? onCreate() : onSelect(ws),
+                      onClick:()=> onSelect(ws),
                       style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'14px 16px',background:'#ffffff',border:'1.5px solid #d4d4d4',borderRadius:8,cursor:'pointer',transition:'all 150ms',boxShadow:'0 1px 3px rgba(0,0,0,.04)'},
                       onMouseOver:ev=>{ ev.currentTarget.style.borderColor='#bdbdbd'; ev.currentTarget.style.boxShadow='0 2px 6px rgba(0,0,0,.08)'; },
                       onMouseOut: ev=>{ ev.currentTarget.style.borderColor='#d4d4d4';  ev.currentTarget.style.boxShadow='0 1px 3px rgba(0,0,0,.04)'; },
@@ -6864,6 +7458,8 @@ function App() {
 
   // Restore workspace + view from localStorage so state survives page refresh / navigation
   const [workspace, _setWorkspace] = useState(() => {
+    // ?create=1 means user clicked "+ New workspace" — don't restore the last session
+    if (new URLSearchParams(window.location.search).get('create') === '1') return null;
     try { const w = localStorage.getItem('ora_active_workspace'); return w ? JSON.parse(w) : null; } catch(e) { return null; }
   });
   const setWorkspace = (ws) => {
@@ -6884,6 +7480,7 @@ function App() {
   const [cmdkSchema, setCmdkSchema] = useState(null);
   const [cmdkQuery, setCmdkQuery] = useState(null); // pending query from Cmd+K
   const [workspaceChecked, setWorkspaceChecked] = useState(false); // true after initial WS check
+  const [returningToPicker, setReturningToPicker] = useState(false); // true when user clicked ← back
 
   // Global Cmd+K / Ctrl+K keyboard handler
   useEffect(() => {
@@ -6911,7 +7508,14 @@ function App() {
     const wsId = workspace?.workspace_id;
     if (!wsId) return;
     if (chatMessages.length > 0) {
-      localStorage.setItem('sqlagent_chat_'+wsId, JSON.stringify(chatMessages.slice(-50)));
+      // Strip rows from assistant messages before persisting — rows can be MB-large and
+      // blow past the ~5MB localStorage quota, crashing React with QuotaExceededError.
+      const slim = chatMessages.slice(-50).map(m => {
+        if (m.role !== 'assistant' || !m.data) return m;
+        const {rows: _rows, ...rest} = m.data;
+        return {...m, data: rest};
+      });
+      try { localStorage.setItem('sqlagent_chat_'+wsId, JSON.stringify(slim)); } catch(e) {}
     }
   }, [chatMessages, workspace]);
 
@@ -6933,6 +7537,20 @@ function App() {
 
   // Clean up old global chat key (migrated to per-workspace)
   useEffect(() => { localStorage.removeItem('sqlagent_chat'); }, []);
+
+  // Validate workspace from localStorage still exists on server — clear it if deleted
+  useEffect(() => {
+    if (!workspace) return;
+    api.get('/workspaces').then(list => {
+      const exists = (Array.isArray(list) ? list : []).some(
+        w => w.workspace_id === workspace.workspace_id
+      );
+      if (!exists) {
+        localStorage.removeItem('ora_active_workspace');
+        _setWorkspace(null);
+      }
+    }).catch(() => {});
+  }, []);
 
   // Boot sequence: check if auth is required, then get current user
   useEffect(() => {
@@ -6981,7 +7599,16 @@ function App() {
         hasLlmKey: hasLlmKey,
         onLlmKeyAdded: () => setHasLlmKey(true),
         onReady: (ws) => { setSetupWorkspace(null); setWorkspace(ws); },
-        onBack: () => {
+        onBack: async () => {
+          // Delete the workspace if setup was never completed (0 sources)
+          if (setupWorkspace?.workspace_id && (!setupWorkspace.sources || setupWorkspace.sources.length === 0)) {
+            try {
+              await fetch(API + '/workspaces/' + setupWorkspace.workspace_id, {
+                method: 'DELETE',
+                headers: api._headers(),
+              });
+            } catch(e) {}
+          }
           // If user arrived via landing page URL params, go back to landing page
           const params = new URLSearchParams(window.location.search);
           if (params.has('create') || params.has('ws')) {
@@ -7000,7 +7627,9 @@ function App() {
     return e('div', null,
       e(WorkspacePicker, {
         user,
+        returning: returningToPicker,
         onSelect: ws => {
+          setReturningToPicker(false);
           setWorkspace(ws);
           const pending = localStorage.getItem('ora_pending_query');
           if (pending) {
@@ -7023,6 +7652,7 @@ function App() {
   const views = {
     home: e(HomeView, {workspace, onNavigate:setView}),
     ask: e(AskView, {workspace, addToast, messages:chatMessages, setMessages:setChatMessages}),
+    sources: e(SourcesView, {workspace, addToast}),
     data: e(DataView, {workspace, addToast}),
     tasks: e(TasksView, {workspace, onRestoreQuery: (task) => {
       // Restore a past query into the Ask view
@@ -7044,7 +7674,9 @@ function App() {
 
   const fullBleed = view === 'data' || view === 'ask';
   return e('div', {className:'layout'},
-    e(Sidebar, {view, setView, workspace, user, onBack:()=>{setWorkspace(null);setView('home');setChatMessages([])}}),
+    e(Sidebar, {view, setView, workspace, user, onBack:()=>{
+      window.location.href = '/';
+    }}),
     e('div', {className: fullBleed ? 'main-full' : 'main'}, views[view] || views.home),
     e(ToastContainer, {toasts, onRemove:()=>{}}),
     cmdkOpen && e(CmdKSearch, {

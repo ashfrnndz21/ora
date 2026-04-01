@@ -1,9 +1,11 @@
 """Compile the LangGraph StateGraph for query orchestration.
 
 This is the heart of sqlagent. The graph routes queries through:
-- Simple path: understand → prune → retrieve → plan → generate → execute → respond → learn
-- Cross-source: understand → decompose → fan_out → synthesize → respond → learn
-- Correction: execute → correct → execute (retry, up to max_corrections)
+- Simple path:      ora → prune → retrieve → plan → generate → execute → respond → learn
+- Cross-source:     ora → fan_out → synthesize → respond → learn
+- Correction:       execute → correct → execute (retry, up to max_corrections)
+
+Ora (unified orchestrator) replaces the former understand → semantic_resolve → decompose chain.
 """
 
 from __future__ import annotations
@@ -14,7 +16,7 @@ from langgraph.graph import StateGraph, END
 
 from sqlagent.graph.state import QueryState
 from sqlagent.graph.nodes import (
-    make_understand_node,
+    make_ora_node,
     make_prune_node,
     make_retrieve_node,
     make_plan_node,
@@ -23,7 +25,6 @@ from sqlagent.graph.nodes import (
     make_correct_node,
     make_respond_node,
     make_learn_node,
-    make_decompose_node,
     make_fan_out_node,
     make_synthesize_node,
 )
@@ -34,10 +35,11 @@ from sqlagent.graph.nodes import (
 # ═══════════════════════════════════════════════════════════════════════════════
 
 
-def route_after_understand(state: QueryState) -> str:
-    """After understanding: route to simple pipeline or cross-source decomposition."""
-    if state.get("is_cross_source"):
-        return "decompose"
+def route_after_ora(state: QueryState) -> str:
+    """After Ora: route to fan_out (cross-source/compound) or prune (simple)."""
+    sub_queries = state.get("sub_queries")
+    if sub_queries:
+        return "fan_out"
     return "prune"
 
 
@@ -80,7 +82,7 @@ def compile_query_graph(services: Any) -> Any:
     graph = StateGraph(QueryState)
 
     # ── Add all nodes ─────────────────────────────────────────────────────────
-    graph.add_node("understand", make_understand_node(services))
+    graph.add_node("ora", make_ora_node(services))
     graph.add_node("prune", make_prune_node(services))
     graph.add_node("retrieve", make_retrieve_node(services))
     graph.add_node("plan", make_plan_node(services))
@@ -89,20 +91,19 @@ def compile_query_graph(services: Any) -> Any:
     graph.add_node("correct", make_correct_node(services))
     graph.add_node("respond", make_respond_node(services))
     graph.add_node("learn", make_learn_node(services))
-    graph.add_node("decompose", make_decompose_node(services))
     graph.add_node("fan_out", make_fan_out_node(services))
     graph.add_node("synthesize", make_synthesize_node(services))
 
     # ── Entry point ───────────────────────────────────────────────────────────
-    graph.set_entry_point("understand")
+    graph.set_entry_point("ora")
 
-    # ── Conditional: understand → simple or cross-source ──────────────────────
+    # ── ora → fan_out (cross-source/compound) or prune (simple) ──────────────
     graph.add_conditional_edges(
-        "understand",
-        route_after_understand,
+        "ora",
+        route_after_ora,
         {
             "prune": "prune",
-            "decompose": "decompose",
+            "fan_out": "fan_out",
         },
     )
 
@@ -131,8 +132,7 @@ def compile_query_graph(services: Any) -> Any:
         },
     )
 
-    # ── Cross-source path ─────────────────────────────────────────────────────
-    graph.add_edge("decompose", "fan_out")
+    # ── Cross-source / compound path ──────────────────────────────────────────
     graph.add_edge("fan_out", "synthesize")
     graph.add_edge("synthesize", "respond")
 

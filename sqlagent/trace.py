@@ -130,6 +130,23 @@ def _node_name(node_key: str, event: dict | None = None) -> str:
         ]
         return _random.choice(opts)
 
+    if node_key == "semantic_resolve":
+        cache_hit = (event or {}).get("cache_hit", False)
+        if cache_hit:
+            return "Semantic context — from cache"
+        em = len((event or {}).get("entity_map", {}))
+        syn = len((event or {}).get("synonyms", {}))
+        if em > 0 and syn > 0:
+            return f"Mapped {em} entities + {syn} synonyms"
+        if em > 0:
+            return f"Mapped {em} entity mapping{'s' if em != 1 else ''}"
+        opts = [
+            "Reasoning about data context",
+            "Bridging query to data values",
+            "Translating what you meant",
+        ]
+        return _random.choice(opts)
+
     if node_key == "prune":
         cols_after = (event or {}).get("columns_after", 0)
         tables = (event or {}).get("selected_tables", [])
@@ -234,6 +251,7 @@ def _agent_for_node(node_key: str) -> str:
     """Map node to a short, readable agent label."""
     agents = {
         "understand": "",  # no badge needed — it's trivial routing
+        "semantic_resolve": "semantic",
         "prune": "schema",
         "retrieve": "memory",
         "plan": "planner",

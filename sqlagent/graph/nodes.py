@@ -37,103 +37,41 @@ def make_understand_node(services: Any):
     so downstream agents (especially respond_node) can reason over it naturally.
     """
 
-    # ISO-3166 alpha-2 → country name expansion (helps LSH find the right columns)
-    _ISO2 = {
-        "AF": "Afghanistan",
-        "AL": "Albania",
-        "DZ": "Algeria",
-        "AR": "Argentina",
-        "AU": "Australia",
-        "AT": "Austria",
-        "BD": "Bangladesh",
-        "BE": "Belgium",
-        "BR": "Brazil",
-        "CA": "Canada",
-        "CL": "Chile",
-        "CN": "China",
-        "CO": "Colombia",
-        "HR": "Croatia",
-        "CZ": "Czech Republic",
-        "DK": "Denmark",
-        "EG": "Egypt",
-        "FI": "Finland",
-        "FR": "France",
-        "DE": "Germany",
-        "GH": "Ghana",
-        "GR": "Greece",
-        "HU": "Hungary",
-        "IN": "India",
-        "ID": "Indonesia",
-        "IR": "Iran",
-        "IQ": "Iraq",
-        "IE": "Ireland",
-        "IL": "Israel",
-        "IT": "Italy",
-        "JP": "Japan",
-        "JO": "Jordan",
-        "KE": "Kenya",
-        "KR": "South Korea",
-        "KW": "Kuwait",
-        "LB": "Lebanon",
-        "MY": "Malaysia",
-        "MX": "Mexico",
-        "MA": "Morocco",
-        "NL": "Netherlands",
-        "NZ": "New Zealand",
-        "NG": "Nigeria",
-        "NO": "Norway",
-        "PK": "Pakistan",
-        "PE": "Peru",
-        "PH": "Philippines",
-        "PL": "Poland",
-        "PT": "Portugal",
-        "QA": "Qatar",
-        "RO": "Romania",
-        "RU": "Russia",
-        "SA": "Saudi Arabia",
-        "SG": "Singapore",
-        "ZA": "South Africa",
-        "ES": "Spain",
-        "SE": "Sweden",
-        "CH": "Switzerland",
-        "TH": "Thailand",
-        "TN": "Tunisia",
-        "TR": "Turkey",
-        "UA": "Ukraine",
-        "AE": "United Arab Emirates",
-        "GB": "United Kingdom",
-        "US": "United States",
-        "VN": "Vietnam",
-        "MYS": "Malaysia",
-        "IDN": "Indonesia",
-        "SGP": "Singapore",
-        "THA": "Thailand",
-        "PHL": "Philippines",
-        "VNM": "Vietnam",
-        "MMR": "Myanmar",
-        "KHM": "Cambodia",
-        "LAO": "Laos",
-        "BRN": "Brunei",
-    }
-
-    def _expand_query(q: str) -> str:
-        """Expand ISO codes and known abbreviations so LSH can match schema columns."""
-        import re
-
-        tokens = re.findall(r"\b[A-Z]{2,3}\b", q)
-        additions = []
-        for tok in tokens:
-            if tok in _ISO2:
-                additions.append(_ISO2[tok])
-        if additions:
-            return q + " " + " ".join(additions)
-        return q
-
     async def understand_node(state: QueryState) -> dict:
         nl_query = state["nl_query"]
-        # Expand ISO codes / abbreviations so downstream embedding finds the right columns
-        nl_query_expanded = _expand_query(nl_query)
         source_ids = state.get("source_ids", [])
+
+        # ── Resolve anaphora using conversation history ───────────────────────
+        # "these 2", "them", "same countries", "the trend" etc. must be rewritten
+        # to explicit entities before routing or pruning — otherwise the agent
+        # queries the wrong data and trains on wrong results.
+        _hist = state.get("conversation_history", [])
+        # Always rewrite when there is history — short follow-ups like "the employment vs
+        # unemployment" or "what about trends?" lose their subject without rewriting even
+        # when they contain no classic pronoun. Only skip if the query is already long and
+        # self-contained (>80 chars with both a subject and a verb — unlikely to be a fragment).
+        _needs_resolution = bool(_hist)
+        if _needs_resolution:
+            try:
+                history_context = "\n".join(
+                    f"{'User' if t.get('role') == 'user' else 'Agent'}: {t.get('text') or t.get('nl_response') or ''}"
+                    for t in _hist[-6:]
+                )
+                rewrite_resp = await services.llm.complete([
+                    {"role": "user", "content": (
+                        f"Conversation so far:\n{history_context}\n\n"
+                        f"Latest question: {nl_query}\n\n"
+                        "Rewrite the latest question to be fully self-contained — replace all pronouns and "
+                        "references (e.g. 'these 2', 'them', 'the same', 'the trend') with the explicit "
+                        "entities from the conversation. Return ONLY the rewritten question, nothing else."
+                    )}
+                ])
+                rewritten = rewrite_resp.content.strip().strip('"').strip("'")
+                if rewritten and len(rewritten) > 5:
+                    nl_query = rewritten
+            except Exception:
+                pass
+
         query_id = state.get("query_id", str(uuid.uuid4())[:12])
         started = time.monotonic()
 
@@ -150,23 +88,81 @@ def make_understand_node(services: Any):
                 }
             ]
 
-        # ── Single source: fast path, no LLM needed ──────────────────────────
+        # ── Single source: LLM classifies intent and compound structure ─────────
         if len(source_ids) <= 1:
+            import json as _json
+
+            _hist_ctx = ""
+            if _hist:
+                _hist_ctx = "\n".join(
+                    f"{'User' if t.get('role') == 'user' else 'Agent'}: "
+                    + (t.get("text") or t.get("nl_response") or "")[:200]
+                    for t in _hist[-4:]
+                )
+
+            _route_prompt = (
+                f"You are a query router. Classify this question.\n\n"
+                + (f"Conversation context:\n{_hist_ctx}\n\n" if _hist_ctx else "")
+                + f"Question: {nl_query}\n\n"
+                "A question is COMPOUND when it contains two or more DISTINCT analytical questions "
+                "that require separate SQL queries to answer — each with its own entities, metrics, "
+                "or time frames. Examples:\n"
+                "  COMPOUND: 'How did Malaysia perform vs ASEAN, and also show PHP vs VNT currency trends'\n"
+                "  COMPOUND: 'Compare store revenue alongside employee headcount growth'\n"
+                "  COMPOUND: 'Breakdown sales by region, then show top 5 products by margin'\n"
+                "  NOT COMPOUND: 'Compare revenue and profit by store'  ← one query, two metrics\n"
+                "  NOT COMPOUND: 'Show top 10 countries by GDP'  ← one question\n"
+                "  NOT COMPOUND: 'What is the trend for Malaysia?'  ← one question\n\n"
+                "Also extract any specific entity names (countries, products, regions, codes) "
+                "the question wants to filter for. If it asks for aggregates like 'top 5' with no "
+                "specific names, return empty list.\n\n"
+                'Return JSON: {"is_compound": true|false, "reasoning": "...", '
+                '"complexity": "simple|moderate|complex", '
+                '"entity_filters": ["EntityA", "EntityB"]}'
+            )
+
+            try:
+                _route_resp = await services.llm.complete(
+                    [{"role": "user", "content": _route_prompt}],
+                    json_mode=True,
+                )
+                _raw = _route_resp.content.strip()
+                if _raw.startswith("```"):
+                    _raw = _raw.split("```")[1].lstrip("json").strip().rstrip("```").strip()
+                _route_parsed = _json.loads(_raw)
+            except Exception:
+                _route_parsed = {"is_compound": False, "reasoning": "parse error", "complexity": "moderate", "entity_filters": []}
+
+            _is_compound = bool(_route_parsed.get("is_compound", False))
+            _complexity = _route_parsed.get("complexity", "moderate")
+            _entity_filters = _route_parsed.get("entity_filters", [])
+            if not isinstance(_entity_filters, list):
+                _entity_filters = []
+            _route_tokens = getattr(_route_resp, "tokens_input", 0) + getattr(_route_resp, "tokens_output", 0)
+            _route_cost = getattr(_route_resp, "cost_usd", 0.0)
+
             return {
                 "query_id": query_id,
+                "nl_query": nl_query,
                 "is_cross_source": False,
+                "is_compound_query": _is_compound,
                 "target_sources": source_ids,
-                "complexity": "simple",
-                "routing_reasoning": "Single source — direct pipeline",
+                "complexity": _complexity,
+                "routing_reasoning": _route_parsed.get("reasoning", ""),
+                "entity_filters": _entity_filters,
                 "started_at": datetime.now(timezone.utc).isoformat(),
                 "correction_round": 0,
                 "max_corrections": services.config.max_corrections,
-                "tokens_used": 0,
-                "cost_usd": 0.0,
+                "tokens_used": _route_tokens,
+                "cost_usd": _route_cost,
                 "budget_exhausted": False,
-                # Pass expanded query so prune_node gets better embedding signal
-                "nl_query_for_pruning": nl_query_expanded,
-                "trace_events": _trace(f"Using {source_ids[0] if source_ids else 'no'} source"),
+                "nl_query_for_pruning": nl_query,
+                "trace_events": _trace(
+                    "Compound query — splitting into parallel sub-questions"
+                    if _is_compound
+                    else f"Using {source_ids[0] if source_ids else 'no'} source",
+                    tokens=_route_tokens,
+                ),
             }
 
         # ── Multi-source: LLM decides which sources and routing ───────────────
@@ -193,9 +189,18 @@ def make_understand_node(services: Any):
             + "\n".join(source_descriptions)
             + (f"\n\nConversation context:\n{history_str}" if history_str else "")
             + f"\n\nQuestion: {nl_query}\n\n"
-            "Which sources are needed? Is this cross-source?\n"
+            "Answer:\n"
+            "1. Which sources are needed and is this cross-source?\n"
+            "2. What specific entity names (country names, company names, dates, etc.) does the\n"
+            "   question want to filter for? Copy them exactly as written. If none (e.g. 'top 5\n"
+            "   countries', 'all data'), return empty list.\n"
+            '   Examples: "compare Malaysia vs Vietnam" → ["Malaysia", "Vietnam"]\n'
+            '             "Indonesia and Thailand rates" → ["Indonesia", "Thailand"]\n'
+            '             "Narnia trends" → ["Narnia"]\n'
+            '             "top 5 countries" → []\n'
             'Return JSON: {"target_sources": [...], "is_cross_source": bool, '
-            '"complexity": "simple|moderate|complex", "reasoning": "..."}'
+            '"complexity": "simple|moderate|complex", "reasoning": "...", '
+            '"entity_filters": ["EntityA", "EntityB"]}'
         )
 
         resp = await services.llm.complete([{"role": "user", "content": prompt}], json_mode=True)
@@ -209,16 +214,24 @@ def make_understand_node(services: Any):
                 "is_cross_source": len(source_ids) > 1,
                 "complexity": "moderate",
                 "reasoning": "Fallback: parse error",
+                "entity_filters": [],
             }
+
+        entity_filters = parsed.get("entity_filters", [])
+        if not isinstance(entity_filters, list):
+            entity_filters = []
 
         latency = int((time.monotonic() - started) * 1000)
         return {
             "query_id": query_id,
+            "nl_query": nl_query,  # ISO codes expanded to full names for SQL generation
+            "nl_query_for_pruning": nl_query,
             "intent": "data_query",
             "is_cross_source": parsed.get("is_cross_source", False),
-            "target_sources": parsed.get("target_sources", source_ids),
+            "target_sources": parsed.get("target_sources") or source_ids,
             "complexity": parsed.get("complexity", "moderate"),
             "routing_reasoning": parsed.get("reasoning", ""),
+            "entity_filters": entity_filters,
             "started_at": datetime.now(timezone.utc).isoformat(),
             "correction_round": 0,
             "max_corrections": services.config.max_corrections,
@@ -560,6 +573,28 @@ def make_generate_node(services: Any):
         # the entity (e.g. "MY" / "Malaysia") to the correct column filter.
         schema_exploration = state.get("schema_exploration_mode", False)
         nl_query_for_gen = nl_query
+
+        # ── Semantic entity substitution ─────────────────────────────────────
+        # Replace user abbreviations/typos in the NL query with the actual
+        # stored values resolved by the semantic agent (e.g. PHP→PHL, VNT→VNM).
+        # This prevents the SQL generator from deciding "PHP doesn't exist"
+        # before it even reads the semantic context hints.
+        sem_res = state.get("semantic_resolution")
+        if sem_res and sem_res.get("entity_map"):
+            import re as _re
+            entity_map = sem_res["entity_map"]
+            substituted = nl_query_for_gen
+            # Sort by length descending so longer keys are replaced first
+            for user_term, stored_val in sorted(entity_map.items(), key=lambda x: -len(x[0])):
+                if user_term != stored_val:
+                    # Word-boundary replacement — avoid replacing inside longer words
+                    substituted = _re.sub(
+                        r'\b' + _re.escape(user_term) + r'\b',
+                        stored_val,
+                        substituted,
+                        flags=_re.IGNORECASE,
+                    )
+            nl_query_for_gen = substituted
         if schema_exploration:
             # Pull distinct values hint from schema to guide entity mapping
             tables_hint = ", ".join(t["name"] for t in (pruned_schema.get("tables") or []))
@@ -960,13 +995,37 @@ def make_respond_node(services: Any):
                     + (f"\n  (SQL: {t['sql'][:200]})" if t.get("sql") else "")
                     for t in history[-6:]
                 )
+                # Include schema so the LLM can reason about what went wrong
+                # (e.g. "country column stores 'Malaysia' not 'MY'")
+                _pruned = state.get("pruned_schema") or state.get("full_schema") or {}
+                _schema_lines = []
+                if isinstance(_pruned, dict):
+                    for _src_id, _snap in (
+                        _pruned.items()
+                        if _pruned and isinstance(list(_pruned.values())[0], dict)
+                        else [("data", _pruned)]
+                    ):
+                        _tables = _snap.get("tables", []) if isinstance(_snap, dict) else []
+                        for _t in _tables[:10]:
+                            _cols = ", ".join(
+                                c["name"] for c in _t.get("columns", [])[:12]
+                            )
+                            _schema_lines.append(f"  {_t['name']}: [{_cols}]")
+                _schema_text = "\n".join(_schema_lines) if _schema_lines else ""
+
+                _error_block = f"\nExecution error: {error}\n" if error else ""
+
                 context_prompt = (
                     f"Conversation history:\n{history_block}\n\n"
-                    f"Current question: {nl_query}\n\n"
-                    "Answer the question using the conversation context above. "
-                    "If the question refers to something from a previous query, explain it clearly. "
-                    "If no new data was retrieved and the question can't be answered from context, "
-                    "say so briefly and suggest what the user could ask instead.\n"
+                    + (_schema_text and f"Available schema:\n{_schema_text}\n\n" or "")
+                    + (_error_block or "")
+                    + f"Current question: {nl_query}\n\n"
+                    "You are a data analyst with access to the schema above. "
+                    "Answer the question using conversation context. "
+                    "If the query failed, explain WHY based on the error and schema "
+                    "(e.g. 'The country column stores full names like Malaysia, not ISO codes like MY — "
+                    "try rephrasing with the full name'). "
+                    "Never say you don't have schema access — you do.\n"
                     "Also suggest 2-3 follow-up questions.\n\n"
                     'Return JSON: {"summary": "...", "follow_ups": ["...", "..."]}'
                 )
@@ -1037,17 +1096,71 @@ def make_respond_node(services: Any):
 
         # Sample data for the LLM
         sample = rows[:5]
-        prompt = (
-            f"{history_prefix}"
-            f"Question: {nl_query}\n"
-            f"SQL: {sql}\n"
-            f"Results ({row_count} rows, showing first 5):\n{sample}\n\n"
-            f"1. Write a concise natural language answer (2-3 sentences, use **bold** for key numbers).\n"
-            f"2. Suggest 3 follow-up questions.\n"
-            f"3. Suggest a chart type (bar, line, pie, table, or none).\n\n"
-            f'Return JSON: {{"summary": "...", "follow_ups": ["..."], '
-            f'"chart_type": "bar|line|pie|table|none"}}'
-        )
+
+        # ── Compound query: structure the answer by sub-question part ──────────
+        # When synthesize_node used UNION ALL, rows include a 'sub_question' column
+        # (values like 'sq_a', 'sq_b'). Tell the LLM to narrate each part separately.
+        is_compound = state.get("is_compound_query", False)
+        sub_question_col = "sub_question" if "sub_question" in columns else None
+
+        # Surface data_warnings from Ora in the response
+        data_warnings = state.get("data_warnings") or []
+        warnings_prefix = ""
+        if data_warnings:
+            warnings_prefix = (
+                "DATA WARNINGS (share these with the user upfront):\n"
+                + "\n".join(f"  ⚠ {w}" for w in data_warnings[:3])
+                + "\n\n"
+            )
+
+        if is_compound and sub_question_col:
+            # Build a condensed per-part sample so the LLM can narrate each part
+            import collections as _collections
+            parts_data: dict = _collections.defaultdict(list)
+            for r in rows:
+                label = r.get(sub_question_col, "part")
+                parts_data[label].append(r)
+            parts_block = ""
+            for label, part_rows in parts_data.items():
+                parts_block += f"\n[{label}] — {len(part_rows)} rows, sample: {part_rows[:3]}\n"
+
+            # Map sub_query IDs to the sub-query NL descriptions so the LLM
+            # can say "Part 1: Malaysia vs ASEAN" instead of "sq_a"
+            sub_queries = state.get("sub_queries", [])
+            sq_label_map = {sq.get("id", ""): sq.get("nl", "")[:120] for sq in sub_queries}
+
+            sq_legend = "\n".join(
+                f"  {label}: {sq_label_map.get(label, label)}"
+                for label in parts_data
+            )
+
+            prompt = (
+                f"{history_prefix}"
+                f"{warnings_prefix}"
+                f"Question: {nl_query}\n\n"
+                f"This was a multi-part question. Results are split by sub-question:\n"
+                f"{sq_legend}\n\n"
+                f"Data per part:{parts_block}\n"
+                f"Instructions:\n"
+                f"1. Answer each part separately with a clear heading (e.g. '**Part 1: Malaysia vs ASEAN**').\n"
+                f"2. Use **bold** for key numbers. 2-3 sentences per part.\n"
+                f"3. End with 3 follow-up questions that span both parts.\n"
+                f"4. Suggest a chart type (bar, line, pie, table, or none).\n\n"
+                f'Return JSON: {{"summary": "...", "follow_ups": ["..."], "chart_type": "bar|line|pie|table|none"}}'
+            )
+        else:
+            prompt = (
+                f"{history_prefix}"
+                f"{warnings_prefix}"
+                f"Question: {nl_query}\n"
+                f"SQL: {sql}\n"
+                f"Results ({row_count} rows, showing first 5):\n{sample}\n\n"
+                f"1. Write a concise natural language answer (2-3 sentences, use **bold** for key numbers).\n"
+                f"2. Suggest 3 follow-up questions.\n"
+                f"3. Suggest a chart type (bar, line, pie, table, or none).\n\n"
+                f'Return JSON: {{"summary": "...", "follow_ups": ["..."], '
+                f'"chart_type": "bar|line|pie|table|none"}}'
+            )
 
         resp = await services.llm.complete(
             [{"role": "user", "content": prompt}],
@@ -1108,6 +1221,154 @@ def make_respond_node(services: Any):
     return respond_node
 
 
+def make_semantic_resolve_node(services: Any):
+    """Semantic reasoning node — runs between understand and prune/decompose.
+
+    Cache hit (cosine >= 0.85): injects SemanticResolution from cache, no LLM call.
+    Cache miss: fires SemanticReasoningAgent (one LLM call) against actual schema+samples.
+    Resolution is injected into generate_node as context_notes.
+    Only saved to cache after a successful, non-thumbs-down query (in learn_node).
+    """
+
+    async def semantic_resolve_node(state: QueryState) -> dict:
+        import time as _time
+        started = _time.monotonic()
+
+        nl_query = state.get("nl_query", "")
+        target_sources = state.get("target_sources") or state.get("source_ids", [])
+        # Use first source — for cross-source queries each sub-query gets its own resolution
+        source_id = target_sources[0] if target_sources else ""
+
+        _trace_events = state.get("trace_events", [])
+
+        # ── Try cache first ───────────────────────────────────────────────────
+        cache_hit = False
+        resolution = None
+
+        if hasattr(services, "_semantic_cache") and services._semantic_cache:
+            resolution = await services._semantic_cache.get(nl_query, source_id)
+            if resolution:
+                cache_hit = True
+                logger.info(
+                    "semantic_resolve.cache_hit",
+                    nl_query=nl_query[:60],
+                    resolution_id=resolution.resolution_id,
+                )
+
+        # ── Cache miss: run the reasoning agent ───────────────────────────────
+        if not resolution:
+            # Get the schema for this source (with sample values)
+            schema = {}
+            conn = services.connectors.get(source_id)
+            if conn:
+                try:
+                    snap = await conn.introspect()
+                    schema = snap.to_dict() if hasattr(snap, "to_dict") else {}
+                    # Ensure sample values are present (use first source's pruned or full schema)
+                    if not schema:
+                        schema = state.get("full_schema", {}).get(source_id, {})
+                except Exception:
+                    schema = state.get("full_schema", {}).get(source_id, {})
+
+            from sqlagent.semantic_layer import run_semantic_agent
+            resolution = await run_semantic_agent(
+                nl_query=nl_query,
+                source_id=source_id,
+                schema=schema,
+                llm=services.llm,
+            )
+
+        latency = int((_time.monotonic() - started) * 1000)
+
+        # ── Build context block to inject into generation ─────────────────────
+        context_block = resolution.to_context_block() if resolution else ""
+        existing_notes = list(state.get("data_context_notes") or [])
+        if context_block and context_block not in existing_notes:
+            existing_notes.insert(0, context_block)  # semantic context goes first
+
+        # ── Rewrite nl_query with resolved entity substitutions ───────────────
+        # Apply entity_map to nl_query globally so ALL downstream nodes
+        # (decompose, fan_out, synthesize) see "MYS" not "MY", "PHL" not "PHP".
+        import re as _re
+        nl_query_resolved = state.get("nl_query", "")
+        entity_map = (resolution.entity_map if resolution else {}) or {}
+
+        # ── Novel entity fallback: scan live schema for unresolved short tokens ──
+        # Any 2-4 char uppercase token NOT in entity_map may be an unknown ISO/code.
+        # Try a live LIKE scan against the first available connector so future nodes
+        # receive a resolved value (e.g. "GH" → "Ghana") rather than the raw code.
+        if source_id and hasattr(services, "connectors"):
+            _conn_live = services.connectors.get(source_id)
+            if _conn_live:
+                try:
+                    _snap_live = await _conn_live.introspect()
+                    # Find text columns that look like entity name or code columns
+                    _entity_cols = []
+                    for _t in _snap_live.tables:
+                        for _c in _t.columns:
+                            if any(kw in _c.name.lower() for kw in ("country", "name", "code", "entity", "region", "iso")):
+                                _entity_cols.append((_t.name, _c.name))
+                    # Extract short uppercase tokens from the query that are not mapped yet
+                    _unmapped = [
+                        tok for tok in _re.findall(r'\b[A-Z]{2,4}\b', nl_query_resolved)
+                        if tok not in entity_map and tok.lower() not in {k.lower() for k in entity_map}
+                        and tok not in ("AND", "OR", "NOT", "IN", "BY", "FROM", "SQL", "ISO")
+                    ]
+                    for _tok in _unmapped[:6]:  # limit live queries
+                        for _tname, _cname in _entity_cols[:4]:
+                            try:
+                                _r = await _conn_live.execute(
+                                    f'SELECT DISTINCT "{_cname}" FROM "{_tname}" '
+                                    f'WHERE UPPER("{_cname}") = {repr(_tok.upper())} '
+                                    f'OR LOWER("{_cname}") LIKE {repr("%" + _tok.lower() + "%")} LIMIT 3'
+                                )
+                                _rrows = _r.to_dict("records") if hasattr(_r, "to_dict") else []
+                                if _rrows:
+                                    _found = str(list(_rrows[0].values())[0])
+                                    # Only trust if it's a close match (token appears in found value)
+                                    if _tok.lower()[:3] in _found.lower() or _found.upper() == _tok.upper():
+                                        entity_map[_tok] = _found
+                                        break
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
+
+        if entity_map:
+            for user_term, stored_val in sorted(entity_map.items(), key=lambda x: -len(x[0])):
+                if user_term != stored_val:
+                    nl_query_resolved = _re.sub(
+                        r'\b' + _re.escape(user_term) + r'\b',
+                        stored_val,
+                        nl_query_resolved,
+                        flags=_re.IGNORECASE,
+                    )
+
+        return {
+            "nl_query": nl_query_resolved,
+            "semantic_resolution": resolution.to_dict() if resolution else None,
+            "semantic_cache_hit": cache_hit,
+            "data_context_notes": existing_notes,
+            "trace_events": _trace_events + [{
+                "node": "semantic_resolve",
+                "status": "completed",
+                "latency_ms": latency,
+                "summary": (
+                    f"Cache hit — reused known mappings"
+                    if cache_hit else
+                    f"Reasoned: {len(resolution.entity_map)} entity maps, "
+                    f"{len(resolution.synonyms)} synonyms"
+                    if resolution else "No semantic context"
+                ),
+                "cache_hit": cache_hit,
+                "entity_map": resolution.entity_map if resolution else {},
+                "synonyms": resolution.synonyms if resolution else {},
+            }],
+        }
+
+    return semantic_resolve_node
+
+
 def make_learn_node(services: Any):
     """Write to episodic memory, update SOUL observation. Non-blocking."""
 
@@ -1129,6 +1390,59 @@ def make_learn_node(services: Any):
                 logger.debug(
                     "pipeline.node.operation_failed", error=str(exc)
                 )  # SOUL/memory never blocks a query
+
+        # Save semantic resolution to cache — only on success (no thumbs-down checked server-side)
+        if (
+            state.get("succeeded")
+            and state.get("semantic_resolution")
+            and not state.get("semantic_cache_hit")  # don't re-save what was already cached
+            and hasattr(services, "_semantic_cache")
+            and services._semantic_cache
+        ):
+            try:
+                from sqlagent.semantic_layer import SemanticResolution
+                resolution = SemanticResolution.from_dict(state["semantic_resolution"])
+                await services._semantic_cache.save(resolution)
+            except Exception as exc:
+                logger.debug("pipeline.node.operation_failed", error=str(exc))
+
+        # Persist entity discoveries to SemanticMemory for cross-session learning.
+        # After a successful query we know which entities exist in which sources.
+        semantic_memory = getattr(services, "_semantic_memory", None)
+        if state.get("succeeded") and semantic_memory:
+            # Save entity values discovered during fan_out sub-queries
+            sub_results = state.get("sub_results", [])
+            for sr in sub_results:
+                if sr.get("succeeded") and sr.get("rows") and sr.get("source_id"):
+                    sid = sr["source_id"]
+                    # Check entity_filters used for this sub-query
+                    sub_queries = state.get("sub_queries", [])
+                    sq_match = next(
+                        (sq for sq in sub_queries if sq.get("id") == sr.get("sub_query_id")), {}
+                    )
+                    used_filters = sq_match.get("entity_filters", [])
+                    if used_filters:
+                        try:
+                            # Save column from first column in result rows
+                            cols = sr.get("columns", [])
+                            if cols:
+                                await semantic_memory.save_discovered_entities(
+                                    sid, "", cols[0], used_filters
+                                )
+                        except Exception as exc:
+                            logger.debug("learn.semantic_memory_save_failed", error=str(exc))
+
+            # Save concept→column mappings from the resolved semantic context
+            sem_res_dict = state.get("semantic_resolution")
+            if sem_res_dict and sem_res_dict.get("synonyms"):
+                target_sources = state.get("target_sources", [])
+                source_id = target_sources[0] if target_sources else ""
+                if source_id:
+                    for concept, col in sem_res_dict["synonyms"].items():
+                        try:
+                            await semantic_memory.save_concept_column(source_id, concept, col)
+                        except Exception as exc:
+                            logger.debug("learn.semantic_memory_concept_failed", error=str(exc))
 
         # SOUL observation
         if services.soul and state.get("succeeded"):
@@ -1165,6 +1479,132 @@ def make_learn_node(services: Any):
     return learn_node
 
 
+# ── Known group-name → member expansion ──────────────────────────────────────
+# When entity_filters contains a group name (e.g. "ASEAN", "G7", "EU"),
+# expand it to individual member names so fan_out can find them in the DB.
+# This is intentionally a static dict — precise, no LLM call, no false positives.
+_GROUP_EXPANSIONS: dict[str, list[str]] = {
+    "asean": ["Malaysia", "Indonesia", "Thailand", "Singapore", "Philippines",
+              "Vietnam", "Myanmar", "Cambodia", "Laos", "Brunei"],
+    "southeast asia": ["Malaysia", "Indonesia", "Thailand", "Singapore", "Philippines",
+                       "Vietnam", "Myanmar", "Cambodia", "Laos", "Brunei", "Timor-Leste"],
+    "g7": ["United States", "Canada", "United Kingdom", "Germany", "France", "Italy", "Japan"],
+    "g20": ["Argentina", "Australia", "Brazil", "Canada", "China", "France", "Germany",
+             "India", "Indonesia", "Italy", "Japan", "South Korea", "Mexico", "Russia",
+             "Saudi Arabia", "South Africa", "Turkey", "United Kingdom", "United States"],
+    "eu": ["Germany", "France", "Italy", "Spain", "Poland", "Romania", "Netherlands",
+           "Belgium", "Sweden", "Austria", "Denmark", "Finland", "Ireland", "Portugal",
+           "Czech Republic", "Hungary", "Greece", "Slovakia", "Bulgaria", "Croatia",
+           "Lithuania", "Latvia", "Estonia", "Slovenia", "Luxembourg", "Cyprus", "Malta"],
+    "brics": ["Brazil", "Russia", "India", "China", "South Africa"],
+    "nordics": ["Denmark", "Finland", "Iceland", "Norway", "Sweden"],
+    "mena": ["Saudi Arabia", "UAE", "Qatar", "Kuwait", "Bahrain", "Oman",
+             "Jordan", "Lebanon", "Egypt", "Morocco", "Tunisia", "Algeria", "Libya", "Iraq", "Iran"],
+}
+
+
+def _expand_group_entities(filters: list[str]) -> list[str]:
+    """Expand any group-name filters to individual member names.
+
+    Passes through non-group filters unchanged.
+    e.g. ["ASEAN", "India"] → ["Malaysia", "Indonesia", ..., "India"]
+    """
+    expanded = []
+    for f in filters:
+        members = _GROUP_EXPANSIONS.get(f.lower())
+        if members:
+            expanded.extend(members)
+        else:
+            expanded.append(f)
+    return expanded
+
+
+# ── Country alias lookup ──────────────────────────────────────────────────────
+# Maps ISO2, ISO3, and common user shorthand → canonical country name.
+# Used by Ora to resolve 'VNT' → 'Vietnam', 'PHP' → 'Philippines', etc.
+# before live SQL coverage scans.
+_COUNTRY_CANONICAL: dict[str, str] = {
+    # Southeast Asia
+    "my": "Malaysia",   "mys": "Malaysia",
+    "vn": "Vietnam",    "vnm": "Vietnam",    "vnt": "Vietnam",    "viet nam": "Vietnam",
+    "ph": "Philippines", "phl": "Philippines", "php": "Philippines", "pilipinas": "Philippines",
+    "id": "Indonesia",  "idn": "Indonesia",
+    "th": "Thailand",   "tha": "Thailand",
+    "sg": "Singapore",  "sgp": "Singapore",
+    "kh": "Cambodia",   "khm": "Cambodia",   "kampuchea": "Cambodia",
+    "mm": "Myanmar",    "mmr": "Myanmar",    "burma": "Myanmar",
+    "la": "Laos",       "lao": "Laos",       "lao pdr": "Laos",
+    "bn": "Brunei",     "brn": "Brunei",
+    "tl": "Timor-Leste", "tls": "Timor-Leste",
+    # East Asia
+    "cn": "China",      "chn": "China",
+    "jp": "Japan",      "jpn": "Japan",
+    "kr": "South Korea", "kor": "South Korea",
+    "tw": "Taiwan",     "twn": "Taiwan",
+    "hk": "Hong Kong",  "hkg": "Hong Kong",
+    # South Asia
+    "in": "India",      "ind": "India",
+    "pk": "Pakistan",   "pak": "Pakistan",
+    "bd": "Bangladesh", "bgd": "Bangladesh",
+    "lk": "Sri Lanka",  "lka": "Sri Lanka",
+    # Americas
+    "us": "United States", "usa": "United States", "united states of america": "United States",
+    "ca": "Canada",     "can": "Canada",
+    "mx": "Mexico",     "mex": "Mexico",
+    "br": "Brazil",     "bra": "Brazil",
+    "ar": "Argentina",  "arg": "Argentina",
+    "cl": "Chile",      "chl": "Chile",
+    "co": "Colombia",   "col": "Colombia",
+    # Europe
+    "gb": "United Kingdom", "gbr": "United Kingdom", "uk": "United Kingdom",
+    "de": "Germany",    "deu": "Germany",
+    "fr": "France",     "fra": "France",
+    "it": "Italy",      "ita": "Italy",
+    "es": "Spain",      "esp": "Spain",
+    "nl": "Netherlands", "nld": "Netherlands",
+    "be": "Belgium",    "bel": "Belgium",
+    "se": "Sweden",     "swe": "Sweden",
+    "no": "Norway",     "nor": "Norway",
+    "dk": "Denmark",    "dnk": "Denmark",
+    "fi": "Finland",    "fin": "Finland",
+    "pl": "Poland",     "pol": "Poland",
+    "pt": "Portugal",   "prt": "Portugal",
+    "gr": "Greece",     "grc": "Greece",
+    "at": "Austria",    "aut": "Austria",
+    "ch": "Switzerland", "che": "Switzerland",
+    "ru": "Russia",     "rus": "Russia",    "russian federation": "Russia",
+    # Middle East / Africa
+    "sa": "Saudi Arabia", "sau": "Saudi Arabia",
+    "ae": "United Arab Emirates", "are": "United Arab Emirates", "uae": "United Arab Emirates",
+    "eg": "Egypt",      "egy": "Egypt",
+    "za": "South Africa", "zaf": "South Africa",
+    "ng": "Nigeria",    "nga": "Nigeria",
+    "ke": "Kenya",      "ken": "Kenya",
+    # Oceania
+    "au": "Australia",  "aus": "Australia",
+    "nz": "New Zealand", "nzl": "New Zealand",
+}
+
+
+def _resolve_country_aliases(filters: list[str]) -> tuple[list[str], dict[str, str]]:
+    """Resolve ISO codes and common abbreviations to canonical country names.
+
+    Returns (resolved_filters, alias_map) where alias_map is original → canonical
+    for aliases that were changed (so we can surface this in trace/warnings).
+    Preserves non-country entities unchanged.
+    """
+    resolved = []
+    alias_map: dict[str, str] = {}
+    for f in filters:
+        canonical = _COUNTRY_CANONICAL.get(f.lower())
+        if canonical and canonical.lower() != f.lower():
+            resolved.append(canonical)
+            alias_map[f] = canonical
+        else:
+            resolved.append(f)
+    return resolved, alias_map
+
+
 def make_decompose_node(services: Any):
     """Split a cross-source query into sub-queries targeting different sources."""
 
@@ -1182,6 +1622,9 @@ def make_decompose_node(services: Any):
 
         source_info = []
         resolved_ids = []
+        # col_name → {sid: (distinct_count, total_rows)} for cardinality analysis
+        col_cardinality: dict = {}
+
         for sid in candidate_ids:
             conn = services.connectors.get(sid)
             if conn:
@@ -1189,28 +1632,119 @@ def make_decompose_node(services: Any):
                     snap = await conn.introspect()
                     col_lines = []
                     for t in snap.tables:
-                        cols = ", ".join(c.name for c in t.columns[:20])
-                        col_lines.append(f"    table '{t.name}': [{cols}]")
+                        total_rows = t.row_count_estimate or 0
+                        col_parts = []
+                        for c in t.columns[:20]:
+                            # Sample cardinality for columns that might be join keys
+                            distinct = None
+                            try:
+                                res = await conn.execute(
+                                    f'SELECT COUNT(DISTINCT "{c.name}") FROM "{t.name}"'
+                                )
+                                rows_r = getattr(res, "rows", None) or (
+                                    res.to_dict("records") if hasattr(res, "to_dict") else []
+                                )
+                                if rows_r:
+                                    distinct = list(rows_r[0].values())[0]
+                            except Exception:
+                                pass
+
+                            cardinality_note = ""
+                            sample_values_note = ""
+                            if distinct is not None and total_rows > 0:
+                                ratio = int(distinct) / total_rows
+                                if ratio < 0.05:
+                                    cardinality_note = f" [dimension: {distinct} distinct / {total_rows} rows — NOT a unique key, must GROUP BY before joining]"
+                                elif ratio >= 0.95:
+                                    cardinality_note = f" [unique-ish: {distinct}/{total_rows}]"
+                                else:
+                                    cardinality_note = f" [{distinct} distinct / {total_rows} rows]"
+                                if c.name not in col_cardinality:
+                                    col_cardinality[c.name] = {}
+                                col_cardinality[c.name][sid] = (int(distinct), total_rows)
+
+                                # Sample values are NOT shown in decompose schema —
+                                # they cause LLM to use schema values instead of question entities.
+                                # Fan_out handles entity resolution via its own discovery loop.
+
+                            col_parts.append(f"{c.name} {c.data_type}{cardinality_note}{sample_values_note}")
+
+                        col_lines.append(f"    table '{t.name}' ({total_rows} rows):\n      " + "\n      ".join(col_parts))
                     table_block = "\n".join(col_lines) or "    (no tables)"
                     source_info.append(f"Source id='{sid}' dialect={conn.dialect}:\n{table_block}")
                     resolved_ids.append(sid)
                 except Exception as exc:
                     source_info.append(f"Source id='{sid}': (schema unavailable: {exc})")
 
-        prompt = (
-            "You are a query decomposer. Your job is to split a question into independent "
-            "sub-queries, one per data source, so they can be run in parallel and later joined.\n\n"
-            "Available data sources and their schemas:\n" + "\n\n".join(source_info) + "\n\n"
-            f"Question: {nl_query}\n\n"
-            "Instructions:\n"
-            "- Create exactly one sub-query per source that contains relevant data.\n"
-            "- Each sub-query 'nl' field must be a plain-English description of what to SELECT from that source.\n"
-            "- The sub-query 'source_id' MUST exactly match one of the source ids listed above.\n"
-            "- In 'synthesis.join_keys', identify the column(s) shared across sources for joining.\n\n"
-            "Return JSON with this exact structure:\n"
-            '{"sub_queries": [{"id": "sq_a", "source_id": "<exact source id>", "nl": "...", "expected_columns": ["col1", "col2"]}, ...], '
-            '"synthesis": {"join_keys": [{"left": "sq_a.col", "right": "sq_b.col"}], "ordering": "col DESC", "limit": 100}}'
+        # Identify shared columns across sources (candidates for join keys)
+        shared_cols = [
+            col for col, sids in col_cardinality.items() if len(sids) > 1
+        ]
+        shared_note = ""
+        if shared_cols:
+            shared_note = (
+                f"\nShared columns across sources (potential join keys): {', '.join(shared_cols)}\n"
+                "IMPORTANT: If a shared column has cardinality << total rows (marked 'dimension'), "
+                "it is NOT a unique join key. The sub-queries MUST aggregate (GROUP BY) to produce "
+                "one row per unique combination of join dimensions before synthesis can JOIN them. "
+                "Failure to aggregate results in a cartesian explosion.\n"
+            )
+
+        is_compound = state.get("is_compound_query", False) and not state.get("is_cross_source", False)
+
+        is_compound = state.get("is_compound_query", False) and not state.get("is_cross_source", False)
+
+        _sub_query_schema = (
+            '{"id": "sq_a", "source_id": "<exact source id>", "nl": "description", '
+            '"entity_filters": ["entities FOR THIS sub-question only"], '
+            '"expected_columns": ["col1", "col2"]}'
         )
+
+        if is_compound:
+            prompt = (
+                "You are a query planner. This is a COMPOUND question — multiple distinct analytical\n"
+                "questions asked in a single sentence, all against the SAME data source.\n\n"
+                "Available data source with schema and cardinality:\n" + "\n\n".join(source_info) + "\n\n"
+                f"Question: {nl_query}\n\n"
+                "Instructions:\n"
+                "- Identify each distinct analytical sub-question within the compound query.\n"
+                "  (e.g. 'compare MY vs ASEAN' is one question; 'deep dive PHP vs VNT trends' is another)\n"
+                "- Create one sub-query per distinct analytical question.\n"
+                "- ALL sub-queries use the SAME source_id (the single data source above).\n"
+                "- CRITICAL: each sub-query has its OWN 'entity_filters' — ONLY the entities relevant\n"
+                "  to THAT specific sub-question. Do NOT put all entities in every sub-query.\n"
+                "  Example: 'MY vs ASEAN and then PHP vs VNT trends'\n"
+                "    sq_a entity_filters: ['MY', 'ASEAN countries']\n"
+                "    sq_b entity_filters: ['PHP', 'VNT']\n"
+                "- In 'synthesis.join_keys': list common columns to join on, or [] if independent.\n"
+                "- In 'synthesis.strategy': 'join' if results share a key, 'independent' if not.\n\n"
+                "Return JSON:\n"
+                '{"entity_filters": ["all entities from full question"], '
+                f'"sub_queries": [{_sub_query_schema}, ...], '
+                '"synthesis": {"join_keys": [], "strategy": "independent|join", "ordering": "", "limit": 100}}'
+            )
+        else:
+            prompt = (
+                "You are a query planner. Split a cross-source question into sub-queries.\n\n"
+                "Available data sources with schema and cardinality:\n" + "\n\n".join(source_info) + "\n\n"
+                f"Question: {nl_query}\n"
+                f"{shared_note}\n"
+                "Instructions:\n"
+                "- Create exactly one sub-query per source that contains relevant data.\n"
+                "- The sub-query 'nl' describes what data to retrieve from that source (plain English).\n"
+                "- The sub-query 'source_id' MUST exactly match one of the source ids listed above.\n"
+                "- CRITICAL: each sub-query has its OWN 'entity_filters' — ONLY the entities relevant\n"
+                "  to THAT specific sub-query source. Do NOT put all entities in every sub-query.\n"
+                "- In 'synthesis.join_keys', list the columns the sub-results will be joined on.\n"
+                "- In 'synthesis.strategy': 'join' if results share a key, 'independent' if not.\n\n"
+                "  entity_filters examples per sub-query:\n"
+                "  Sub-query on sales table: entity_filters: ['Malaysia', 'Vietnam']\n"
+                "  Sub-query on staff table: entity_filters: []\n\n"
+                "Return JSON:\n"
+                '{"entity_filters": ["all entities from full question"], '
+                f'"sub_queries": [{_sub_query_schema}, ...], '
+                '"synthesis": {"join_keys": [{"left": "sq_a.col", "right": "sq_b.col"}], "strategy": "join", "ordering": "col DESC", "limit": 100}}'
+            )
 
         resp = await services.llm.complete(
             [{"role": "user", "content": prompt}],
@@ -1239,11 +1773,39 @@ def make_decompose_node(services: Any):
                 "synthesis": {},
             }
 
+        # entity_filters come from understand_node (extracted from the original question)
+        entity_filters = state.get("entity_filters", [])
+
+        # Apply semantic resolution entity_map — translate user terms to actual stored values.
+        # e.g. ["IND", "SG", "VNT"] → ["IND", "SGP", "VNM"] if the semantic agent resolved them.
+        semantic_res = state.get("semantic_resolution")
+        if semantic_res and semantic_res.get("entity_map"):
+            entity_map = semantic_res["entity_map"]
+            # Case-insensitive lookup + fuzzy prefix fallback (handles LLM key phrasing variations)
+            entity_map_lower = {k.lower(): v for k, v in entity_map.items()}
+            resolved_filters = []
+            for e in entity_filters:
+                if e in entity_map:
+                    resolved_filters.append(entity_map[e])
+                elif e.lower() in entity_map_lower:
+                    resolved_filters.append(entity_map_lower[e.lower()])
+                else:
+                    # Fuzzy: match by first 3 chars (handles "PHN" → "Philippines": "PHL")
+                    match = next(
+                        (v for k, v in entity_map.items() if
+                         len(e) >= 2 and len(k) >= 2 and e[:2].lower() == k[:2].lower()),
+                        None,
+                    )
+                    resolved_filters.append(match if match else e)
+            entity_filters = resolved_filters
+            logger.info("decompose.entity_filters_resolved", raw=state.get("entity_filters", []), resolved=entity_filters)
+
+        logger.info("decompose.entity_filters", filters=entity_filters, nl_query=nl_query[:100])
+
         # Validate source_ids in sub_queries — replace unknown IDs with nearest match
         valid_ids = set(all_connector_ids)
         for sq in parsed.get("sub_queries", []):
             if sq.get("source_id") not in valid_ids:
-                # Try to find a connector ID that contains the sub-query source_id as substring
                 sq_sid = sq.get("source_id", "")
                 match = next(
                     (cid for cid in all_connector_ids if sq_sid in cid or cid in sq_sid),
@@ -1251,9 +1813,51 @@ def make_decompose_node(services: Any):
                 )
                 sq["source_id"] = match
 
+            # Per-sub-query entity_filters: use what the LLM assigned to this sub-query
+            # if it provided them; otherwise fall back to the global resolved list.
+            # This prevents blasting ALL entities into every sub-query (e.g. in a compound
+            # query "MY vs ASEAN & PHP vs VNT", sq_a should only filter MY/ASEAN not PHP/VNT).
+            sq_local_filters = sq.get("entity_filters") or []
+            if sq_local_filters:
+                # Resolve abbreviations in per-sub-query filters using the same entity_map
+                if semantic_res and semantic_res.get("entity_map"):
+                    entity_map = semantic_res["entity_map"]
+                    entity_map_lower = {k.lower(): v for k, v in entity_map.items()}
+                    resolved_sq_filters = []
+                    for e in sq_local_filters:
+                        if e in entity_map:
+                            resolved_sq_filters.append(entity_map[e])
+                        elif e.lower() in entity_map_lower:
+                            resolved_sq_filters.append(entity_map_lower[e.lower()])
+                        else:
+                            match_f = next(
+                                (v for k, v in entity_map.items() if
+                                 len(e) >= 2 and len(k) >= 2 and e[:2].lower() == k[:2].lower()),
+                                None,
+                            )
+                            resolved_sq_filters.append(match_f if match_f else e)
+                    sq["entity_filters"] = resolved_sq_filters
+                # else keep sq_local_filters as-is
+            else:
+                # LLM didn't provide per-sub-query filters — fall back to global list
+                sq["entity_filters"] = entity_filters
+
+            # ── Expand group names to individual members ──────────────────────
+            # "ASEAN" → ["Malaysia", "Indonesia", ...] so fan_out can find them
+            sq["entity_filters"] = _expand_group_entities(sq["entity_filters"])
+
+            if semantic_res:
+                sq["semantic_entity_map"] = semantic_res.get("entity_map", {})
+                sq["semantic_sql_fragments"] = semantic_res.get("sql_fragments", [])
+            sub_nl = sq.get("nl", "") or nl_query
+            sq["nl"] = sub_nl
+
         tokens = resp.tokens_input + resp.tokens_output
         latency = int((time.monotonic() - started) * 1000)
         n = len(parsed.get("sub_queries", []))
+
+        for _sq in parsed.get("sub_queries", []):
+            logger.info("decompose.sub_query_nl", id=_sq.get("id"), nl=_sq.get("nl","")[:300])
 
         return {
             "decomposition_plan": parsed,
@@ -1289,8 +1893,14 @@ def make_fan_out_node(services: Any):
         sub_queries = state.get("sub_queries", [])
 
         async def run_sub(sq: dict) -> dict:
+            import json as _json
+
             source_id = sq.get("source_id", "")
             nl = sq.get("nl", "")
+            # entity_filters: resolved by decompose (semantic entity_map applied)
+            entity_filters: list = sq.get("entity_filters", [])
+            semantic_entity_map: dict = sq.get("semantic_entity_map", {})
+            semantic_sql_fragments: list = sq.get("semantic_sql_fragments", [])
             conn = services.connectors.get(source_id)
             if not conn:
                 return {
@@ -1300,10 +1910,188 @@ def make_fan_out_node(services: Any):
                 }
 
             snap = await conn.introspect()
-            schema_text = "\n".join(
-                f"  {t.name}({', '.join(c.name + ' ' + c.data_type for c in t.columns)})"
-                for t in snap.tables
+
+            def _exec_result(result):
+                import pandas as _pd
+                if isinstance(result, _pd.DataFrame):
+                    result = result.where(result.notna(), other=None)
+                    return result.to_dict("records"), list(result.columns), len(result)
+                rows = list(getattr(result, "rows", []))
+                cols = list(getattr(result, "columns", []))
+                return rows, cols, len(rows)
+
+            # ── PHASE 1: Deterministic entity discovery ────────────────────────
+            # For each entity in entity_filters, find its exact stored spelling
+            # using LIKE queries. This is deterministic — no LLM needed.
+            resolved_entities: list[str] = []
+            not_found: list[str] = []
+
+            if entity_filters:
+                # Find which column holds entity names (look for 'country' or text col)
+                entity_col = None
+                entity_table = None
+                for t in snap.tables:
+                    for c in t.columns:
+                        if c.name.lower() in ("country", "name", "entity", "region"):
+                            entity_col = c.name
+                            entity_table = t.name
+                            break
+                    if entity_col:
+                        break
+                # Fallback: first low-cardinality text column
+                if not entity_col and snap.tables:
+                    t = snap.tables[0]
+                    for c in t.columns:
+                        if any(kw in c.data_type.upper() for kw in ("VARCHAR", "TEXT", "STRING")):
+                            entity_col = c.name
+                            entity_table = t.name
+                            break
+
+                if entity_col and entity_table:
+                    for entity in entity_filters:
+                        # Try exact match first
+                        try:
+                            exact = await conn.execute(
+                                f'SELECT DISTINCT "{entity_col}" FROM "{entity_table}" '
+                                f'WHERE LOWER("{entity_col}") = LOWER({repr(entity)}) LIMIT 1'
+                            )
+                            exact_rows, _, exact_count = _exec_result(exact)
+                            if exact_count > 0:
+                                resolved_entities.append(str(list(exact_rows[0].values())[0]))
+                                continue
+                        except Exception:
+                            pass
+                        # Fuzzy match: use first 5 chars as LIKE keyword
+                        keyword = entity.lower()[:5]
+                        resolved_this = False
+                        try:
+                            fuzzy = await conn.execute(
+                                f'SELECT DISTINCT "{entity_col}" FROM "{entity_table}" '
+                                f'WHERE LOWER("{entity_col}") LIKE {repr("%" + keyword + "%")} LIMIT 5'
+                            )
+                            fuzzy_rows, _, fuzzy_count = _exec_result(fuzzy)
+                            if fuzzy_count > 0:
+                                # Pick best match: prefer exact substring match
+                                matches = [str(list(r.values())[0]) for r in fuzzy_rows]
+                                best = next(
+                                    (m for m in matches if entity.lower() in m.lower()),
+                                    matches[0]
+                                )
+                                resolved_entities.append(best)
+                                resolved_this = True
+                        except Exception:
+                            resolved_entities.append(entity)  # Use original if error
+                            resolved_this = True
+
+                        # Fallback 1: check if semantic_entity_map has a mapped value for this entity
+                        # (catches cases where entity_map keys didn't match entity_filters exactly)
+                        if not resolved_this and semantic_entity_map:
+                            sem_map_lower = {k.lower(): v for k, v in semantic_entity_map.items()}
+                            mapped_val = (
+                                semantic_entity_map.get(entity)
+                                or sem_map_lower.get(entity.lower())
+                            )
+                            if mapped_val:
+                                # Search iso_code / other columns for the mapped value
+                                for t in snap.tables:
+                                    if resolved_this:
+                                        break
+                                    for c in t.columns:
+                                        if not any(kw in c.data_type.upper() for kw in ("VARCHAR", "TEXT", "STRING")):
+                                            continue
+                                        try:
+                                            r3 = await conn.execute(
+                                                f'SELECT DISTINCT "{c.name}" FROM "{t.name}" '
+                                                f'WHERE LOWER("{c.name}") = LOWER({repr(mapped_val)}) LIMIT 1'
+                                            )
+                                            rows3, _, cnt3 = _exec_result(r3)
+                                            if cnt3 > 0:
+                                                entity_col = c.name
+                                                entity_table = t.name
+                                                resolved_entities.append(str(list(rows3[0].values())[0]))
+                                                resolved_this = True
+                                                break
+                                        except Exception:
+                                            pass
+
+                        # Fallback 2: search other text columns (e.g. iso_code) for the original entity
+                        if not resolved_this:
+                            for t in snap.tables:
+                                if resolved_this:
+                                    break
+                                for c in t.columns:
+                                    if c.name == entity_col:
+                                        continue  # already tried this
+                                    if not any(kw in c.data_type.upper() for kw in ("VARCHAR", "TEXT", "STRING")):
+                                        continue
+                                    try:
+                                        exact2 = await conn.execute(
+                                            f'SELECT DISTINCT "{c.name}" FROM "{t.name}" '
+                                            f'WHERE LOWER("{c.name}") = LOWER({repr(entity)}) LIMIT 1'
+                                        )
+                                        r2, _, cnt2 = _exec_result(exact2)
+                                        if cnt2 > 0:
+                                            # Found in a code column — switch entity_col to this
+                                            entity_col = c.name
+                                            entity_table = t.name
+                                            resolved_entities.append(str(list(r2[0].values())[0]))
+                                            resolved_this = True
+                                            break
+                                    except Exception:
+                                        pass
+                            if not resolved_this:
+                                not_found.append(entity)
+
+                if not_found and not resolved_entities:
+                    # All entities not found — honest failure so trace shows ✗
+                    # and synthesize_node knows this sub-query contributed nothing.
+                    return {
+                        "sub_query_id": sq["id"],
+                        "source_id": source_id,
+                        "sql": "",
+                        "rows": [],
+                        "columns": [],
+                        "row_count": 0,
+                        "succeeded": False,
+                        "error": (
+                            f"Could not find {not_found} in '{source_id}'. "
+                            f"Check that the dataset contains these entities, or rephrase with "
+                            f"the exact names as stored in the data."
+                        ),
+                        "attempts": 1,
+                    }
+
+            # ── PHASE 2: Build schema text for LLM (no entity values — just structure) ──
+            schema_lines = []
+            for t in snap.tables:
+                col_names = [c.name for c in t.columns]
+                schema_lines.append(f"  {t.name}({', '.join(col_names)})")
+            schema_text = "\n".join(schema_lines)
+
+            # ── PHASE 3: Build WHERE clause from resolved entities ─────────────
+            where_clause = ""
+            if resolved_entities and entity_col:
+                vals = ", ".join(repr(e) for e in resolved_entities)
+                where_clause = f'WHERE "{entity_col}" IN ({vals})'
+            elif entity_filters and not resolved_entities and entity_col:
+                # Entities named but none found — use originals (will return 0 rows)
+                vals = ", ".join(repr(e) for e in entity_filters)
+                where_clause = f'WHERE "{entity_col}" IN ({vals})'
+
+            # ── PHASE 4: LLM generates SQL structure (knows WHERE is given) ────
+            where_note = (
+                f"\nWHERE clause to use: {where_clause}\n"
+                "Include this WHERE clause verbatim in your SQL (do NOT add or change it)."
+                if where_clause else
+                "\nNo entity filter — return all rows."
             )
+            # Inject semantic sql_fragments as additional hints when entity resolution
+            # produced a WHERE clause using a different column (e.g. iso_code)
+            if semantic_sql_fragments and not where_clause:
+                where_note += (
+                    "\nSemantic hints (from data analysis — prefer these if no WHERE clause above): "
+                    + "; ".join(semantic_sql_fragments)
+                )
 
             def _extract_sql(text: str) -> str:
                 text = text.strip()
@@ -1313,79 +2101,44 @@ def make_fan_out_node(services: Any):
                     return text.split("```")[1].split("```")[0].strip()
                 return text
 
-            def _exec_result(result):
-                import pandas as _pd
-
-                if isinstance(result, _pd.DataFrame):
-                    result = result.where(result.notna(), other=None)
-                    return result.to_dict("records"), list(result.columns), len(result)
-                rows = list(getattr(result, "rows", []))
-                cols = list(getattr(result, "columns", []))
-                return rows, cols, len(rows)
-
-            SYSTEM = (
-                "You are a SQL agent. You reason step-by-step before writing SQL.\n\n"
-                "If you are unsure about column values, table structure, or how terms in "
-                "the question map to the schema, write an EXPLORATORY query first "
-                "(e.g. SELECT DISTINCT col FROM table LIMIT 20, or DESCRIBE table). "
-                "You will see the result and can then write the final answer SQL.\n\n"
-                "When you have enough context, write the final SQL that directly answers "
-                "the question. Return ONLY valid SQL — no explanation, no markdown."
+            # Inject workspace-level learned context rules (from user corrections)
+            context_notes = state.get("data_context_notes") or []
+            context_hint = (
+                "\n\nWORKSPACE RULES (learned from corrections — apply these):\n"
+                + "\n".join(f"• {n}" for n in context_notes[:5])
+                if context_notes else ""
             )
 
-            # Agentic conversation — agent reasons, explores, then answers
-            # Each round: agent writes SQL → we execute → feed result back → agent decides next step
+            SYSTEM = (
+                "You are a SQL agent. Write a single SQL SELECT statement.\n"
+                "Follow the schema and WHERE clause provided exactly.\n"
+                "Always GROUP BY the join keys.\n"
+                "Return ONLY valid SQL — no explanation, no markdown."
+            )
+
             messages = [
                 {"role": "system", "content": SYSTEM},
-                {"role": "user", "content": f"Schema:\n{schema_text}\n\nQuestion: {nl}"},
+                {"role": "user", "content": (
+                    f"SCHEMA:\n{schema_text}\n\n"
+                    f"TASK: {nl}"
+                    f"{where_note}"
+                    f"{context_hint}"
+                )},
             ]
+
             sql = ""
             last_error = ""
-            _final_rows, _final_cols, _final_count = [], [], 0
 
-            for attempt in range(5):  # up to 5 turns (explore + answer + 3 corrections)
+            for attempt in range(4):  # write SQL + up to 3 corrections
                 resp = await services.llm.complete(messages)
                 sql = _extract_sql(resp.content)
+                logger.info("fan_out.attempt", sub_id=sq.get("id"), attempt=attempt,
+                            sql=sql[:250], entities=resolved_entities or entity_filters)
                 messages.append({"role": "assistant", "content": resp.content})
 
                 try:
                     result = await conn.execute(sql)
                     rows, columns, row_count = _exec_result(result)
-
-                    # If this looks exploratory (few rows, single column) AND we haven't
-                    # answered yet, feed the result back so the agent can write the real SQL
-                    is_exploratory = (
-                        row_count <= 30
-                        and len(columns) <= 3
-                        and attempt < 4
-                        and any(
-                            kw in sql.upper()
-                            for kw in (
-                                "DISTINCT",
-                                "DESCRIBE",
-                                "SHOW",
-                                "PRAGMA",
-                                "INFORMATION_SCHEMA",
-                            )
-                        )
-                    )
-
-                    if is_exploratory:
-                        import json as _json
-
-                        messages.append(
-                            {
-                                "role": "user",
-                                "content": (
-                                    f"Exploration result ({row_count} rows):\n"
-                                    f"{_json.dumps(rows[:20], default=str)}\n\n"
-                                    "Now write the final SQL that answers the original question."
-                                ),
-                            }
-                        )
-                        continue  # let agent use this to write the real SQL
-
-                    # Non-exploratory result — this is the answer
                     return {
                         "sub_query_id": sq["id"],
                         "source_id": source_id,
@@ -1399,26 +2152,20 @@ def make_fan_out_node(services: Any):
                     }
                 except Exception as e:
                     last_error = str(e)
-                    messages.append(
-                        {
-                            "role": "user",
-                            "content": (
-                                f"That SQL failed with: {last_error}\n\n"
-                                "Reason through what went wrong and write corrected SQL."
-                            ),
-                        }
-                    )
+                    messages.append({"role": "user", "content": (
+                        f"SQL error: {last_error}\n\nFix the SQL. Keep the WHERE clause unchanged."
+                    )})
 
             return {
                 "sub_query_id": sq["id"],
                 "source_id": source_id,
                 "sql": sql,
                 "succeeded": False,
-                "error": f"Failed after {len(messages) // 2} attempts. Last error: {last_error}",
+                "error": f"Failed after {attempt + 1} attempts. Last error: {last_error}",
                 "rows": [],
                 "columns": [],
                 "row_count": 0,
-                "attempts": 5,
+                "attempts": 4,
             }
 
         # Run all sub-queries in parallel
@@ -1478,34 +2225,174 @@ def make_synthesize_node(services: Any):
 
         # Load each sub-result as a named DuckDB table
         table_schemas = []
+        sub_result_diagnostics = []
         for sr in sub_results:
             if sr.get("succeeded") and sr.get("rows"):
                 df = pd.DataFrame(sr["rows"])
                 con.register(sr["sub_query_id"], df)
                 col_desc = ", ".join(f"{c} ({str(df[c].dtype)})" for c in df.columns)
+                # Include a sample row so the LLM can see actual values (helps detect wrong filters)
+                sample = df.head(2).to_dict("records") if len(df) > 0 else []
                 table_schemas.append(
                     f"  {sr['sub_query_id']}({col_desc})  — {len(df)} rows "
-                    f"[source: {sr.get('source_id', '?')}]"
+                    f"[source: {sr.get('source_id', '?')}]\n"
+                    f"  Sample rows: {sample}"
+                )
+            else:
+                sub_result_diagnostics.append(
+                    f"  {sr.get('sub_query_id', '?')} — EMPTY or FAILED "
+                    f"(error: {sr.get('error', 'unknown')}) [source: {sr.get('source_id', '?')}]"
                 )
 
-        schema_hint = "\n".join(table_schemas) or "(no tables)"
+        schema_hint = "\n".join(table_schemas) if table_schemas else ""
+        empty_hint = "\n".join(sub_result_diagnostics) if sub_result_diagnostics else ""
         join_hint = ""
         if synthesis.get("join_keys"):
             jk = synthesis["join_keys"][0]
             join_hint = f"\nSuggested join key: {jk.get('left', '')} = {jk.get('right', '')}"
 
+        # Inject workspace-level learned context rules into synthesis
+        synth_context_notes = state.get("data_context_notes") or []
+        synth_context_hint = (
+            "\nWORKSPACE RULES (learned from corrections — apply these):\n"
+            + "\n".join(f"• {n}" for n in synth_context_notes[:5])
+            + "\n"
+            if synth_context_notes else ""
+        )
+
+        # Analytical intent from Ora — drives synthesis SQL strategy
+        analytical_intent = state.get("analytical_intent", "comparison")
+
+        # Determine synthesis strategy: join vs independent (compound with no shared key)
+        synth_strategy = synthesis.get("strategy", "join")
+        has_join_keys = bool(synthesis.get("join_keys"))
+        is_independent = synth_strategy == "independent" or (
+            state.get("is_compound_query") and not has_join_keys
+        )
+
+        # For independent sub-questions (compound query with incompatible result shapes),
+        # build a UNION ALL with a sub_question label rather than attempting a JOIN.
+        # This avoids cartesian products and INSUFFICIENT_DATA from incompatible grains.
+        if is_independent and len(table_schemas) > 1:
+            # Find common columns across all sub-result tables
+            available_tables = [sr for sr in sub_results if sr.get("succeeded") and sr.get("rows")]
+            all_col_sets = [set(sr.get("columns", [])) for sr in available_tables]
+            common_cols = set.intersection(*all_col_sets) if all_col_sets else set()
+
+            if common_cols:
+                col_list = ", ".join(f'"{c}"' for c in sorted(common_cols))
+                union_parts = []
+                for sr in available_tables:
+                    label = sr.get("sub_query_id", sr.get("source_id", "result"))
+                    union_parts.append(
+                        f"SELECT {col_list}, '{label}' AS sub_question FROM {sr['sub_query_id']}"
+                    )
+                auto_sql = "\nUNION ALL\n".join(union_parts)
+            else:
+                # No common columns — stack all columns, pad missing with NULL
+                all_cols_ordered = []
+                seen = set()
+                for sr in available_tables:
+                    for c in sr.get("columns", []):
+                        if c not in seen:
+                            all_cols_ordered.append(c)
+                            seen.add(c)
+                union_parts = []
+                for sr in available_tables:
+                    sr_cols = set(sr.get("columns", []))
+                    select_parts = []
+                    for c in all_cols_ordered:
+                        select_parts.append(f'"{c}"' if c in sr_cols else f'NULL AS "{c}"')
+                    label = sr.get("sub_query_id", sr.get("source_id", "result"))
+                    select_parts.append(f"'{label}' AS sub_question")
+                    union_parts.append(
+                        f"SELECT {', '.join(select_parts)} FROM {sr['sub_query_id']}"
+                    )
+                auto_sql = "\nUNION ALL\n".join(union_parts)
+
+            # Execute the auto-built UNION ALL immediately (no LLM needed)
+            try:
+                result_df = con.execute(auto_sql).fetchdf()
+                result_df = result_df.where(result_df.notna(), None)
+                rows = result_df.to_dict("records")
+                columns = list(result_df.columns)
+                row_count = len(rows)
+                sql = auto_sql
+                succeeded = True
+                error = ""
+                con.close()
+                latency = int((time.monotonic() - started) * 1000)
+                return {
+                    "synthesis_sql": sql,
+                    "rows": rows,
+                    "columns": columns,
+                    "row_count": row_count,
+                    "sql": sql,
+                    "succeeded": succeeded,
+                    "execution_error": error,
+                    "trace_events": state.get("trace_events", []) + [{
+                        "node": "synthesize",
+                        "status": "completed",
+                        "latency_ms": latency,
+                        "row_count": row_count,
+                        "summary": (
+                            f"Combined {len(available_tables)} independent sub-results — "
+                            f"{row_count:,} rows across all parts"
+                        ),
+                    }],
+                }
+            except Exception as exc:
+                # Fall through to LLM-based synthesis if UNION ALL failed
+                last_error = str(exc)
+
         sql = ""
-        last_error = ""
+        last_error = last_error if is_independent else ""
         # Generate → execute → reflect loop (up to 3 rounds)
         for attempt in range(3):
             if attempt == 0:
+                # Build analytical intent guidance for the synthesis prompt
+                if analytical_intent == "correlation" and not is_independent:
+                    intent_note = (
+                        "The user wants to find a CORRELATION between two metrics across these sub-results. "
+                        "After joining, compute CORR(metric_a, metric_b) using DuckDB's built-in CORR() function. "
+                        "Also include CORR() alongside individual metric values so the user can see both the "
+                        "raw data and the correlation coefficient.\n"
+                    )
+                elif analytical_intent == "trend":
+                    intent_note = (
+                        "The user wants to see TRENDS over time. "
+                        "Ensure the result is ordered by the time/date column ascending.\n"
+                    )
+                elif analytical_intent == "ranking":
+                    intent_note = (
+                        "The user wants a RANKED list. "
+                        "Order results by the primary metric descending.\n"
+                    )
+                else:
+                    intent_note = ""
+
+                strategy_note = (
+                    "These sub-results are from INDEPENDENT sub-questions — do NOT join them. "
+                    "Use UNION ALL to combine them, adding a label column to identify each part.\n"
+                    if is_independent else
+                    f"Write DuckDB SQL that joins the tables at the correct grain "
+                    f"(GROUP BY before joining if keys are not 1:1).\n{intent_note}"
+                )
                 prompt = (
-                    f"You have these in-memory DuckDB tables from parallel sub-queries:\n{schema_hint}"
-                    f"{join_hint}\n\n"
-                    f"Original question: {nl_query}\n\n"
-                    "Write a single DuckDB SQL query that combines these tables to answer the question. "
-                    "Use only the table names listed above (do NOT reference original source tables). "
-                    "Return ONLY valid DuckDB SQL, no explanation, no markdown."
+                    f"You are a synthesis agent combining results from parallel sub-queries.\n\n"
+                    f"Original question: {nl_query}\n"
+                    f"Analytical intent: {analytical_intent}\n\n"
+                    + synth_context_hint
+                    + (f"Available DuckDB tables:\n{schema_hint}{join_hint}\n\n" if schema_hint else "")
+                    + (f"Sub-queries that returned NO data:\n{empty_hint}\n\n" if empty_hint else "")
+                    + "REFLECT before writing SQL:\n"
+                    "- Do the available tables actually contain data relevant to the question?\n"
+                    "- If sub-queries returned empty results, the upstream filters may have been wrong "
+                    "(e.g. wrong column name, wrong value format). Reason about what went wrong.\n"
+                    "- If you have no usable data, respond with exactly: INSUFFICIENT_DATA: <reason>\n"
+                    f"- If you have data: {strategy_note}"
+                    "Use only the table names listed above.\n"
+                    "Return ONLY valid DuckDB SQL or INSUFFICIENT_DATA: <reason>."
                 )
             else:
                 prompt = (
@@ -1530,6 +2417,15 @@ def make_synthesize_node(services: Any):
             # empty statement after a semicolon, causing 'NoneType'.fetchdf() error.
             sql = sql.rstrip(";").strip()
 
+            # Pure agentic signal: LLM reflected and determined sub-results are
+            # insufficient to answer the question. Surface this clearly — no retry.
+            if sql.upper().startswith("INSUFFICIENT_DATA:"):
+                reason = sql[len("INSUFFICIENT_DATA:"):].strip()
+                rows, columns, row_count = [], [], 0
+                succeeded = False
+                error = f"Agent reflection: {reason}"
+                break
+
             try:
                 if not sql:
                     raise ValueError("LLM returned empty SQL — cannot execute")
@@ -1539,9 +2435,17 @@ def make_synthesize_node(services: Any):
                         "DuckDB execute() returned None — SQL may be non-SELECT or malformed"
                     )
                 result = cursor.fetchdf()
+                # Hard safety valve: if the LLM generated a cartesian join and produced
+                # an explosion (>50k rows), truncate and re-run with an explicit LIMIT.
+                # This prevents MB-scale payloads from crashing the SSE stream and localStorage.
+                _MAX_ROWS = 50_000
+                if len(result) > _MAX_ROWS:
+                    try:
+                        limited = con.execute(f"SELECT * FROM ({sql}) __q LIMIT {_MAX_ROWS}").fetchdf()
+                        result = limited
+                    except Exception:
+                        result = result.head(_MAX_ROWS)
                 # Replace NaN/Inf with None so the result is JSON-serializable.
-                # Pandas NaN is not valid JSON; json.dumps outputs bare 'NaN' which
-                # browsers reject, causing the SSE event to be silently dropped.
                 result = result.where(result.notna(), other=None)
                 rows = result.to_dict("records")
                 columns = list(result.columns)
@@ -1588,3 +2492,592 @@ def make_synthesize_node(services: Any):
         }
 
     return synthesize_node
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ORA — Unified orchestrator (understand + semantic_resolve + decompose in one)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+def make_ora_node(services: Any):
+    """Ora: the single orchestrator that plans every query end-to-end.
+
+    Phases (all in one node call):
+      0. Anaphora resolution — rewrite pronouns/references using conversation history
+      1. Intent + entity extraction (LLM) — classify compound/cross-source, extract
+         entity names, detect analytical_intent (correlation, comparison, etc.)
+      2. Group expansion — ASEAN → 10 member countries (deterministic, no LLM)
+      3. Data coverage analysis (Python/SQL) — for each source, check SemanticMemory
+         first (fast path), then live SQL scan for exact entity column + values
+      4. Semantic resolution (SemanticAgent) — per source, entity_map + synonyms
+         (uses SemanticCache for quick re-use)
+      5. Planning (LLM) — final sub-query plan with all context verified
+
+    Outputs into state:
+      - nl_query (anaphora-resolved)
+      - entity_filters (expanded + code-resolved)
+      - analytical_intent
+      - is_cross_source, is_compound_query, target_sources
+      - sub_queries (non-empty → graph routes to fan_out)
+      - decomposition_plan
+      - semantic_resolution, data_context_notes
+      - data_warnings (entities not found — surfaced to UI)
+      - ora_reasoning (full chain-of-thought for trace)
+    """
+
+    async def ora_node(state: QueryState) -> dict:
+        import json as _json
+        import re as _re
+
+        started = time.monotonic()
+        nl_query = state["nl_query"]
+        source_ids = state.get("source_ids", [])
+        query_id = state.get("query_id", str(uuid.uuid4())[:12])
+
+        # ── Phase 0: Anaphora resolution ──────────────────────────────────────
+        _hist = state.get("conversation_history", [])
+        if _hist:
+            try:
+                history_context = "\n".join(
+                    f"{'User' if t.get('role') == 'user' else 'Agent'}: "
+                    + (t.get("text") or t.get("nl_response") or "")[:200]
+                    for t in _hist[-6:]
+                )
+                rewrite_resp = await services.llm.complete([{
+                    "role": "user",
+                    "content": (
+                        f"Conversation so far:\n{history_context}\n\n"
+                        f"Latest question: {nl_query}\n\n"
+                        "Rewrite the latest question to be fully self-contained — replace all "
+                        "pronouns and references (e.g. 'these 2', 'them', 'the same', 'the trend') "
+                        "with the explicit entities from the conversation. "
+                        "Return ONLY the rewritten question, nothing else."
+                    ),
+                }])
+                rewritten = rewrite_resp.content.strip().strip('"').strip("'")
+                if rewritten and len(rewritten) > 5:
+                    nl_query = rewritten
+            except Exception:
+                pass
+
+        # ── Phase 1: Intent + entity extraction ───────────────────────────────
+        _hist_ctx = ""
+        if _hist:
+            _hist_ctx = "\n".join(
+                f"{'User' if t.get('role') == 'user' else 'Agent'}: "
+                + (t.get("text") or t.get("nl_response") or "")[:200]
+                for t in _hist[-4:]
+            )
+
+        source_summary = ""
+        for sid in source_ids[:5]:
+            conn = services.connectors.get(sid)
+            if conn:
+                try:
+                    snap = await conn.introspect()
+                    tables = [t.name for t in snap.tables[:8]]
+                    source_summary += f"\n  Source '{sid}' ({conn.dialect}): {tables}"
+                except Exception:
+                    source_summary += f"\n  Source '{sid}': (unavailable)"
+
+        intent_prompt = (
+            "You are Ora, a query orchestration agent. Analyse this question and plan how to answer it.\n\n"
+            + (f"Available data sources:{source_summary}\n\n" if source_summary else "")
+            + (f"Conversation context:\n{_hist_ctx}\n\n" if _hist_ctx else "")
+            + f"Question: {nl_query}\n\n"
+            "Classify the question:\n\n"
+            "COMPOUND: two or more DISTINCT analytical questions requiring separate SQL queries.\n"
+            "  e.g. 'Compare Malaysia vs ASEAN employment AND show GenAI spend trends' → COMPOUND\n"
+            "  e.g. 'Compare revenue and profit by store' → NOT COMPOUND (one query, two metrics)\n\n"
+            "CROSS-SOURCE: needs data from more than one data source above.\n\n"
+            "ANALYTICAL_INTENT — pick the primary intent:\n"
+            "  correlation: asks about relationship/correlation between two metrics\n"
+            "  comparison: compares values across groups/entities\n"
+            "  trend: asks about change over time\n"
+            "  ranking: top N, best/worst, ranked list\n"
+            "  aggregate: sum/count/average with no comparison\n"
+            "  describe: schema/data description question\n\n"
+            "ENTITY_FILTERS: specific named entities the question filters for.\n"
+            "  Include group names (ASEAN, G7) as-is — they will be expanded later.\n"
+            "  If asking for 'top 5' with no specific names, return [].\n\n"
+            "Return JSON:\n"
+            '{\n'
+            '  "is_compound": true|false,\n'
+            '  "is_cross_source": true|false,\n'
+            '  "analytical_intent": "correlation|comparison|trend|ranking|aggregate|describe",\n'
+            '  "entity_filters": ["EntityA", "GroupName"],\n'
+            '  "target_sources": ["source_id", ...],\n'
+            '  "complexity": "simple|moderate|complex",\n'
+            '  "reasoning": "step by step rationale"\n'
+            '}'
+        )
+
+        try:
+            intent_resp = await services.llm.complete(
+                [{"role": "user", "content": intent_prompt}],
+                json_mode=True,
+            )
+            raw = intent_resp.content.strip()
+            if raw.startswith("```"):
+                raw = raw.split("```")[1].lstrip("json").strip().rstrip("```").strip()
+            intent_parsed = _json.loads(raw)
+        except Exception:
+            intent_parsed = {
+                "is_compound": False,
+                "is_cross_source": len(source_ids) > 1,
+                "analytical_intent": "comparison",
+                "entity_filters": [],
+                "target_sources": source_ids,
+                "complexity": "moderate",
+                "reasoning": "parse error — defaults applied",
+            }
+
+        is_compound = bool(intent_parsed.get("is_compound", False))
+        is_cross_source = bool(intent_parsed.get("is_cross_source", len(source_ids) > 1))
+        analytical_intent = intent_parsed.get("analytical_intent", "comparison")
+        entity_filters: list[str] = intent_parsed.get("entity_filters") or []
+        if not isinstance(entity_filters, list):
+            entity_filters = []
+        target_sources: list[str] = intent_parsed.get("target_sources") or source_ids
+        complexity: str = intent_parsed.get("complexity", "moderate")
+        ora_reasoning: str = intent_parsed.get("reasoning", "")
+
+        intent_tokens = (
+            getattr(intent_resp, "tokens_input", 0) + getattr(intent_resp, "tokens_output", 0)
+        )
+        intent_cost = getattr(intent_resp, "cost_usd", 0.0)
+
+        # ── Phase 2: Group name expansion + country alias resolution ─────────
+        raw_entity_filters = list(entity_filters)
+        entity_filters = _expand_group_entities(entity_filters)
+
+        # Resolve ISO codes / user shorthand → canonical country names
+        # e.g. 'VNT' → 'Vietnam', 'PHP' → 'Philippines', 'MY' → 'Malaysia'
+        entity_filters, _alias_map = _resolve_country_aliases(entity_filters)
+        if _alias_map:
+            ora_reasoning += (
+                f"\nAliases resolved: "
+                + ", ".join(f"{k}→{v}" for k, v in _alias_map.items())
+            )
+            # Save alias mappings to SemanticMemory for each source so future
+            # queries skip the live scan for known aliases
+            _sem_mem = getattr(services, "_semantic_memory", None)
+            if _sem_mem:
+                for sid in target_sources:
+                    for alias, canonical in _alias_map.items():
+                        try:
+                            await _sem_mem.save_entity_alias(sid, alias, canonical)
+                        except Exception:
+                            pass
+
+        # ── Phase 3: Data coverage analysis ──────────────────────────────────
+        # For each source: check SemanticMemory first, then live SQL scan.
+        # Produces: source_coverage (source_id → list of found entities)
+        #           data_warnings (entities not found in ANY source)
+        source_coverage: dict[str, list[str]] = {}
+        source_entity_cols: dict[str, tuple[str, str]] = {}  # source_id → (table, col)
+        data_warnings: list[str] = []
+        semantic_memory = getattr(services, "_semantic_memory", None)
+
+        if entity_filters:
+            entities_lower = {e.lower(): e for e in entity_filters}
+
+            for sid in target_sources:
+                conn = services.connectors.get(sid)
+                if not conn:
+                    continue
+                found_entities: list[str] = []
+
+                # Fast path: check SemanticMemory
+                mem_entity_col: tuple[str, str] | None = None
+                if semantic_memory:
+                    try:
+                        coverage_check = await semantic_memory.entities_covered(sid, entity_filters)
+                        known_found = [e for e, found in coverage_check.items() if found]
+                        if known_found:
+                            found_entities = known_found
+                            mem_entity_col = await semantic_memory.get_entity_column(sid)
+                        # If none known, don't set found_entities yet — will do live scan
+                    except Exception:
+                        pass
+
+                # Live scan when memory miss (or partial miss)
+                if len(found_entities) < len(entity_filters):
+                    try:
+                        snap = await conn.introspect()
+                        # Identify entity column candidates
+                        _ecols = []
+                        for t in snap.tables:
+                            for c in t.columns:
+                                if any(kw in c.name.lower() for kw in
+                                       ("country", "name", "entity", "region", "iso")):
+                                    _ecols.append((t.name, c.name))
+                        if not _ecols and snap.tables:
+                            # fallback: first TEXT/VARCHAR column
+                            for t in snap.tables:
+                                for c in t.columns:
+                                    if any(kw in c.data_type.upper() for kw in
+                                           ("VARCHAR", "TEXT", "STRING", "NVARCHAR")):
+                                        _ecols.append((t.name, c.name))
+                                        break
+
+                        scan_found: list[str] = []
+                        best_col: tuple[str, str] | None = None
+                        for tname, cname in _ecols[:6]:
+                            col_found: list[str] = []
+                            for entity in entity_filters:
+                                if entity in found_entities:
+                                    continue  # already confirmed from memory
+                                keyword = entity.lower()[:5]
+                                try:
+                                    res = await conn.execute(
+                                        f'SELECT DISTINCT "{cname}" FROM "{tname}" '
+                                        f'WHERE LOWER("{cname}") = LOWER({repr(entity)}) '
+                                        f'OR LOWER("{cname}") LIKE {repr("%" + keyword + "%")} LIMIT 3'
+                                    )
+                                    import pandas as _pd
+                                    rrows = (
+                                        res.where(res.notna(), None).to_dict("records")
+                                        if isinstance(res, _pd.DataFrame)
+                                        else []
+                                    )
+                                    if rrows:
+                                        col_found.append(entity)
+                                except Exception:
+                                    pass
+                            if len(col_found) > len(scan_found):
+                                scan_found = col_found
+                                best_col = (tname, cname)
+
+                        if scan_found:
+                            for e in scan_found:
+                                if e not in found_entities:
+                                    found_entities.append(e)
+                        if best_col and not mem_entity_col:
+                            mem_entity_col = best_col
+                            source_entity_cols[sid] = best_col
+
+                        # Persist discoveries to SemanticMemory
+                        if semantic_memory and scan_found and best_col:
+                            try:
+                                await semantic_memory.save_discovered_entities(
+                                    sid, best_col[0], best_col[1], scan_found
+                                )
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
+
+                if mem_entity_col:
+                    source_entity_cols[sid] = mem_entity_col
+                source_coverage[sid] = found_entities
+
+            # Identify entities not found in ANY source
+            all_found_lower = {
+                e.lower() for found in source_coverage.values() for e in found
+            }
+            missing = [e for e in entity_filters if e.lower() not in all_found_lower]
+            if missing:
+                for grp_name, members in _GROUP_EXPANSIONS.items():
+                    members_lower = {m.lower() for m in members}
+                    if any(m.lower() in all_found_lower for m in members):
+                        # Group partially found — remove from missing if it was a group name
+                        missing = [
+                            m for m in missing
+                            if m.lower() not in members_lower
+                        ]
+                if missing:
+                    data_warnings.append(
+                        f"Could not find '{', '.join(missing)}' in any connected source. "
+                        "Results may be incomplete — try rephrasing with the exact name as stored."
+                    )
+
+        # ── Phase 4: Semantic resolution per relevant source ──────────────────
+        semantic_cache = getattr(services, "_semantic_cache", None)
+        combined_entity_map: dict[str, str] = {}
+        combined_synonyms: dict[str, str] = {}
+        combined_filter_hints: list[str] = []
+        combined_sql_frags: list[str] = []
+        primary_resolution = None
+
+        for sid in target_sources:
+            conn = services.connectors.get(sid)
+            if not conn:
+                continue
+            try:
+                # Check SemanticCache first
+                resolution = None
+                if semantic_cache:
+                    resolution = await semantic_cache.get(nl_query, sid)
+
+                if not resolution:
+                    snap = await conn.introspect()
+                    schema_dict = snap.to_dict() if hasattr(snap, "to_dict") else {}
+                    from sqlagent.semantic_layer import run_semantic_agent
+                    resolution = await run_semantic_agent(
+                        nl_query=nl_query,
+                        source_id=sid,
+                        schema=schema_dict,
+                        llm=services.llm,
+                    )
+
+                if resolution:
+                    combined_entity_map.update(resolution.entity_map)
+                    combined_synonyms.update(resolution.synonyms)
+                    combined_filter_hints.extend(resolution.filter_hints)
+                    combined_sql_frags.extend(resolution.sql_fragments)
+                    if primary_resolution is None:
+                        primary_resolution = resolution
+
+                    # Persist concept→column mappings
+                    if semantic_memory and resolution.synonyms:
+                        for concept, col in resolution.synonyms.items():
+                            try:
+                                await semantic_memory.save_concept_column(sid, concept, col)
+                            except Exception:
+                                pass
+            except Exception as exc:
+                logger.debug("ora.semantic_resolve_failed", source_id=sid, error=str(exc))
+
+        # Build context block from combined resolution
+        existing_notes = list(state.get("data_context_notes") or [])
+        if combined_entity_map or combined_synonyms or combined_filter_hints:
+            from sqlagent.semantic_layer import SemanticResolution as _SemRes
+            combined_res = _SemRes(
+                nl_query=nl_query,
+                source_id=target_sources[0] if target_sources else "",
+                entity_map=combined_entity_map,
+                synonyms=combined_synonyms,
+                filter_hints=combined_filter_hints,
+                sql_fragments=combined_sql_frags,
+                reasoning="Combined across sources by Ora",
+                confidence=0.85,
+            )
+            ctx_block = combined_res.to_context_block()
+            if ctx_block and ctx_block not in existing_notes:
+                existing_notes.insert(0, ctx_block)
+
+        # Apply entity_map to nl_query (resolve user terms → stored values)
+        nl_query_resolved = nl_query
+        if combined_entity_map:
+            for user_term, stored_val in sorted(
+                combined_entity_map.items(), key=lambda x: -len(x[0])
+            ):
+                if user_term != stored_val:
+                    nl_query_resolved = _re.sub(
+                        r'\b' + _re.escape(user_term) + r'\b',
+                        stored_val,
+                        nl_query_resolved,
+                        flags=_re.IGNORECASE,
+                    )
+
+        # Resolve entity_filters through entity_map
+        entity_map_lower = {k.lower(): v for k, v in combined_entity_map.items()}
+        resolved_filters = []
+        for e in entity_filters:
+            resolved = (
+                combined_entity_map.get(e)
+                or entity_map_lower.get(e.lower())
+                or e
+            )
+            resolved_filters.append(resolved)
+
+        # ── Phase 5: Decomposition planning (only if cross-source or compound) ─
+        sub_queries: list[dict] = []
+        decomposition_plan: dict | None = None
+        plan_tokens = 0
+        plan_cost = 0.0
+
+        needs_decompose = is_cross_source or is_compound
+
+        if needs_decompose:
+            # Build source info for the planner
+            source_info_lines = []
+            all_connector_ids = list(services.connectors.keys())
+            for sid in all_connector_ids:
+                conn = services.connectors.get(sid)
+                if not conn:
+                    continue
+                try:
+                    snap = await conn.introspect()
+                    col_lines = []
+                    for t in snap.tables:
+                        col_parts = [f"{c.name} {c.data_type}" for c in t.columns[:15]]
+                        coverage_info = ""
+                        if sid in source_coverage:
+                            found_there = source_coverage[sid]
+                            if found_there:
+                                coverage_info = f" [HAS DATA for: {', '.join(found_there[:5])}]"
+                        col_lines.append(
+                            f"  table '{t.name}' ({t.row_count_estimate or 0} rows)"
+                            f"{coverage_info}: {', '.join(col_parts)}"
+                        )
+                    source_info_lines.append(
+                        f"Source id='{sid}' ({conn.dialect}):\n" + "\n".join(col_lines)
+                    )
+                except Exception:
+                    source_info_lines.append(f"Source id='{sid}': (schema unavailable)")
+
+            is_compound_single = is_compound and not is_cross_source
+            _sub_q_schema = (
+                '{"id": "sq_a", "source_id": "<exact source id>", '
+                '"nl": "sub-question description", '
+                '"entity_filters": ["entities FOR THIS sub-question only"], '
+                '"expected_columns": ["col1", "col2"]}'
+            )
+
+            if is_compound_single:
+                plan_prompt = (
+                    "You are Ora, a query planner. This is a COMPOUND question — multiple distinct\n"
+                    "analytical sub-questions against the SAME data source.\n\n"
+                    "Available source:\n" + "\n\n".join(source_info_lines) + "\n\n"
+                    f"Question: {nl_query}\n"
+                    f"Analytical intent: {analytical_intent}\n\n"
+                    "Instructions:\n"
+                    "- Create one sub-query per distinct analytical sub-question.\n"
+                    "- ALL sub-queries use the SAME source_id.\n"
+                    "- Each sub-query has its OWN entity_filters (only its relevant entities).\n"
+                    "- synthesis.strategy: 'independent' if sub-questions have incompatible grains.\n\n"
+                    "Return JSON:\n"
+                    '{"entity_filters": [...], '
+                    f'"sub_queries": [{_sub_q_schema}, ...], '
+                    '"synthesis": {"join_keys": [], "strategy": "independent|join", "ordering": "", "limit": 100}}'
+                )
+            else:
+                plan_prompt = (
+                    "You are Ora, a query planner. Split this cross-source question into sub-queries.\n\n"
+                    "Available sources with data coverage pre-verified:\n"
+                    + "\n\n".join(source_info_lines) + "\n\n"
+                    f"Question: {nl_query}\n"
+                    f"Analytical intent: {analytical_intent}\n"
+                    + (f"Data warnings: {data_warnings}\n" if data_warnings else "")
+                    + "\nInstructions:\n"
+                    "- Create one sub-query per source that contains relevant data.\n"
+                    "- The source_id MUST exactly match one of the source ids listed.\n"
+                    "- Each sub-query has its OWN entity_filters (only its relevant entities).\n"
+                    "- synthesis.join_keys: columns to join on (left=sq_a.col, right=sq_b.col).\n"
+                    "- synthesis.strategy: 'join' if results share a key, 'independent' if not.\n\n"
+                    "Return JSON:\n"
+                    '{"entity_filters": [...], '
+                    f'"sub_queries": [{_sub_q_schema}, ...], '
+                    '"synthesis": {"join_keys": [{"left": "sq_a.col", "right": "sq_b.col"}], '
+                    '"strategy": "join", "ordering": "col DESC", "limit": 100}}'
+                )
+
+            try:
+                plan_resp = await services.llm.complete(
+                    [{"role": "user", "content": plan_prompt}],
+                    json_mode=True,
+                )
+                plan_tokens = plan_resp.tokens_input + plan_resp.tokens_output
+                plan_cost = plan_resp.cost_usd
+                raw_plan = plan_resp.content.strip()
+                if raw_plan.startswith("```"):
+                    raw_plan = raw_plan.split("```")[1].lstrip("json").strip().rstrip("```").strip()
+                decomposition_plan = _json.loads(raw_plan)
+            except Exception:
+                # Hard fallback: one sub-query per source
+                decomposition_plan = {
+                    "sub_queries": [
+                        {"id": f"sq_{i}", "source_id": sid, "nl": nl_query, "entity_filters": [], "expected_columns": []}
+                        for i, sid in enumerate(target_sources or list(services.connectors.keys()))
+                    ],
+                    "synthesis": {"join_keys": [], "strategy": "independent", "ordering": "", "limit": 100},
+                }
+
+            # Post-process sub_queries: validate source IDs, apply entity resolution
+            valid_ids = set(services.connectors.keys())
+            for sq in decomposition_plan.get("sub_queries", []):
+                # Fix unknown source IDs
+                if sq.get("source_id") not in valid_ids:
+                    sq_sid = sq.get("source_id", "")
+                    match = next(
+                        (cid for cid in valid_ids if sq_sid in cid or cid in sq_sid),
+                        list(valid_ids)[0] if valid_ids else "",
+                    )
+                    sq["source_id"] = match
+
+                # Resolve per-sub-query entity_filters
+                sq_filters = sq.get("entity_filters") or resolved_filters or []
+                if sq_filters and combined_entity_map:
+                    sq_filters = [
+                        combined_entity_map.get(e, entity_map_lower.get(e.lower(), e))
+                        for e in sq_filters
+                    ]
+                # Expand group names
+                sq["entity_filters"] = _expand_group_entities(sq_filters)
+
+                # Attach semantic resolution hints
+                if combined_entity_map:
+                    sq["semantic_entity_map"] = combined_entity_map
+                if combined_sql_frags:
+                    sq["semantic_sql_fragments"] = combined_sql_frags
+
+                sub_nl = sq.get("nl", "") or nl_query
+                sq["nl"] = sub_nl
+
+            sub_queries = decomposition_plan.get("sub_queries", [])
+
+        # ── Build trace event ─────────────────────────────────────────────────
+        latency = int((time.monotonic() - started) * 1000)
+        total_tokens = intent_tokens + plan_tokens
+        total_cost = intent_cost + plan_cost
+
+        route_summary = (
+            f"Cross-source: {len(sub_queries)} sub-queries → {', '.join(t[:20] for t in target_sources[:3])}"
+            if is_cross_source and sub_queries
+            else f"Compound: {len(sub_queries)} sub-questions"
+            if is_compound and sub_queries
+            else f"Single query → {(target_sources or source_ids or ['?'])[0]}"
+        )
+        if data_warnings:
+            route_summary += f" ⚠ {data_warnings[0][:80]}"
+
+        ora_reasoning_full = (
+            f"Intent: {analytical_intent} | Compound: {is_compound} | Cross-source: {is_cross_source}\n"
+            f"Entities extracted: {raw_entity_filters} → expanded to {entity_filters}\n"
+            f"Coverage: {source_coverage}\n"
+            f"Semantic: {len(combined_entity_map)} entity maps, {len(combined_synonyms)} synonyms\n"
+            f"Reasoning: {ora_reasoning}"
+        )
+
+        return {
+            "query_id": query_id,
+            "nl_query": nl_query_resolved,
+            "nl_query_for_pruning": nl_query_resolved,
+            "display_nl_query": nl_query,  # preserve original for UI display
+            "is_cross_source": is_cross_source,
+            "is_compound_query": is_compound,
+            "target_sources": target_sources or source_ids,
+            "complexity": complexity,
+            "routing_reasoning": ora_reasoning,
+            "entity_filters": resolved_filters,
+            "analytical_intent": analytical_intent,
+            "data_warnings": data_warnings,
+            "ora_reasoning": ora_reasoning_full,
+            "started_at": datetime.now(timezone.utc).isoformat(),
+            "correction_round": 0,
+            "max_corrections": services.config.max_corrections,
+            "sub_queries": sub_queries,
+            "decomposition_plan": decomposition_plan,
+            "semantic_resolution": primary_resolution.to_dict() if primary_resolution else None,
+            "semantic_cache_hit": False,
+            "data_context_notes": existing_notes,
+            "tokens_used": state.get("tokens_used", 0) + total_tokens,
+            "cost_usd": state.get("cost_usd", 0.0) + total_cost,
+            "budget_exhausted": False,
+            "trace_events": state.get("trace_events", []) + [{
+                "node": "ora",
+                "status": "completed",
+                "latency_ms": latency,
+                "tokens": total_tokens,
+                "analytical_intent": analytical_intent,
+                "entity_map": combined_entity_map,
+                "data_warnings": data_warnings,
+                "summary": route_summary,
+                "thinking": ora_reasoning_full[:300],
+            }],
+        }
+
+    return ora_node
+
