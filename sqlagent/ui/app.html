@@ -733,9 +733,18 @@ function highlightSql(sql) {
 const api = {
   _tokensen: localStorage.getItem('ora_tokensen') || '',
   _headers() { const h = {'Content-Type':'application/json'}; if(this._tokensen) h['Authorization']='Bearer '+this._tokensen; return h; },
-  async get(path) { const r = await fetch(API+path, {headers:this._headers()}); return r.json(); },
-  async post(path, body) { const r = await fetch(API+path, {method:'POST',headers:this._headers(),body:JSON.stringify(body)}); return r.json(); },
-  async del(path) { const r = await fetch(API+path, {method:'DELETE',headers:this._headers()}); return r.json(); },
+  async _parse(r) {
+    const text = await r.text();
+    let json; try { json = JSON.parse(text); } catch(_) { json = null; }
+    if (!r.ok) {
+      const msg = json?.detail || json?.error || json?.message || `Server error ${r.status}`;
+      throw new Error(msg);
+    }
+    return json;
+  },
+  async get(path) { const r = await fetch(API+path, {headers:this._headers()}); return this._parse(r); },
+  async post(path, body) { const r = await fetch(API+path, {method:'POST',headers:this._headers(),body:JSON.stringify(body)}); return this._parse(r); },
+  async del(path) { const r = await fetch(API+path, {method:'DELETE',headers:this._headers()}); return this._parse(r); },
   setToken(t) { this._tokensen=t; localStorage.setItem('ora_tokensen',t); },
 };
 

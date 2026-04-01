@@ -58,6 +58,30 @@ class LLMProvider(Protocol):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 
+def _normalize_model(model: str) -> str:
+    """Ensure litellm can route the model to the correct provider.
+
+    litellm recognises well-known model names (gpt-4o, gpt-4, gpt-3.5-turbo,
+    claude-*, etc.) automatically.  Newer / less-common OpenAI model names
+    (gpt-4.5-preview, o1-preview, o3-mini, …) are NOT in litellm's built-in
+    list and raise "LLM Provider NOT provided" unless prefixed with "openai/".
+
+    Rules applied in order:
+      1. Already has a provider prefix (contains "/") → pass through unchanged.
+      2. Starts with "gpt-" or "o1" or "o3" or "text-" → prefix with "openai/".
+      3. Starts with "claude-" → prefix with "anthropic/" if not already set.
+      4. Everything else → pass through (ollama, bedrock, vertex, etc.).
+    """
+    if "/" in model:
+        return model  # already routed: openai/..., anthropic/..., bedrock/..., etc.
+    lower = model.lower()
+    if lower.startswith(("gpt-", "o1", "o3", "o4", "text-davinci", "text-embedding")):
+        return f"openai/{model}"
+    if lower.startswith("claude-"):
+        return f"anthropic/{model}"
+    return model
+
+
 class LiteLLMProvider:
     """Universal LLM provider via litellm.
 
@@ -66,7 +90,7 @@ class LiteLLMProvider:
     """
 
     def __init__(self, model: str = "gpt-4o", temperature: float = 0.0, max_tokens: int = 4096):
-        self.model = model
+        self.model = _normalize_model(model)
         self.default_temperature = temperature
         self.default_max_tokens = max_tokens
         # Per-query token accumulators — reset at start of each query
