@@ -1519,90 +1519,6 @@ def _expand_group_entities(filters: list[str]) -> list[str]:
     return expanded
 
 
-# ── Country alias lookup ──────────────────────────────────────────────────────
-# Maps ISO2, ISO3, and common user shorthand → canonical country name.
-# Used by Ora to resolve 'VNT' → 'Vietnam', 'PHP' → 'Philippines', etc.
-# before live SQL coverage scans.
-_COUNTRY_CANONICAL: dict[str, str] = {
-    # Southeast Asia
-    "my": "Malaysia",   "mys": "Malaysia",
-    "vn": "Vietnam",    "vnm": "Vietnam",    "vnt": "Vietnam",    "viet nam": "Vietnam",
-    "ph": "Philippines", "phl": "Philippines", "php": "Philippines", "pilipinas": "Philippines",
-    "id": "Indonesia",  "idn": "Indonesia",
-    "th": "Thailand",   "tha": "Thailand",
-    "sg": "Singapore",  "sgp": "Singapore",
-    "kh": "Cambodia",   "khm": "Cambodia",   "kampuchea": "Cambodia",
-    "mm": "Myanmar",    "mmr": "Myanmar",    "burma": "Myanmar",
-    "la": "Laos",       "lao": "Laos",       "lao pdr": "Laos",
-    "bn": "Brunei",     "brn": "Brunei",
-    "tl": "Timor-Leste", "tls": "Timor-Leste",
-    # East Asia
-    "cn": "China",      "chn": "China",
-    "jp": "Japan",      "jpn": "Japan",
-    "kr": "South Korea", "kor": "South Korea",
-    "tw": "Taiwan",     "twn": "Taiwan",
-    "hk": "Hong Kong",  "hkg": "Hong Kong",
-    # South Asia
-    "in": "India",      "ind": "India",
-    "pk": "Pakistan",   "pak": "Pakistan",
-    "bd": "Bangladesh", "bgd": "Bangladesh",
-    "lk": "Sri Lanka",  "lka": "Sri Lanka",
-    # Americas
-    "us": "United States", "usa": "United States", "united states of america": "United States",
-    "ca": "Canada",     "can": "Canada",
-    "mx": "Mexico",     "mex": "Mexico",
-    "br": "Brazil",     "bra": "Brazil",
-    "ar": "Argentina",  "arg": "Argentina",
-    "cl": "Chile",      "chl": "Chile",
-    "co": "Colombia",   "col": "Colombia",
-    # Europe
-    "gb": "United Kingdom", "gbr": "United Kingdom", "uk": "United Kingdom",
-    "de": "Germany",    "deu": "Germany",
-    "fr": "France",     "fra": "France",
-    "it": "Italy",      "ita": "Italy",
-    "es": "Spain",      "esp": "Spain",
-    "nl": "Netherlands", "nld": "Netherlands",
-    "be": "Belgium",    "bel": "Belgium",
-    "se": "Sweden",     "swe": "Sweden",
-    "no": "Norway",     "nor": "Norway",
-    "dk": "Denmark",    "dnk": "Denmark",
-    "fi": "Finland",    "fin": "Finland",
-    "pl": "Poland",     "pol": "Poland",
-    "pt": "Portugal",   "prt": "Portugal",
-    "gr": "Greece",     "grc": "Greece",
-    "at": "Austria",    "aut": "Austria",
-    "ch": "Switzerland", "che": "Switzerland",
-    "ru": "Russia",     "rus": "Russia",    "russian federation": "Russia",
-    # Middle East / Africa
-    "sa": "Saudi Arabia", "sau": "Saudi Arabia",
-    "ae": "United Arab Emirates", "are": "United Arab Emirates", "uae": "United Arab Emirates",
-    "eg": "Egypt",      "egy": "Egypt",
-    "za": "South Africa", "zaf": "South Africa",
-    "ng": "Nigeria",    "nga": "Nigeria",
-    "ke": "Kenya",      "ken": "Kenya",
-    # Oceania
-    "au": "Australia",  "aus": "Australia",
-    "nz": "New Zealand", "nzl": "New Zealand",
-}
-
-
-def _resolve_country_aliases(filters: list[str]) -> tuple[list[str], dict[str, str]]:
-    """Resolve ISO codes and common abbreviations to canonical country names.
-
-    Returns (resolved_filters, alias_map) where alias_map is original → canonical
-    for aliases that were changed (so we can surface this in trace/warnings).
-    Preserves non-country entities unchanged.
-    """
-    resolved = []
-    alias_map: dict[str, str] = {}
-    for f in filters:
-        canonical = _COUNTRY_CANONICAL.get(f.lower())
-        if canonical and canonical.lower() != f.lower():
-            resolved.append(canonical)
-            alias_map[f] = canonical
-        else:
-            resolved.append(f)
-    return resolved, alias_map
 
 
 def make_decompose_node(services: Any):
@@ -2647,28 +2563,9 @@ def make_ora_node(services: Any):
         )
         intent_cost = getattr(intent_resp, "cost_usd", 0.0)
 
-        # ── Phase 2: Group name expansion + country alias resolution ─────────
+        # ── Phase 2: Group name expansion ────────────────────────────────────
         raw_entity_filters = list(entity_filters)
         entity_filters = _expand_group_entities(entity_filters)
-
-        # Resolve ISO codes / user shorthand → canonical country names
-        # e.g. 'VNT' → 'Vietnam', 'PHP' → 'Philippines', 'MY' → 'Malaysia'
-        entity_filters, _alias_map = _resolve_country_aliases(entity_filters)
-        if _alias_map:
-            ora_reasoning += (
-                f"\nAliases resolved: "
-                + ", ".join(f"{k}→{v}" for k, v in _alias_map.items())
-            )
-            # Save alias mappings to SemanticMemory for each source so future
-            # queries skip the live scan for known aliases
-            _sem_mem = getattr(services, "_semantic_memory", None)
-            if _sem_mem:
-                for sid in target_sources:
-                    for alias, canonical in _alias_map.items():
-                        try:
-                            await _sem_mem.save_entity_alias(sid, alias, canonical)
-                        except Exception:
-                            pass
 
         # ── Phase 3: Data coverage analysis ──────────────────────────────────
         # For each source: check SemanticMemory first, then live SQL scan.
@@ -2721,33 +2618,80 @@ def make_ora_node(services: Any):
                                         _ecols.append((t.name, c.name))
                                         break
 
+                        import difflib as _difflib
+                        import pandas as _pd
+
+                        # Per-column value sample cache — avoids re-querying same col
+                        _col_sample_cache: dict[tuple[str, str], list[str]] = {}
+
+                        async def _sample_col_values(tname: str, cname: str) -> list[str]:
+                            key = (tname, cname)
+                            if key not in _col_sample_cache:
+                                try:
+                                    res = await conn.execute(
+                                        f'SELECT DISTINCT "{cname}" FROM "{tname}" '
+                                        f'WHERE "{cname}" IS NOT NULL LIMIT 300'
+                                    )
+                                    if isinstance(res, _pd.DataFrame) and not res.empty:
+                                        _col_sample_cache[key] = [
+                                            str(v) for v in res.iloc[:, 0].dropna().tolist()
+                                        ]
+                                    else:
+                                        _col_sample_cache[key] = []
+                                except Exception:
+                                    _col_sample_cache[key] = []
+                            return _col_sample_cache[key]
+
+                        # fuzzy_aliases: original user term → canonical DB value
+                        # (populated during scan, applied to entity_filters after)
+                        _fuzzy_aliases: dict[str, str] = {}
+
                         scan_found: list[str] = []
                         best_col: tuple[str, str] | None = None
                         for tname, cname in _ecols[:6]:
                             col_found: list[str] = []
+                            actual_vals = await _sample_col_values(tname, cname)
+                            lower_map = {v.lower(): v for v in actual_vals}
+
                             for entity in entity_filters:
                                 if entity in found_entities:
                                     continue  # already confirmed from memory
-                                keyword = entity.lower()[:5]
-                                try:
-                                    res = await conn.execute(
-                                        f'SELECT DISTINCT "{cname}" FROM "{tname}" '
-                                        f'WHERE LOWER("{cname}") = LOWER({repr(entity)}) '
-                                        f'OR LOWER("{cname}") LIKE {repr("%" + keyword + "%")} LIMIT 3'
+
+                                # 1. Exact case-insensitive match
+                                if entity.lower() in lower_map:
+                                    col_found.append(entity)
+                                    continue
+
+                                # 2. Fuzzy match against sampled column values
+                                #    Works for any entity type: country codes, SKUs,
+                                #    store IDs, employee names, product codes, etc.
+                                if actual_vals:
+                                    matches = _difflib.get_close_matches(
+                                        entity.lower(), list(lower_map), n=1, cutoff=0.6
                                     )
-                                    import pandas as _pd
-                                    rrows = (
-                                        res.where(res.notna(), None).to_dict("records")
-                                        if isinstance(res, _pd.DataFrame)
-                                        else []
-                                    )
-                                    if rrows:
+                                    if matches:
+                                        canonical = lower_map[matches[0]]
                                         col_found.append(entity)
-                                except Exception:
-                                    pass
+                                        if canonical.lower() != entity.lower():
+                                            _fuzzy_aliases[entity] = canonical
+
                             if len(col_found) > len(scan_found):
                                 scan_found = col_found
                                 best_col = (tname, cname)
+
+                        # Apply fuzzy aliases: remap entity_filters so downstream
+                        # SQL generation uses the actual stored values, not user shortcuts
+                        if _fuzzy_aliases:
+                            entity_filters = [
+                                _fuzzy_aliases.get(e, e) for e in entity_filters
+                            ]
+                            entities_lower = {e.lower(): e for e in entity_filters}
+                            # Also remap scan_found to canonical values
+                            scan_found = [_fuzzy_aliases.get(e, e) for e in scan_found]
+                            ora_reasoning += (
+                                "\nFuzzy aliases resolved: "
+                                + ", ".join(f"{k}→{v}" for k, v in _fuzzy_aliases.items())
+                            )
 
                         if scan_found:
                             for e in scan_found:
@@ -2757,7 +2701,7 @@ def make_ora_node(services: Any):
                             mem_entity_col = best_col
                             source_entity_cols[sid] = best_col
 
-                        # Persist discoveries to SemanticMemory
+                        # Persist discoveries + fuzzy aliases to SemanticMemory
                         if semantic_memory and scan_found and best_col:
                             try:
                                 await semantic_memory.save_discovered_entities(
@@ -2765,6 +2709,14 @@ def make_ora_node(services: Any):
                                 )
                             except Exception:
                                 pass
+                        if semantic_memory and _fuzzy_aliases:
+                            for alias, canonical in _fuzzy_aliases.items():
+                                try:
+                                    await semantic_memory.save_entity_alias(
+                                        sid, alias, canonical
+                                    )
+                                except Exception:
+                                    pass
                     except Exception:
                         pass
 
