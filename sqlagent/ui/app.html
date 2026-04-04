@@ -7315,8 +7315,8 @@ function WorkspacePicker({user, onSelect, onCreate, onLogout, returning}) {
 
   const firstName = (user?.display_name || user?.email?.split('@')[0] || 'there').split(' ')[0];
 
-  // ── Always show clean workspace picker (no hero/marketing page) ─────────
-  {
+  // ── Returning user (clicked ← back): show clean workspace list only ─────────
+  if (returning) {
     return e('div', {style:{
       minHeight:'100vh', background:'#faf9f6',
       backgroundImage:'radial-gradient(circle, rgba(0,0,0,.045) 1px, transparent 1px)',
