@@ -1,0 +1,358 @@
+# =============================================================================
+# Ora Semantic Model — Retail Analytics
+# =============================================================================
+# This file defines the business semantics for retail analytics.
+# Drop this into your Ora project and connect:
+#
+#   db = ora.connect("postgresql://...", semantic_model="retail_semantic.yaml")
+#
+# Version: 1.0 | Domain: Retail | Backend: PostgreSQL
+# =============================================================================
+
+name: retail_analytics
+version: "1.0"
+description: >
+  Retail analytics semantic model covering store performance, customer behavior,
+  and product sales. Designed for store managers and regional directors.
+
+# ---------------------------------------------------------------------------
+# Fiscal Calendar
+# ---------------------------------------------------------------------------
+fiscal_calendar:
+  fiscal_year_start_month: 4    # April = FY start (common in APAC)
+  week_start_day: monday
+
+# ---------------------------------------------------------------------------
+# Logical Tables
+# ---------------------------------------------------------------------------
+tables:
+
+  - name: orders
+    description: "Customer purchase orders — one row per order"
+    physical_table: "analytics.public.orders"
+    backend: postgres
+    dimensions:
+      - name: region
+        description: "Geographic sales region"
+        expr: "orders.region"
+        synonyms: ["area", "territory", "geography", "market"]
+        sample_values: ["APAC", "EMEA", "Americas", "ANZ"]
+        is_exhaustive: true
+      - name: channel
+        description: "Sales channel through which the order was placed"
+        expr: "orders.sales_channel"
+        synonyms: ["sales channel", "source", "order source"]
+        sample_values: ["Online", "In-Store", "Wholesale", "Marketplace"]
+        is_exhaustive: true
+      - name: store_name
+        description: "Name of the retail store"
+        expr: "orders.store_name"
+        synonyms: ["store", "location", "outlet", "branch"]
+      - name: order_status
+        description: "Current status of the order"
+        expr: "orders.status"
+        synonyms: ["status"]
+        sample_values: ["completed", "pending", "cancelled", "refunded"]
+        is_exhaustive: true
+    time_dimensions:
+      - name: order_date
+        description: "Date the order was placed"
+        expr: "orders.created_at"
+        synonyms: ["date", "when", "purchase date", "order time"]
+        time_granularities: [day, week, month, quarter, year, fiscal_quarter, fiscal_year]
+    measures:
+      - name: revenue
+        description: "Gross revenue before discounts and returns"
+        expr: "orders.amount"
+        agg: sum
+        synonyms: ["sales", "income", "top line", "gross revenue", "total sales", "gmv"]
+      - name: discount_amount
+        description: "Total discount applied to the order"
+        expr: "orders.discount"
+        agg: sum
+        synonyms: ["discounts", "total discounts"]
+      - name: order_count
+        description: "Number of distinct orders"
+        expr: "orders.order_id"
+        agg: count_distinct
+        synonyms: ["number of orders", "total orders", "transactions", "order volume"]
+      - name: avg_order_value
+        description: "Average value per order"
+        expr: "orders.amount"
+        agg: avg
+        synonyms: ["aov", "average order", "avg basket", "basket size"]
+
+  - name: customers
+    description: "Customer master data — one row per customer"
+    physical_table: "analytics.public.customers"
+    backend: postgres
+    dimensions:
+      - name: customer_name
+        description: "Full name of the customer"
+        expr: "customers.name"
+        unique: true
+        synonyms: ["name", "customer"]
+      - name: segment
+        description: "Customer segmentation tier"
+        expr: "customers.segment"
+        synonyms: ["customer type", "tier", "customer segment"]
+        sample_values: ["Enterprise", "SMB", "Consumer", "Government"]
+        is_exhaustive: true
+      - name: country
+        description: "Customer's country of registration"
+        expr: "customers.country"
+        synonyms: ["nationality", "customer country"]
+      - name: acquisition_source
+        description: "How the customer was acquired"
+        expr: "customers.acquisition_source"
+        synonyms: ["source", "how acquired", "referral source"]
+        sample_values: ["Organic", "Paid Search", "Referral", "Social Media", "Partner"]
+    time_dimensions:
+      - name: signup_date
+        description: "Date the customer created their account"
+        expr: "customers.created_at"
+        synonyms: ["registration date", "joined date", "account created"]
+
+  - name: products
+    description: "Product catalog — one row per SKU"
+    physical_table: "analytics.public.products"
+    backend: postgres
+    dimensions:
+      - name: product_name
+        description: "Product display name"
+        expr: "products.name"
+        synonyms: ["product", "item", "sku"]
+      - name: category
+        description: "Product category"
+        expr: "products.category"
+        synonyms: ["product category", "type", "product type"]
+        sample_values: ["Electronics", "Clothing", "Home & Garden", "Food & Beverage"]
+      - name: brand
+        description: "Product brand or manufacturer"
+        expr: "products.brand"
+        synonyms: ["manufacturer", "maker"]
+    measures:
+      - name: unit_price
+        description: "List price per unit"
+        expr: "products.price"
+        agg: avg
+        synonyms: ["price", "cost", "unit cost"]
+
+  - name: order_items
+    description: "Line items within orders — one row per product per order"
+    physical_table: "analytics.public.order_items"
+    backend: postgres
+    measures:
+      - name: quantity_sold
+        description: "Total units sold"
+        expr: "order_items.quantity"
+        agg: sum
+        synonyms: ["units", "volume", "quantity", "units sold"]
+      - name: line_revenue
+        description: "Revenue per line item (qty × price)"
+        expr: "order_items.quantity * order_items.unit_price"
+        agg: sum
+
+  - name: staff
+    description: "Store employee headcount — one row per employee"
+    physical_table: "hr.public.employees"
+    backend: postgres
+    dimensions:
+      - name: employee_name
+        expr: "staff.name"
+        unique: true
+      - name: role
+        description: "Job title / role"
+        expr: "staff.role"
+        synonyms: ["job title", "position"]
+        sample_values: ["Store Manager", "Sales Associate", "Cashier", "Stock Clerk"]
+      - name: store_assigned
+        description: "Store the employee is assigned to"
+        expr: "staff.store_name"
+        synonyms: ["assigned store", "works at"]
+    measures:
+      - name: headcount
+        description: "Number of employees"
+        expr: "staff.employee_id"
+        agg: count_distinct
+        synonyms: ["employees", "staff count", "team size", "number of employees"]
+
+# ---------------------------------------------------------------------------
+# Relationships (JOIN paths)
+# ---------------------------------------------------------------------------
+relationships:
+  - from_table: orders
+    from_column: customer_id
+    to_table: customers
+    to_column: id
+    join_type: left
+    description: "Each order belongs to one customer"
+
+  - from_table: order_items
+    from_column: order_id
+    to_table: orders
+    to_column: order_id
+    join_type: inner
+    description: "Each line item belongs to one order"
+
+  - from_table: order_items
+    from_column: product_id
+    to_table: products
+    to_column: id
+    join_type: left
+    description: "Each line item references one product"
+
+  - from_table: staff
+    from_column: store_name
+    to_table: orders
+    to_column: store_name
+    join_type: left
+    description: "Staff assigned to the same store as orders"
+
+# ---------------------------------------------------------------------------
+# Derived Metrics
+# ---------------------------------------------------------------------------
+metrics:
+  - name: net_revenue
+    description: "Revenue after discounts"
+    expr: "revenue - discount_amount"
+    type: derived
+    synonyms: ["net sales", "adjusted revenue", "revenue after discounts"]
+
+  - name: aov
+    description: "Average order value"
+    expr: "revenue / order_count"
+    type: ratio
+    synonyms: ["average order value", "avg order size", "basket size", "average basket"]
+
+  - name: revenue_per_employee
+    description: "Revenue generated per employee"
+    expr: "revenue / headcount"
+    type: ratio
+    synonyms: ["sales per head", "productivity", "revenue per staff"]
+
+  - name: discount_rate
+    description: "Percentage of revenue given as discounts"
+    expr: "discount_amount / revenue"
+    type: ratio
+    synonyms: ["discount percentage", "discount %", "markdown rate"]
+
+  - name: customer_acquisition_cost
+    description: "Average cost to acquire a customer (placeholder — needs marketing data)"
+    expr: "0"
+    type: simple
+    synonyms: ["cac"]
+
+# ---------------------------------------------------------------------------
+# Named Filters (reusable WHERE clauses)
+# ---------------------------------------------------------------------------
+named_filters:
+  - name: active_customers
+    description: "Customers who purchased in the last 90 days"
+    expr: "order_date >= CURRENT_DATE - INTERVAL '90 days'"
+    synonyms: ["active", "recent customers", "engaged customers"]
+
+  - name: completed_orders
+    description: "Orders that are completed (excludes pending, cancelled, refunded)"
+    expr: "orders.status = 'completed'"
+    synonyms: ["successful orders", "fulfilled orders"]
+
+  - name: this_fiscal_year
+    description: "Current fiscal year (starts April 1)"
+    expr: "order_date >= DATE_TRUNC('year', CURRENT_DATE - INTERVAL '3 months') + INTERVAL '3 months'"
+    synonyms: ["this fy", "current fiscal year", "fy26"]
+
+  - name: last_fiscal_year
+    description: "Previous fiscal year"
+    expr: >
+      order_date >= DATE_TRUNC('year', CURRENT_DATE - INTERVAL '15 months') + INTERVAL '3 months'
+      AND order_date < DATE_TRUNC('year', CURRENT_DATE - INTERVAL '3 months') + INTERVAL '3 months'
+    synonyms: ["last fy", "previous fiscal year", "fy25"]
+
+  - name: high_value_orders
+    description: "Orders with amount > $1000"
+    expr: "orders.amount > 1000"
+    synonyms: ["big orders", "large orders", "premium orders"]
+
+# ---------------------------------------------------------------------------
+# Verified Queries (few-shot examples for accuracy)
+# ---------------------------------------------------------------------------
+verified_queries:
+  - question: "What is the total revenue by region?"
+    sql: >
+      SELECT region, SUM(amount) as revenue
+      FROM orders
+      WHERE status = 'completed'
+      GROUP BY region
+      ORDER BY revenue DESC
+    description: "Standard revenue by region report — uses completed orders only"
+
+  - question: "Who are the top 10 customers by revenue?"
+    sql: >
+      SELECT c.name as customer_name, SUM(o.amount) as total_revenue
+      FROM orders o
+      JOIN customers c ON o.customer_id = c.id
+      WHERE o.status = 'completed'
+      GROUP BY c.name
+      ORDER BY total_revenue DESC
+      LIMIT 10
+    description: "Top customers ranked by total completed order value"
+
+  - question: "What is the average order value by channel?"
+    sql: >
+      SELECT sales_channel, AVG(amount) as avg_order_value
+      FROM orders
+      WHERE status = 'completed'
+      GROUP BY sales_channel
+      ORDER BY avg_order_value DESC
+    description: "AOV comparison across sales channels"
+
+  - question: "How many active customers do we have by segment?"
+    sql: >
+      SELECT c.segment, COUNT(DISTINCT c.id) as active_customers
+      FROM customers c
+      JOIN orders o ON c.id = o.customer_id
+      WHERE o.status = 'completed'
+        AND o.created_at >= CURRENT_DATE - INTERVAL '90 days'
+      GROUP BY c.segment
+      ORDER BY active_customers DESC
+    description: "Active customer count using 90-day activity window"
+
+  - question: "What is the revenue per employee by store?"
+    sql: >
+      SELECT o.store_name,
+             SUM(o.amount) as revenue,
+             COUNT(DISTINCT s.employee_id) as headcount,
+             SUM(o.amount) / NULLIF(COUNT(DISTINCT s.employee_id), 0) as revenue_per_employee
+      FROM orders o
+      LEFT JOIN employees s ON o.store_name = s.store_name
+      WHERE o.status = 'completed'
+      GROUP BY o.store_name
+      ORDER BY revenue_per_employee DESC
+    description: "Store productivity measured by revenue per employee"
+
+  - question: "Show monthly revenue trend for the current fiscal year"
+    sql: >
+      SELECT DATE_TRUNC('month', created_at) as month,
+             SUM(amount) as revenue
+      FROM orders
+      WHERE status = 'completed'
+        AND created_at >= DATE_TRUNC('year', CURRENT_DATE - INTERVAL '3 months') + INTERVAL '3 months'
+      GROUP BY DATE_TRUNC('month', created_at)
+      ORDER BY month
+    description: "Monthly revenue time series for current FY (starts April)"
+
+# ---------------------------------------------------------------------------
+# Custom Instructions for the LLM
+# ---------------------------------------------------------------------------
+custom_instructions: |
+  - "Revenue" always means gross revenue (SUM of orders.amount) unless "net" is explicitly specified
+  - "This year" or "this FY" means the current fiscal year starting April 1
+  - "Last year" or "last FY" means the previous fiscal year
+  - When asked about "active customers", always apply the active_customers filter (90-day window)
+  - Default to completed orders only (exclude pending, cancelled, refunded) unless the user explicitly asks for all orders
+  - Default time range is current fiscal year unless the user specifies otherwise
+  - When comparing periods, use year-over-year (YoY) as the default comparison
+  - Revenue per employee should use NULLIF to avoid division by zero
+  - All monetary values are in USD unless otherwise specified
+  - "Store" and "location" and "branch" and "outlet" all mean the same thing

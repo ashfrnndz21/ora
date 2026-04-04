@@ -1654,6 +1654,7 @@ function Icon({name, size=16}) {
     filter: 'M22 3H2l8 9.46V19l4 2v-8.54L22 3z',
     search: 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z',
     pipeline: 'M5 12h2m0 0a2 2 0 104 0m-4 0a2 2 0 104 0m0 0h2m2 0h2m0 0a2 2 0 104 0m-4 0a2 2 0 104 0M3 6h18M3 18h18',
+    knowledge: 'M12 2a9 9 0 019 9c0 3.87-2.46 7.16-5.9 8.42L12 21l-3.1-1.58A9.001 9.001 0 013 11a9 9 0 019-9zm0 5a4 4 0 100 8 4 4 0 000-8zm0 2a2 2 0 110 4 2 2 0 010-4z',
     sources: 'M4 6a2 2 0 012-2h12a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM4 14a2 2 0 012-2h12a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM8 6h.01M8 14h.01',
   };
   const d = paths[name] || paths.home;
@@ -1741,6 +1742,7 @@ function Sidebar({view, setView, workspace, user, onBack}) {
     {id:'ask',      icon:'chat',     label:'Ask'},
     {id:'sources',  icon:'sources',  label:'Sources'},
     {id:'data',     icon:'data',     label:'Data'},
+    {id:'knowledge',icon:'knowledge',label:'Knowledge'},
     {id:'tasks',    icon:'tasks',    label:'Tasks'},
     {id:'learn',    icon:'learn',    label:'Learn'},
     {id:'settings', icon:'settings', label:'Settings'},
@@ -4588,6 +4590,254 @@ function AgentsView({workspace}) {
   );
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   KNOWLEDGE VIEW — Semantic Model Graph + Inspector
+   ═══════════════════════════════════════════════════════════════════════════ */
+function KnowledgeView({workspace, addToast}) {
+  const [spec, setSpec] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [selected, setSelected] = useState(null); // selected table name
+  const [tab, setTab] = useState('graph'); // 'graph' | 'terms' | 'activity'
+
+  useEffect(() => {
+    if (!workspace?.workspace_id) return;
+    setLoading(true);
+    api.get('/api/semantic?workspace_id='+workspace.workspace_id)
+      .then(d => { setSpec(d); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, [workspace?.workspace_id]);
+
+  if (loading) return e('div', {style:{display:'flex',alignItems:'center',justifyContent:'center',height:'100%',color:'var(--text-muted)'}}, 'Loading semantic model...');
+  if (!spec || !spec.tables || spec.tables.length === 0) {
+    return e('div', {style:{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'100%',gap:16}},
+      e('div', {style:{fontSize:28,opacity:0.25,fontWeight:700,letterSpacing:'0.04em',color:'var(--text)'}}, 'KNOWLEDGE'),
+      e('div', {style:{color:'var(--text-secondary)',fontSize:14}}, 'No semantic model yet'),
+      e('div', {style:{color:'var(--text-muted)',fontSize:12,maxWidth:300,textAlign:'center'}},
+        'Upload data sources first. The Semantic Agent will auto-discover tables, classify columns, and detect relationships.'),
+    );
+  }
+
+  const stats = spec.stats || {};
+  const tables = spec.tables || [];
+  const relationships = spec.relationships || [];
+  const selectedTable = selected ? tables.find(t => t.name === selected) : null;
+
+  const backendBadge = (b) => {
+    const key = (b||'').toLowerCase();
+    const map = {
+      postgres:    {label:'PG',  color:'#4f7df9'},
+      postgresql:  {label:'PG',  color:'#4f7df9'},
+      snowflake:   {label:'SF',  color:'#29b5e8'},
+      bigquery:    {label:'BQ',  color:'#4285f4'},
+      duckdb:      {label:'DDB', color:'#fdba0a'},
+      mysql:       {label:'MY',  color:'#00758f'},
+      sqlite:      {label:'SL',  color:'#003b57'},
+      csv:         {label:'CSV', color:'#6b7280'},
+      xlsx:        {label:'XLS', color:'#217346'},
+    };
+    const badge = map[key] || {label: (key||'DB').toUpperCase().slice(0,3), color:'#6b7280'};
+    return e('span', {style:{
+      fontSize:9, fontWeight:700, fontFamily:'var(--font-mono)', letterSpacing:'0.06em',
+      color: badge.color, background: badge.color+'18',
+      border: '1px solid '+badge.color+'30',
+      padding:'2px 5px', borderRadius:4, lineHeight:1,
+    }}, badge.label);
+  };
+
+  const confColor = (c) => c >= 0.9 ? 'var(--green)' : c >= 0.7 ? 'var(--amber)' : 'var(--red)';
+  const confPct = (c) => Math.round((c||0.5)*100)+'%';
+
+  // ── Graph Tab (semantic canvas) ───────────────────────────────────────
+  const graphContent = e('div', {style:{position:'relative',width:'100%',flex:1,overflow:'auto',padding:24}},
+    // Stats bar
+    e('div', {style:{display:'flex',gap:16,marginBottom:20,flexWrap:'wrap'}},
+      e('div', {style:{background:'var(--glass)',border:'1px solid var(--glass-border)',borderRadius:8,padding:'8px 16px',fontSize:12}},
+        e('span', {style:{color:'var(--text-muted)'}}, 'Tables '), e('span', {style:{fontWeight:600,color:'var(--text)'}}, tables.length)),
+      e('div', {style:{background:'var(--glass)',border:'1px solid var(--glass-border)',borderRadius:8,padding:'8px 16px',fontSize:12}},
+        e('span', {style:{color:'var(--text-muted)'}}, 'Dimensions '), e('span', {style:{fontWeight:600,color:'var(--text)'}}, stats.dimensions||0)),
+      e('div', {style:{background:'var(--glass)',border:'1px solid var(--glass-border)',borderRadius:8,padding:'8px 16px',fontSize:12}},
+        e('span', {style:{color:'var(--text-muted)'}}, 'Measures '), e('span', {style:{fontWeight:600,color:'var(--text)'}}, stats.measures||0)),
+      e('div', {style:{background:'var(--glass)',border:'1px solid var(--glass-border)',borderRadius:8,padding:'8px 16px',fontSize:12}},
+        e('span', {style:{color:'var(--text-muted)'}}, 'Relationships '), e('span', {style:{fontWeight:600,color:'var(--text)'}}, stats.relationships||0)),
+      e('div', {style:{background:'var(--glass)',border:'1px solid var(--glass-border)',borderRadius:8,padding:'8px 16px',fontSize:12}},
+        e('span', {style:{color:'var(--text-muted)'}}, 'Confidence '),
+        e('span', {style:{fontWeight:600,color:confColor(stats.avg_confidence||0.5)}}, confPct(stats.avg_confidence))),
+    ),
+    // Table cards grid
+    e('div', {style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(240px,1fr))',gap:16}},
+      tables.map(t => {
+        const isSelected = selected === t.name;
+        const dims = (t.dimensions||[]).length;
+        const meas = (t.measures||[]).length;
+        const time = (t.time_dimensions||[]).length;
+        const rels = relationships.filter(r => r.from_table===t.name || r.to_table===t.name);
+        return e('div', {
+          key: t.name,
+          onClick: () => setSelected(isSelected ? null : t.name),
+          style: {
+            background: isSelected ? 'rgba(79,125,249,.08)' : 'var(--glass)',
+            border: '1px solid '+(isSelected ? 'rgba(79,125,249,.4)' : 'var(--glass-border)'),
+            borderRadius: 12, padding: 16, cursor: 'pointer',
+            transition: 'all 200ms ease',
+            boxShadow: isSelected ? '0 0 20px rgba(79,125,249,.1)' : 'none',
+          }},
+          e('div', {style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}},
+            e('div', {style:{display:'flex',alignItems:'center',gap:6}},
+              backendBadge(t.backend),
+              e('span', {style:{fontWeight:600,fontSize:13,color:'var(--text)'}}, t.display_name || t.name),
+            ),
+            e('span', {style:{fontSize:9,color:confColor(t.confidence||0.5),fontFamily:'var(--font-mono)',fontWeight:600}}, confPct(t.confidence)),
+          ),
+          t.description ? e('div', {style:{fontSize:11,color:'var(--text-muted)',marginBottom:8,lineHeight:1.4,maxHeight:32,overflow:'hidden'}}, t.description) : null,
+          e('div', {style:{display:'flex',gap:8,flexWrap:'wrap'}},
+            dims > 0 && e('span', {style:{fontSize:10,color:'var(--text-secondary)',background:'rgba(79,125,249,.08)',padding:'2px 6px',borderRadius:4}}, dims+' dim'),
+            meas > 0 && e('span', {style:{fontSize:10,color:'var(--text-secondary)',background:'rgba(34,197,94,.08)',padding:'2px 6px',borderRadius:4}}, meas+' meas'),
+            time > 0 && e('span', {style:{fontSize:10,color:'var(--text-secondary)',background:'rgba(245,158,11,.08)',padding:'2px 6px',borderRadius:4}}, time+' time'),
+            rels.length > 0 && e('span', {style:{fontSize:10,color:'var(--text-secondary)',background:'rgba(139,92,246,.08)',padding:'2px 6px',borderRadius:4}}, rels.length+' rel'),
+          ),
+          e('div', {style:{marginTop:6,fontSize:9,color:'var(--text-muted)',fontFamily:'var(--font-mono)'}},
+            'source: '+( t.source||'auto')),
+        );
+      }),
+    ),
+    // Relationships legend
+    relationships.length > 0 && e('div', {style:{marginTop:24}},
+      e('div', {style:{fontSize:11,fontWeight:600,color:'var(--text-secondary)',marginBottom:8}}, 'RELATIONSHIPS'),
+      e('div', {style:{display:'flex',flexDirection:'column',gap:4}},
+        relationships.map((r,i) =>
+          e('div', {key:i, style:{display:'flex',alignItems:'center',gap:8,fontSize:11,color:'var(--text-secondary)',padding:'4px 8px',background:'var(--glass)',borderRadius:6,border:'1px solid var(--glass-border)'}},
+            e('span', {style:{fontFamily:'var(--font-mono)',fontWeight:500}}, r.from_table+'.'+r.from_column),
+            e('span', {style:{color:r.confirmed ? 'var(--green)' : 'var(--amber)'}}, r.confirmed ? '──→' : '- - →'),
+            e('span', {style:{fontFamily:'var(--font-mono)',fontWeight:500}}, r.to_table+'.'+r.to_column),
+            e('span', {style:{fontSize:9,color:confColor(r.confidence||0.5),fontFamily:'var(--font-mono)'}}, confPct(r.confidence)),
+            e('span', {style:{fontSize:9,padding:'1px 5px',borderRadius:3,
+              background: r.source==='fk' ? 'rgba(34,197,94,.1)' : r.source==='inferred' ? 'rgba(245,158,11,.1)' : 'rgba(79,125,249,.1)',
+              color: r.source==='fk' ? 'var(--green)' : r.source==='inferred' ? 'var(--amber)' : 'var(--blue)',
+            }}, r.source||'auto'),
+          )
+        ),
+      ),
+    ),
+  );
+
+  // ── Terms Tab (all synonyms) ──────────────────────────────────────────
+  const allSynonyms = [];
+  (tables||[]).forEach(t => {
+    (t.dimensions||[]).forEach(d => (d.synonyms||[]).forEach(s => allSynonyms.push({term:s, canonical:t.name+'.'+d.name, type:'dimension'})));
+    (t.measures||[]).forEach(m => (m.synonyms||[]).forEach(s => allSynonyms.push({term:s, canonical:t.name+'.'+m.name, type:'measure'})));
+    (t.time_dimensions||[]).forEach(td => (td.synonyms||[]).forEach(s => allSynonyms.push({term:s, canonical:t.name+'.'+td.name, type:'time'})));
+  });
+  (spec.synonyms||[]).forEach(s => allSynonyms.push({term:s.term, canonical:s.canonical, type:'global'}));
+
+  const termsContent = e('div', {style:{padding:24,overflow:'auto',flex:1}},
+    e('div', {style:{fontSize:12,color:'var(--text-muted)',marginBottom:12}}, allSynonyms.length+' terms mapped'),
+    e('div', {style:{display:'flex',flexDirection:'column',gap:2}},
+      allSynonyms.map((s,i) =>
+        e('div', {key:i, style:{display:'flex',alignItems:'center',gap:8,padding:'6px 10px',borderRadius:6,background:i%2===0?'var(--glass)':'transparent',fontSize:12}},
+          e('span', {style:{fontWeight:500,color:'var(--blue)',minWidth:120,fontFamily:'var(--font-mono)'}}, '"'+s.term+'"'),
+          e('span', {style:{color:'var(--text-muted)'}}, '→'),
+          e('span', {style:{fontFamily:'var(--font-mono)',color:'var(--text)'}}, s.canonical),
+          e('span', {style:{fontSize:9,padding:'1px 5px',borderRadius:3,marginLeft:'auto',
+            background: s.type==='dimension'?'rgba(79,125,249,.08)':s.type==='measure'?'rgba(34,197,94,.08)':s.type==='time'?'rgba(245,158,11,.08)':'rgba(139,92,246,.08)',
+            color: s.type==='dimension'?'var(--blue)':s.type==='measure'?'var(--green)':s.type==='time'?'var(--amber)':'var(--indigo)',
+          }}, s.type),
+        )
+      ),
+    ),
+  );
+
+  // ── Inspector Panel (right side when table selected) ──────────────────
+  const inspector = selectedTable && e('div', {style:{
+    width:320, borderLeft:'1px solid var(--glass-border)', padding:20, overflow:'auto',
+    background:'var(--canvas-deep)', flexShrink:0}},
+    e('div', {style:{display:'flex',alignItems:'center',gap:8,marginBottom:16}},
+      backendBadge(selectedTable.backend),
+      e('div', null,
+        e('div', {style:{fontWeight:600,fontSize:14,color:'var(--text)'}}, selectedTable.display_name || selectedTable.name),
+        e('div', {style:{fontSize:10,color:'var(--text-muted)',fontFamily:'var(--font-mono)'}}, selectedTable.backend || 'auto'),
+      ),
+    ),
+    selectedTable.description && e('div', {style:{fontSize:11,color:'var(--text-secondary)',marginBottom:16,lineHeight:1.5}}, selectedTable.description),
+
+    // Dimensions
+    (selectedTable.dimensions||[]).length > 0 && e('div', {style:{marginBottom:16}},
+      e('div', {style:{fontSize:10,fontWeight:600,color:'var(--blue)',letterSpacing:'0.08em',marginBottom:6}}, 'DIMENSIONS ('+selectedTable.dimensions.length+')'),
+      selectedTable.dimensions.map((d,i) =>
+        e('div', {key:i, style:{padding:'8px 10px',background:'var(--glass)',borderRadius:8,marginBottom:4,border:'1px solid var(--glass-border)'}},
+          e('div', {style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
+            e('span', {style:{fontWeight:500,fontSize:12,fontFamily:'var(--font-mono)',color:'var(--text)'}}, d.name),
+            e('span', {style:{fontSize:9,color:confColor(d.confidence||0.5),fontFamily:'var(--font-mono)'}}, confPct(d.confidence)),
+          ),
+          d.description && e('div', {style:{fontSize:10,color:'var(--text-muted)',marginTop:2}}, d.description),
+          (d.synonyms||[]).length > 0 && e('div', {style:{fontSize:9,color:'var(--blue)',marginTop:3}}, '→ '+d.synonyms.join(', ')),
+          (d.sample_values||[]).length > 0 && e('div', {style:{fontSize:9,color:'var(--text-muted)',marginTop:2,fontFamily:'var(--font-mono)'}}, d.sample_values.slice(0,5).join(' · ')),
+          d.is_sensitive && e('div', {style:{fontSize:9,color:'var(--red)',marginTop:2}}, '🔒 PII — redacted from LLM'),
+        )
+      ),
+    ),
+
+    // Time dimensions
+    (selectedTable.time_dimensions||[]).length > 0 && e('div', {style:{marginBottom:16}},
+      e('div', {style:{fontSize:10,fontWeight:600,color:'var(--amber)',letterSpacing:'0.08em',marginBottom:6}}, 'TIME ('+selectedTable.time_dimensions.length+')'),
+      selectedTable.time_dimensions.map((td,i) =>
+        e('div', {key:i, style:{padding:'8px 10px',background:'var(--glass)',borderRadius:8,marginBottom:4,border:'1px solid var(--glass-border)'}},
+          e('span', {style:{fontWeight:500,fontSize:12,fontFamily:'var(--font-mono)',color:'var(--text)'}}, td.name),
+          td.description && e('div', {style:{fontSize:10,color:'var(--text-muted)',marginTop:2}}, td.description),
+          (td.synonyms||[]).length > 0 && e('div', {style:{fontSize:9,color:'var(--amber)',marginTop:3}}, '→ '+td.synonyms.join(', ')),
+        )
+      ),
+    ),
+
+    // Measures
+    (selectedTable.measures||[]).length > 0 && e('div', {style:{marginBottom:16}},
+      e('div', {style:{fontSize:10,fontWeight:600,color:'var(--green)',letterSpacing:'0.08em',marginBottom:6}}, 'MEASURES ('+selectedTable.measures.length+')'),
+      selectedTable.measures.map((m,i) =>
+        e('div', {key:i, style:{padding:'8px 10px',background:'var(--glass)',borderRadius:8,marginBottom:4,border:'1px solid var(--glass-border)'}},
+          e('div', {style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
+            e('span', {style:{fontWeight:500,fontSize:12,fontFamily:'var(--font-mono)',color:'var(--text)'}}, m.name),
+            e('span', {style:{fontSize:9,color:confColor(m.confidence||0.5),fontFamily:'var(--font-mono)'}}, confPct(m.confidence)),
+          ),
+          m.description && e('div', {style:{fontSize:10,color:'var(--text-muted)',marginTop:2}}, m.description),
+          m.expr && e('div', {style:{fontSize:9,color:'var(--green)',marginTop:2,fontFamily:'var(--font-mono)'}}, '= '+m.expr),
+          (m.synonyms||[]).length > 0 && e('div', {style:{fontSize:9,color:'var(--green)',marginTop:3}}, '→ '+m.synonyms.join(', ')),
+        )
+      ),
+    ),
+
+    // Source provenance
+    e('div', {style:{fontSize:9,color:'var(--text-muted)',borderTop:'1px solid var(--glass-border)',paddingTop:12,marginTop:12}},
+      'Source: '+(selectedTable.source||'auto')+' · Confidence: '+confPct(selectedTable.confidence)),
+  );
+
+  return e('div', {style:{display:'flex',flexDirection:'column',height:'100%'}},
+    // Header
+    e('div', {style:{padding:'16px 24px',borderBottom:'1px solid var(--glass-border)',display:'flex',alignItems:'center',justifyContent:'space-between'}},
+      e('div', {style:{display:'flex',alignItems:'center',gap:12}},
+        e('div', {style:{width:28,height:28,borderRadius:8,background:'linear-gradient(135deg,#4f7df9,#6366f1)',display:'flex',alignItems:'center',justifyContent:'center'}},
+          e('span', {style:{color:'#fff',fontSize:13,fontWeight:700}}, 'K')),
+        e('div', null,
+          e('div', {style:{fontWeight:600,fontSize:15,color:'var(--text)'}}, 'Knowledge'),
+          e('div', {style:{fontSize:11,color:'var(--text-muted)'}}, 'Semantic model · '+tables.length+' tables · '+(allSynonyms.length)+' terms'),
+        ),
+      ),
+      e('div', {style:{display:'flex',gap:4}},
+        ['graph','terms'].map(t =>
+          e('button', {key:t, onClick:()=>setTab(t), style:{
+            padding:'4px 12px', borderRadius:6, border:'1px solid '+(tab===t?'var(--blue)':'var(--glass-border)'),
+            background: tab===t?'rgba(79,125,249,.1)':'transparent', color: tab===t?'var(--blue)':'var(--text-muted)',
+            fontSize:11, cursor:'pointer', fontWeight:tab===t?600:400}},
+            t.charAt(0).toUpperCase()+t.slice(1))
+        ),
+      ),
+    ),
+    // Body
+    e('div', {style:{display:'flex',flex:1,overflow:'hidden'}},
+      tab === 'graph' ? graphContent : termsContent,
+      inspector,
+    ),
+  );
+}
+
 function TasksView({workspace, onRestoreQuery}) {
   const [tasks, setTasks] = useState([]);
   const [expandedTask, setExpandedTask] = useState(null);
@@ -7065,8 +7315,8 @@ function WorkspacePicker({user, onSelect, onCreate, onLogout, returning}) {
 
   const firstName = (user?.display_name || user?.email?.split('@')[0] || 'there').split(' ')[0];
 
-  // ── Returning user (clicked ← back): show clean workspace list only ─────────
-  if (returning) {
+  // ── Always show clean workspace picker (no hero/marketing page) ─────────
+  {
     return e('div', {style:{
       minHeight:'100vh', background:'#faf9f6',
       backgroundImage:'radial-gradient(circle, rgba(0,0,0,.045) 1px, transparent 1px)',
@@ -7663,6 +7913,7 @@ function App() {
     ask: e(AskView, {workspace, addToast, messages:chatMessages, setMessages:setChatMessages}),
     sources: e(SourcesView, {workspace, addToast}),
     data: e(DataView, {workspace, addToast}),
+    knowledge: e(KnowledgeView, {workspace, addToast}),
     tasks: e(TasksView, {workspace, onRestoreQuery: (task) => {
       // Restore a past query into the Ask view
       setChatMessages(m => [...m,
@@ -7681,7 +7932,7 @@ function App() {
     agents: e(AgentsView, {workspace}),
   };
 
-  const fullBleed = view === 'data' || view === 'ask';
+  const fullBleed = view === 'data' || view === 'ask' || view === 'knowledge';
   return e('div', {className:'layout'},
     e(Sidebar, {view, setView, workspace, user, onBack:()=>{
       window.location.href = '/';

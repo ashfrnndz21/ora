@@ -1395,8 +1395,11 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
 
         agent = _state["setup_agents"][workspace_id]
         # Always sync the model in case settings changed since the agent was created
-        if hasattr(agent._llm, "model") and agent._llm.model != model:
-            agent._llm.model = model
+        if hasattr(agent._llm, "model"):
+            from sqlagent.llm import _normalize_model
+            normalized = _normalize_model(model)
+            if agent._llm.model != normalized:
+                agent._llm.model = normalized
 
         message = body.get("message", "")
 
@@ -2082,6 +2085,152 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
             return {"diffs": diffs, "has_changes": bool(diffs)}
         except Exception as exc:
             return {"diffs": [], "has_changes": False, "error": str(exc)}
+
+    # ── Semantic Model (v2.0) ────────────────────────────────────────────────
+
+    @app.get("/api/semantic", tags=["semantic"])
+    async def get_semantic_model(workspace_id: str = "", user=Depends(get_current_user)):
+        """Return the OraSpec semantic model for a workspace as JSON.
+
+        If no semantic model exists yet, auto-generates one from schema introspection.
+        Returns graph-ready data: tables with classified columns, relationships with
+        confidence, metrics, synonyms, and provenance.
+        """
+        from sqlagent.semantic.model import OraSpec, LogicalTable, Dimension, TimeDimension, Measure, Relationship, DataType, AggregationType, TimeGrain
+
+        agent = await _get_or_create_agent(workspace_id, user.user_id)
+
+        # Check if workspace has a persisted semantic model
+        ws_dir = os.path.join(os.path.expanduser("~"), ".sqlagent", "uploads", workspace_id)
+        spec_path = os.path.join(ws_dir, "semantic_model.yaml")
+
+        if os.path.exists(spec_path):
+            from sqlagent.semantic.loader import load_oraspec
+            spec = load_oraspec(spec_path)
+            return spec.model_dump(mode="json")
+
+        # Auto-generate from connected sources
+        tables: list[dict] = []
+        relationships: list[dict] = []
+
+        for sid, conn in agent.services.connectors.items():
+            try:
+                snap = await conn.introspect()
+            except Exception:
+                continue
+
+            for tbl in snap.tables:
+                dims = []
+                time_dims = []
+                measures = []
+
+                for col in tbl.columns:
+                    dt_lower = (col.data_type or "string").lower().split("(")[0].strip()
+                    samples = getattr(col, "sample_values", None) or []
+
+                    # Use SQL type to structurally route (LLM classification comes via Semantic Agent)
+                    if dt_lower in ("date", "datetime", "timestamp", "timestamptz"):
+                        time_dims.append({
+                            "name": col.name,
+                            "display_name": col.name.replace("_", " ").title(),
+                            "description": "",
+                            "expr": col.name,
+                            "time_grain": "day",
+                            "synonyms": [],
+                            "source": "auto",
+                            "confidence": 0.6,
+                        })
+                    elif dt_lower in ("int", "integer", "bigint", "float", "double", "decimal", "numeric", "number", "money", "real"):
+                        measures.append({
+                            "name": col.name,
+                            "display_name": col.name.replace("_", " ").title(),
+                            "description": "",
+                            "expr": col.name,
+                            "data_type": "decimal" if dt_lower in ("decimal", "numeric", "money") else "float" if dt_lower in ("float", "double", "real") else "integer",
+                            "aggregation": "sum",
+                            "synonyms": [],
+                            "source": "auto",
+                            "confidence": 0.6,
+                        })
+                    else:
+                        dims.append({
+                            "name": col.name,
+                            "display_name": col.name.replace("_", " ").title(),
+                            "description": "",
+                            "expr": col.name,
+                            "data_type": "string",
+                            "synonyms": [],
+                            "sample_values": [str(v) for v in samples[:10]] if samples else [],
+                            "source": "auto",
+                            "confidence": 0.6,
+                        })
+
+                    # Detect FK relationships
+                    fk = getattr(col, "foreign_key", None)
+                    if fk and isinstance(fk, dict):
+                        relationships.append({
+                            "from_table": tbl.name,
+                            "from_column": col.name,
+                            "to_table": fk.get("table", ""),
+                            "to_column": fk.get("column", ""),
+                            "join_type": "inner",
+                            "source": "fk",
+                            "confidence": 0.95,
+                            "confirmed": True,
+                        })
+
+                backend = "duckdb"
+                if hasattr(conn, "dialect"):
+                    backend = getattr(conn, "dialect", "duckdb")
+
+                tables.append({
+                    "name": tbl.name,
+                    "display_name": tbl.name.replace("_", " ").title(),
+                    "description": "",
+                    "table": tbl.name,
+                    "backend": backend,
+                    "dimensions": dims,
+                    "time_dimensions": time_dims,
+                    "measures": measures,
+                    "filters": [],
+                    "source": "auto",
+                    "confidence": 0.6,
+                })
+
+        return {
+            "name": workspace_id,
+            "version": "1.0",
+            "description": "Auto-generated semantic model",
+            "tables": tables,
+            "relationships": relationships,
+            "metrics": [],
+            "verified_queries": [],
+            "custom_instructions": [],
+            "synonyms": [],
+            "stats": {
+                "tables": len(tables),
+                "dimensions": sum(len(t["dimensions"]) for t in tables),
+                "time_dimensions": sum(len(t["time_dimensions"]) for t in tables),
+                "measures": sum(len(t["measures"]) for t in tables),
+                "relationships": len(relationships),
+                "avg_confidence": 0.6,
+                "backends": list({t["backend"] for t in tables}),
+            },
+        }
+
+    @app.post("/api/semantic/save", tags=["semantic"])
+    async def save_semantic_model(request: Request, workspace_id: str = "", user=Depends(get_current_user)):
+        """Save an OraSpec semantic model YAML for a workspace."""
+        from sqlagent.semantic.model import OraSpec
+        from sqlagent.semantic.loader import save_oraspec
+
+        body = await request.json()
+        spec = OraSpec(**body)
+        ws_dir = os.path.join(os.path.expanduser("~"), ".sqlagent", "uploads", workspace_id)
+        os.makedirs(ws_dir, exist_ok=True)
+        spec_path = os.path.join(ws_dir, "semantic_model.yaml")
+        save_oraspec(spec, spec_path)
+        return {"status": "saved", "path": spec_path}
 
     # ── SOUL ──────────────────────────────────────────────────────────────────
 
