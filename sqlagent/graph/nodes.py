@@ -631,24 +631,50 @@ def make_generate_node(services: Any):
                     + "\nDo NOT use the original user terms — use the resolved values above.]"
                 )
 
-        # ── Inject Semantic Reasoning Agent output (v2.0) ────────────────
-        # Structured filters/metrics/tables from the reasoning agent
+        # ── Also build entity_map from Semantic Reasoning Agent output ────
+        # The reasoning agent returns new_aliases which map user terms → DB values.
+        # These should be substituted in the NL query so the SQL Agent sees the
+        # actual stored values, not the user's abbreviations.
         sem_reasoning = state.get("semantic_reasoning")
+        if sem_reasoning and sem_reasoning.get("new_aliases") and not entity_map:
+            import re as _re
+            entity_map = sem_reasoning["new_aliases"]
+            substituted = nl_query_for_gen
+            for user_term, stored_val in sorted(entity_map.items(), key=lambda x: -len(x[0])):
+                if user_term != stored_val and isinstance(user_term, str) and isinstance(stored_val, str):
+                    substituted = _re.sub(
+                        r'\b' + _re.escape(user_term) + r'\b',
+                        stored_val,
+                        substituted,
+                        flags=_re.IGNORECASE,
+                    )
+            nl_query_for_gen = substituted
+
+        # ── Inject Semantic Reasoning Agent structured output ─────────────
         if sem_reasoning and sem_reasoning.get("filters"):
-            reasoning_ctx = "\n\n[SEMANTIC REASONING — the Semantic Agent analyzed your question:\n"
+            reasoning_ctx = "\n\n[CRITICAL — SEMANTIC RESOLUTION (you MUST follow these instructions):\n"
             if sem_reasoning.get("resolved_query"):
-                reasoning_ctx += f"  Interpreted as: {sem_reasoning['resolved_query']}\n"
+                reasoning_ctx += f"  The question means: {sem_reasoning['resolved_query']}\n\n"
+            reasoning_ctx += "  REQUIRED SQL WHERE FILTERS (use these EXACT values — they are the actual values stored in the database):\n"
             for f in sem_reasoning["filters"]:
                 tbl = f.get("table", "")
                 col = f.get("column", "")
                 op = f.get("operator", "=")
                 val = f.get("value", "")
-                reasoning_ctx += f"  FILTER: {tbl}.{col} {op} '{val}'\n"
+                if isinstance(val, list):
+                    val_str = ", ".join(f"'{v}'" for v in val)
+                    reasoning_ctx += f"  WHERE {col} IN ({val_str})\n"
+                else:
+                    reasoning_ctx += f"  WHERE {col} {op} '{val}'\n"
             if sem_reasoning.get("metrics"):
-                reasoning_ctx += f"  METRICS: {', '.join(sem_reasoning['metrics'])}\n"
+                reasoning_ctx += f"\n  SELECT these columns: {', '.join(sem_reasoning['metrics'])}\n"
             if sem_reasoning.get("tables"):
-                reasoning_ctx += f"  TABLES: {', '.join(sem_reasoning['tables'])}\n"
-            reasoning_ctx += "  Use these EXACT column names, table names, and values in your SQL.]"
+                reasoning_ctx += f"  FROM these tables: {', '.join(sem_reasoning['tables'])}\n"
+            reasoning_ctx += (
+                "\n  IMPORTANT: Do NOT use ISO codes (PHL, MYS, VNM, etc.) unless those are the actual stored values.\n"
+                "  The values above are the EXACT values from the database. Use them verbatim in your SQL.\n"
+                "  Do NOT invent or guess column values — use only what is specified above.]"
+            )
             nl_query_for_gen += reasoning_ctx
 
         if schema_exploration:

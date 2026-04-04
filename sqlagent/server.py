@@ -2265,15 +2265,34 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
 
         real_confidence = round(min(base_confidence + sem_enrichments, 0.95), 2)
 
-        # Apply real confidence to all auto-generated entries
+        # Apply confidence per-column based on what the Semantic Agent knows
+        # Columns WITH descriptions from semantic analysis get higher confidence
+        # Columns without descriptions stay at base
         for t in tables:
-            t["confidence"] = real_confidence
+            has_desc = bool(t.get("description"))
+            t["confidence"] = real_confidence if has_desc else base_confidence + 0.10
             for d in t.get("dimensions", []):
-                d["confidence"] = real_confidence
+                has_col_desc = bool(d.get("description"))
+                has_samples = bool(d.get("sample_values"))
+                d["confidence"] = round(min(
+                    base_confidence
+                    + (0.20 if has_col_desc else 0)
+                    + (0.10 if has_samples else 0)
+                    + (0.10 if has_sem_context else 0)
+                    + (0.05 if has_aliases else 0),
+                    0.95
+                ), 2)
             for m in t.get("measures", []):
-                m["confidence"] = real_confidence
+                has_col_desc = bool(m.get("description"))
+                m["confidence"] = round(min(
+                    base_confidence
+                    + (0.20 if has_col_desc else 0)
+                    + (0.10 if has_sem_context else 0)
+                    + (0.05 if has_aliases else 0),
+                    0.95
+                ), 2)
             for td in t.get("time_dimensions", []):
-                td["confidence"] = real_confidence
+                td["confidence"] = round(base_confidence + 0.15, 2)
 
         synonyms: list[dict] = []
         activity: list[dict] = []
