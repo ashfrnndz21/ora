@@ -1003,6 +1003,89 @@ def make_correct_node(services: Any):
     return correct_node
 
 
+def make_validate_node(services: Any):
+    """Ora validation — checks if the result actually answers the user's question.
+
+    If the result is empty or doesn't match the question intent, Ora can
+    re-route back to the Semantic Agent or SQL Agent with feedback.
+    """
+
+    async def validate_node(state: QueryState) -> dict:
+        nl_query = state["nl_query"]
+        sql = state.get("sql", "")
+        rows = state.get("rows", [])
+        row_count = state.get("row_count", 0)
+        error = state.get("execution_error", "")
+        semantic_reasoning = state.get("semantic_reasoning")
+        correction_round = state.get("correction_round", 0)
+
+        # If execution succeeded with data, validate
+        if not error and row_count > 0:
+            # Quick structural check — if semantic reasoning specified filters,
+            # verify the result actually contains the expected entities
+            if semantic_reasoning and semantic_reasoning.get("filters"):
+                expected_values = []
+                for f in semantic_reasoning["filters"]:
+                    val = f.get("value", "")
+                    if isinstance(val, str) and val:
+                        expected_values.append(val.lower())
+                    elif isinstance(val, list):
+                        expected_values.extend(v.lower() for v in val if isinstance(v, str))
+
+                # Check if any expected entity appears in the result rows
+                if expected_values and rows:
+                    found_any = False
+                    for row in rows[:20]:
+                        for v in row.values():
+                            if isinstance(v, str) and v.lower() in expected_values:
+                                found_any = True
+                                break
+                        if found_any:
+                            break
+
+                    if not found_any and correction_round < 2:
+                        # Result doesn't contain expected entities — flag for retry
+                        logger.warning(
+                            "validate.mismatch",
+                            expected=expected_values[:5],
+                            got_rows=row_count,
+                        )
+                        return {
+                            "execution_error": (
+                                f"Validation: result has {row_count} rows but none contain "
+                                f"the expected entities ({', '.join(expected_values[:3])}). "
+                                f"The SQL WHERE clause may be using wrong values. "
+                                f"Use the EXACT values from the SEMANTIC REASONING section."
+                            ),
+                            "correction_round": correction_round,
+                            "trace_events": state.get("trace_events", []) + [{
+                                "node": "validate",
+                                "status": "retry",
+                                "summary": f"Result doesn't contain expected entities — retrying",
+                            }],
+                        }
+
+            # Passed validation
+            return {
+                "trace_events": state.get("trace_events", []) + [{
+                    "node": "validate",
+                    "status": "completed",
+                    "summary": f"Validated {row_count} rows — result matches question",
+                }],
+            }
+
+        # Empty result or error — pass through (respond node will handle)
+        return {
+            "trace_events": state.get("trace_events", []) + [{
+                "node": "validate",
+                "status": "completed",
+                "summary": f"{'Empty result' if not error else 'Error'} — passing to respond",
+            }],
+        }
+
+    return validate_node
+
+
 def make_respond_node(services: Any):
     """Generate NL summary + follow-ups + chart config from results."""
 
@@ -1607,6 +1690,22 @@ def make_learn_node(services: Any):
                             await semantic_memory.save_concept_column(source_id, concept, col)
                         except Exception as exc:
                             logger.debug("learn.semantic_memory_concept_failed", error=str(exc))
+
+        # ── Strengthen semantic aliases from successful queries ─────────────
+        # When a query succeeds, the entity mappings used are confirmed correct.
+        # Strengthen their confidence in the semantic layer.
+        if state.get("succeeded") and state.get("semantic_reasoning"):
+            sem_r = state["semantic_reasoning"]
+            ws_id = state.get("workspace_id", "")
+            target_sources = state.get("target_sources", [])
+            if sem_r.get("new_aliases") and ws_id and target_sources:
+                try:
+                    from sqlagent.semantic_agent import strengthen_alias
+                    for alias, canonical in sem_r["new_aliases"].items():
+                        for sid in target_sources:
+                            strengthen_alias(ws_id, sid, alias, canonical)
+                except Exception:
+                    pass
 
         # SOUL observation
         if services.soul and state.get("succeeded"):

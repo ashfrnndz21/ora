@@ -1,11 +1,28 @@
 """Compile the LangGraph StateGraph for query orchestration.
 
 This is the heart of sqlagent. The graph routes queries through:
-- Simple path:      ora → prune → retrieve → plan → generate → execute → respond → learn
-- Cross-source:     ora → fan_out → synthesize → respond → learn
-- Correction:       execute → correct → execute (retry, up to max_corrections)
 
-Ora (unified orchestrator) replaces the former understand → semantic_resolve → decompose chain.
+- Simple path:
+    ora (intent + semantic reasoning + routing)
+    → prune (schema agent)
+    → retrieve (memory)
+    → plan
+    → generate (SQL agent)
+    → execute
+    → validate (Ora checks: does result answer the question?)
+    → respond (NL + confidence + chart)
+    → learn (saves full chain: original query + resolved + SQL + result)
+
+- Cross-source:
+    ora → fan_out → synthesize → respond → learn
+
+- Correction loop:
+    execute → validate (mismatch?) → correct → execute (retry)
+    execute → correct (SQL error) → execute (retry)
+
+Ora is the orchestrator. It calls the Semantic Agent to resolve user terms,
+then routes to Schema Agent (prune) and SQL Agent (generate).
+After execution, Ora validates the result matches the question.
 """
 
 from __future__ import annotations
@@ -23,6 +40,7 @@ from sqlagent.graph.nodes import (
     make_generate_node,
     make_execute_node,
     make_correct_node,
+    make_validate_node,
     make_respond_node,
     make_learn_node,
     make_fan_out_node,
@@ -59,6 +77,17 @@ def route_after_execute(state: QueryState) -> str:
     return "respond"
 
 
+def route_after_validate(state: QueryState) -> str:
+    """After validation: passed → respond, mismatch → correct for retry."""
+    error = state.get("execution_error", "")
+    if error and "Validation:" in error:
+        correction_round = state.get("correction_round", 0)
+        max_corrections = state.get("max_corrections", 3)
+        if correction_round < max_corrections:
+            return "correct"
+    return "respond"
+
+
 def route_after_correct(state: QueryState) -> str:
     """After correction: always retry execution."""
     return "execute"
@@ -89,6 +118,7 @@ def compile_query_graph(services: Any) -> Any:
     graph.add_node("generate", make_generate_node(services))
     graph.add_node("execute", make_execute_node(services))
     graph.add_node("correct", make_correct_node(services))
+    graph.add_node("validate", make_validate_node(services))
     graph.add_node("respond", make_respond_node(services))
     graph.add_node("learn", make_learn_node(services))
     graph.add_node("fan_out", make_fan_out_node(services))
@@ -113,10 +143,20 @@ def compile_query_graph(services: Any) -> Any:
     graph.add_edge("plan", "generate")
     graph.add_edge("generate", "execute")
 
-    # ── After execute: success → respond, error → correct ─────────────────────
+    # ── After execute: success → validate, error → correct ─────────────────────
     graph.add_conditional_edges(
         "execute",
         route_after_execute,
+        {
+            "respond": "validate",   # validate BEFORE responding
+            "correct": "correct",
+        },
+    )
+
+    # ── After validate: passed → respond, mismatch → correct ─────────────────
+    graph.add_conditional_edges(
+        "validate",
+        route_after_validate,
         {
             "respond": "respond",
             "correct": "correct",
