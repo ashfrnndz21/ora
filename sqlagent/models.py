@@ -460,6 +460,7 @@ class PipelineResult:
     nl_response: str = ""
     follow_ups: list[str] = field(default_factory=list)
     chart_config: dict | None = None
+    confidence: dict | None = None  # {"total": 85, "level": "high", "reasoning": "..."}
 
     # Metrics
     total_tokens: int = 0

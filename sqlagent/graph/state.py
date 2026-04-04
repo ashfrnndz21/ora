@@ -99,6 +99,8 @@ class QueryState(TypedDict, total=False):
     nl_response: str
     follow_ups: list[str]
     chart_config: dict | None  # {"type": "bar", "x": "col", "y": "col", ...}
+    confidence: dict | None  # {"total": 85, "level": "high", "reasoning": "..."}
+    semantic_reasoning: dict | None  # from reason_about_query()
 
     # ── Budget ────────────────────────────────────────────────────────────────
     tokens_used: int

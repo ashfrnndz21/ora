@@ -328,6 +328,7 @@ class SQLAgent:
             nl_response=result_state.get("nl_response", ""),
             follow_ups=result_state.get("follow_ups", []),
             chart_config=result_state.get("chart_config"),
+            confidence=result_state.get("confidence"),
             total_tokens=result_state.get("tokens_used", 0),
             total_cost_usd=result_state.get("cost_usd", 0.0),
             latency_ms=trace.total_latency_ms,

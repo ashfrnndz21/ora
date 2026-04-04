@@ -2845,6 +2845,22 @@ function ResultBlock({data: d, addToast, setQuery, workspace}) {
   return e('div', {className:'fade-in', style:{marginBottom:24}},
     d.trace && e(TraceTimeline, {trace:d.trace, collapsed:true}),
     d.nl_response && e('div', {className:'result-nl', dangerouslySetInnerHTML:{__html:md(d.nl_response)}}),
+
+    // Confidence badge (v2.0)
+    d.confidence && e('div', {style:{display:'flex',alignItems:'center',gap:8,marginBottom:10,padding:'6px 10px',borderRadius:6,
+      background: d.confidence.level==='high'?'rgba(34,197,94,.06)':d.confidence.level==='medium'?'rgba(245,158,11,.06)':'rgba(239,68,68,.06)',
+      border: '1px solid '+(d.confidence.level==='high'?'rgba(34,197,94,.15)':d.confidence.level==='medium'?'rgba(245,158,11,.15)':'rgba(239,68,68,.15)'),
+    }},
+      e('div', {style:{fontSize:16,fontWeight:700,fontFamily:'var(--font-mono)',
+        color: d.confidence.level==='high'?'var(--green)':d.confidence.level==='medium'?'var(--amber)':'var(--red)'}},
+        d.confidence.total+'/100'),
+      e('div', {style:{flex:1}},
+        e('div', {style:{fontSize:11,fontWeight:500,color:'var(--text)',marginBottom:1}},
+          d.confidence.level==='high'?'High confidence':d.confidence.level==='medium'?'Medium confidence':'Low confidence'),
+        d.confidence.reasoning && e('div', {style:{fontSize:10,color:'var(--text-muted)'}}, d.confidence.reasoning),
+      ),
+    ),
+
     (d.sql || d.rows) && e('div', {className:'result-block'},
       e('div', {className:'result-tabs'},
         ['sql','table', d.chart_config?'chart':null].filter(Boolean).map(t =>

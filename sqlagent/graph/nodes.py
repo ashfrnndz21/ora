@@ -1236,10 +1236,28 @@ def make_respond_node(services: Any):
         tokens = resp.tokens_input + resp.tokens_output
         latency = int((time.monotonic() - started) * 1000)
 
+        # ── Confidence scoring (LLM-assessed) ────────────────────────────
+        confidence_data = None
+        try:
+            from sqlagent.confidence import score_confidence
+            confidence_result = await score_confidence(
+                question=nl_query,
+                sql=sql,
+                row_count=row_count,
+                corrections=state.get("correction_round", 0),
+                error=error,
+                semantic_reasoning=state.get("semantic_reasoning"),
+                llm=services.llm,
+            )
+            confidence_data = confidence_result.to_dict()
+        except Exception as _conf_err:
+            logger.warning("confidence.failed", error=str(_conf_err))
+
         return {
             "nl_response": parsed.get("summary", resp.content),
             "follow_ups": parsed.get("follow_ups", []),
             "chart_config": chart_config,
+            "confidence": confidence_data,
             "completed_at": datetime.now(timezone.utc).isoformat(),
             "tokens_used": state.get("tokens_used", 0) + tokens,
             "cost_usd": state.get("cost_usd", 0.0) + resp.cost_usd,

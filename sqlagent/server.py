@@ -460,6 +460,7 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
             "nl_response": result.nl_response,
             "follow_ups": result.follow_ups,
             "chart_config": result.chart_config,
+            "confidence": getattr(result, 'confidence', None),
             "total_tokens": result.total_tokens,
             "total_cost_usd": result.total_cost_usd,
             "latency_ms": result.latency_ms,
