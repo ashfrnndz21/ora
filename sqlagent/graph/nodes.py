@@ -607,7 +607,6 @@ def make_generate_node(services: Any):
             nl_query_for_gen = substituted
 
             # Also inject structured resolution hint into the generation prompt
-            # so the SQL Agent knows EXACTLY which column and value to filter on
             resolution_hints = []
             for user_term, stored_val in entity_map.items():
                 if user_term != stored_val:
@@ -618,6 +617,26 @@ def make_generate_node(services: Any):
                     + "\n".join(resolution_hints)
                     + "\nDo NOT use the original user terms — use the resolved values above.]"
                 )
+
+        # ── Inject Semantic Reasoning Agent output (v2.0) ────────────────
+        # Structured filters/metrics/tables from the reasoning agent
+        sem_reasoning = state.get("semantic_reasoning")
+        if sem_reasoning and sem_reasoning.get("filters"):
+            reasoning_ctx = "\n\n[SEMANTIC REASONING — the Semantic Agent analyzed your question:\n"
+            if sem_reasoning.get("resolved_query"):
+                reasoning_ctx += f"  Interpreted as: {sem_reasoning['resolved_query']}\n"
+            for f in sem_reasoning["filters"]:
+                tbl = f.get("table", "")
+                col = f.get("column", "")
+                op = f.get("operator", "=")
+                val = f.get("value", "")
+                reasoning_ctx += f"  FILTER: {tbl}.{col} {op} '{val}'\n"
+            if sem_reasoning.get("metrics"):
+                reasoning_ctx += f"  METRICS: {', '.join(sem_reasoning['metrics'])}\n"
+            if sem_reasoning.get("tables"):
+                reasoning_ctx += f"  TABLES: {', '.join(sem_reasoning['tables'])}\n"
+            reasoning_ctx += "  Use these EXACT column names, table names, and values in your SQL.]"
+            nl_query_for_gen += reasoning_ctx
 
         if schema_exploration:
             # Pull distinct values hint from schema to guide entity mapping
@@ -2591,6 +2610,59 @@ def make_ora_node(services: Any):
         raw_entity_filters = list(entity_filters)
         entity_filters = _expand_group_entities(entity_filters)
 
+        # ── Phase 2.5: Semantic Reasoning Agent ─────────────────────────────
+        # Single LLM call that reasons about the ENTIRE query in data context.
+        # Maps user terms to exact columns, values, tables, and metrics.
+        # This is the primary intelligence — everything below is secondary.
+        semantic_reasoning = None
+        try:
+            from sqlagent.semantic_agent import (
+                reason_about_query, load_context as load_sem_ctx,
+                SemanticReasoning,
+            )
+            ws_id = state.get("workspace_id", "")
+
+            # Load connect-time semantic contexts for all sources
+            sem_ctxs = {}
+            for sid in target_sources:
+                ctx = load_sem_ctx(sid, ws_id) if ws_id else None
+                if ctx:
+                    sem_ctxs[sid] = ctx
+
+            semantic_reasoning = await reason_about_query(
+                question=nl_query,
+                source_ids=target_sources,
+                workspace_id=ws_id,
+                connectors=services.connectors,
+                llm=services.llm,
+                semantic_contexts=sem_ctxs if sem_ctxs else None,
+            )
+
+            if semantic_reasoning and semantic_reasoning.filters:
+                # Apply reasoning results to entity_filters for downstream
+                for f in semantic_reasoning.filters:
+                    val = f.get("value", "")
+                    if val and val not in entity_filters:
+                        entity_filters.append(val)
+
+                ora_reasoning += (
+                    f"\nSemantic Reasoning: {semantic_reasoning.reasoning}"
+                    f"\n  Filters: {semantic_reasoning.filters}"
+                    f"\n  Tables: {semantic_reasoning.tables}"
+                    f"\n  Metrics: {semantic_reasoning.metrics}"
+                    f"\n  Confidence: {semantic_reasoning.confidence}"
+                )
+
+                # Save new aliases learned from this query
+                if semantic_reasoning.new_aliases:
+                    ora_reasoning += (
+                        f"\n  New aliases: "
+                        + ", ".join(f"{k}→{v}" for k, v in semantic_reasoning.new_aliases.items())
+                    )
+
+        except Exception as _reason_err:
+            logger.warning("semantic.reasoning.failed_in_ora", error=str(_reason_err))
+
         # ── Phase 3: Data coverage analysis ──────────────────────────────────
         # For each source: check SemanticMemory first, then live SQL scan.
         # Produces: source_coverage (source_id → list of found entities)
@@ -2622,78 +2694,11 @@ def make_ora_node(services: Any):
                     except Exception:
                         pass
 
-                # ── Semantic Agent resolution (v2.0 — replaces difflib) ──────
-                # Uses LLM reasoning to resolve entities, not string distance.
-                # Checks learned aliases first, then abbreviation maps, then LLM.
-                if len(found_entities) < len(entity_filters):
-                    try:
-                        from sqlagent.semantic_agent import (
-                            resolve_entities, load_context as load_sem_ctx,
-                        )
-                        # Load the connect-time semantic context for this source
-                        ws_id = state.get("workspace_id", "")
-                        sem_ctx = load_sem_ctx(sid, ws_id) if ws_id else None
-
-                        # Resolve unresolved entities via Semantic Agent
-                        unresolved = [e for e in entity_filters if e not in found_entities]
-                        if unresolved:
-                            resolution = await resolve_entities(
-                                entities=unresolved,
-                                source_id=sid,
-                                workspace_id=ws_id,
-                                connector=conn,
-                                llm=services.llm,
-                                semantic_context=sem_ctx,
-                            )
-
-                            # Apply resolved aliases to entity_filters
-                            if resolution.entity_map:
-                                entity_filters = [
-                                    resolution.entity_map.get(e, e) for e in entity_filters
-                                ]
-                                entities_lower = {e.lower(): e for e in entity_filters}
-                                # Mark resolved entities as found
-                                for original, canonical in resolution.entity_map.items():
-                                    if canonical not in found_entities:
-                                        found_entities.append(canonical)
-
-                                provenance_parts = []
-                                for ent, src in resolution.resolved_from.items():
-                                    canonical = resolution.entity_map.get(ent, ent)
-                                    provenance_parts.append(f"{ent}→{canonical} ({src})")
-                                ora_reasoning += (
-                                    f"\nSemantic Agent resolved: "
-                                    + ", ".join(provenance_parts)
-                                )
-                                if resolution.reasoning:
-                                    ora_reasoning += f"\n  Reasoning: {resolution.reasoning}"
-
-                            # Store resolution in state for downstream nodes
-                            state_updates = state.get("semantic_resolution") or {}
-                            state_updates[sid] = {
-                                "entity_map": resolution.entity_map,
-                                "filter_hints": resolution.filter_hints,
-                                "confidence": resolution.confidence,
-                                "llm_called": resolution.llm_called,
-                                "resolved_from": resolution.resolved_from,
-                            }
-
-                            # Also persist to SemanticMemory if available
-                            if semantic_memory and resolution.entity_map:
-                                for alias, canonical in resolution.entity_map.items():
-                                    if alias.lower() != canonical.lower():
-                                        try:
-                                            await semantic_memory.save_entity_alias(
-                                                sid, alias, canonical
-                                            )
-                                        except Exception:
-                                            pass
-                    except Exception as _resolve_err:
-                        logger.warning(
-                            "semantic.resolve_failed",
-                            source_id=sid,
-                            error=str(_resolve_err),
-                        )
+                # ── Semantic Reasoning Agent (v2.0) ──────────────────────────
+                # Single LLM call with full schema context. Reasons about
+                # what the user means — maps terms to exact columns/values.
+                # Replaces lookup-based entity resolution entirely.
+                pass  # coverage scan above is now secondary — reasoning is primary
 
                 if mem_entity_col:
                     source_entity_cols[sid] = mem_entity_col
@@ -2987,7 +2992,10 @@ def make_ora_node(services: Any):
             "max_corrections": services.config.max_corrections,
             "sub_queries": sub_queries,
             "decomposition_plan": decomposition_plan,
-            "semantic_resolution": primary_resolution.to_dict() if primary_resolution else None,
+            "semantic_resolution": primary_resolution.to_dict() if primary_resolution else (
+                semantic_reasoning.to_dict() if semantic_reasoning and semantic_reasoning.filters else None
+            ),
+            "semantic_reasoning": semantic_reasoning.to_dict() if semantic_reasoning else None,
             "semantic_cache_hit": False,
             "data_context_notes": existing_notes,
             "tokens_used": state.get("tokens_used", 0) + total_tokens,

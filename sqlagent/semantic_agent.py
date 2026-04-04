@@ -845,3 +845,282 @@ def _build_filter_hints(result: SemanticResolution, ctx: SourceSemanticContext |
     for entity, canonical in result.entity_map.items():
         if entity.lower() != canonical.lower():
             result.synonyms[entity] = canonical
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SEMANTIC REASONING AGENT (v2.0 — replaces lookup-based resolution)
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# Single LLM call with full schema context. The LLM REASONS about what the
+# user means in the context of the actual data — no dictionaries, no rules,
+# no confidence thresholds, no alias maps as primary resolution.
+#
+# Previously learned aliases are included as FEW-SHOT CONTEXT, not lookups.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+@dataclass
+class SemanticReasoning:
+    """Output of the Semantic Reasoning Agent — structured query interpretation."""
+
+    resolved_query: str = ""
+    """The user's question rewritten in precise data terms."""
+
+    filters: list[dict] = field(default_factory=list)
+    """[{column, operator, value, table, reasoning}] — exact SQL WHERE conditions."""
+
+    metrics: list[str] = field(default_factory=list)
+    """Column names to SELECT/aggregate."""
+
+    tables: list[str] = field(default_factory=list)
+    """Which tables to query."""
+
+    group_by: list[str] = field(default_factory=list)
+    """Columns to GROUP BY."""
+
+    reasoning: str = ""
+    """How each user term was mapped to data attributes."""
+
+    confidence: float = 0.0
+    """Overall confidence in the interpretation (0.0–1.0)."""
+
+    new_aliases: dict[str, str] = field(default_factory=dict)
+    """New term→value mappings discovered, to save for future queries."""
+
+    def to_sql_context(self) -> str:
+        """Format as structured context for the SQL Agent prompt."""
+        lines = []
+        if self.resolved_query:
+            lines.append(f"Interpreted question: {self.resolved_query}")
+        if self.filters:
+            lines.append("Required SQL filters (use these EXACT values):")
+            for f in self.filters:
+                lines.append(f"  WHERE {f['table']}.{f['column']} {f.get('operator','=')} '{f['value']}'")
+        if self.metrics:
+            lines.append(f"Key columns to include: {', '.join(self.metrics)}")
+        if self.tables:
+            lines.append(f"Primary tables: {', '.join(self.tables)}")
+        if self.group_by:
+            lines.append(f"Group by: {', '.join(self.group_by)}")
+        return "\n".join(lines)
+
+    def to_dict(self) -> dict:
+        return {
+            "resolved_query": self.resolved_query,
+            "filters": self.filters,
+            "metrics": self.metrics,
+            "tables": self.tables,
+            "group_by": self.group_by,
+            "reasoning": self.reasoning,
+            "confidence": self.confidence,
+            "new_aliases": self.new_aliases,
+        }
+
+
+async def reason_about_query(
+    question: str,
+    source_ids: list[str],
+    workspace_id: str,
+    connectors: dict,
+    llm: object,
+    semantic_contexts: dict[str, SourceSemanticContext] | None = None,
+) -> SemanticReasoning:
+    """Semantic Reasoning Agent — understands what the user means in data context.
+
+    ONE LLM call with full schema + sample values + learned context.
+    Returns structured output (filters, metrics, tables) that feeds
+    directly into the SQL Agent.
+
+    This replaces:
+      ✗ alias lookup dictionaries
+      ✗ difflib fuzzy matching
+      ✗ confidence threshold rules
+      ✗ separate entity resolution + column mapping
+
+    With:
+      ✓ One reasoning call with complete data context
+      ✓ LLM understands domain, abbreviations, context
+      ✓ Structured output feeds SQL Agent directly
+      ✓ New aliases extracted and saved automatically
+    """
+    result = SemanticReasoning()
+
+    # ── Build schema context with sample values ──────────────────────────
+    schema_sections: list[str] = []
+
+    for sid in source_ids:
+        conn = connectors.get(sid)
+        if not conn:
+            continue
+
+        try:
+            snap = await conn.introspect()
+        except Exception:
+            continue
+
+        for table in snap.tables[:10]:
+            col_lines = []
+            for col in table.columns[:25]:
+                dt = col.data_type or "unknown"
+                examples = getattr(col, "examples", None) or []
+
+                # For dimension columns, sample more values from the DB
+                dt_lower = dt.lower()
+                is_text = any(t in dt_lower for t in ("varchar", "text", "string", "char"))
+
+                sample_vals = [str(v) for v in examples[:8]]
+                if is_text and len(sample_vals) < 5:
+                    try:
+                        res = await conn.execute(
+                            f'SELECT DISTINCT "{col.name}" FROM "{table.name}" '
+                            f'WHERE "{col.name}" IS NOT NULL LIMIT 30'
+                        )
+                        import pandas as _pd
+                        if isinstance(res, _pd.DataFrame) and not res.empty:
+                            sample_vals = [str(v) for v in res.iloc[:, 0].dropna().tolist()[:30]]
+                    except Exception:
+                        pass
+
+                samples_str = f"  values: {sample_vals}" if sample_vals else ""
+                col_lines.append(f"    {col.name} ({dt}){samples_str}")
+
+            schema_sections.append(
+                f"Table: {table.name}\n" + "\n".join(col_lines)
+            )
+
+    if not schema_sections:
+        result.reasoning = "No schema available for reasoning."
+        return result
+
+    schema_text = "\n\n".join(schema_sections)
+
+    # ── Build learned context (few-shot, not lookup) ─────────────────────
+    learned_context = ""
+    for sid in source_ids:
+        aliases = _load_learned_aliases(workspace_id, sid)
+        if aliases:
+            sample_aliases = list(aliases.items())[:20]
+            learned_context += "\nPreviously learned mappings:\n"
+            learned_context += "\n".join(
+                f"  '{k}' → '{v}'" for k, v in sample_aliases
+            )
+
+    # ── Build semantic analysis context ──────────────────────────────────
+    domain_context = ""
+    if semantic_contexts:
+        for sid, ctx in semantic_contexts.items():
+            if ctx.domain:
+                domain_context += f"\nData domain: {ctx.domain}"
+            if ctx.column_meanings:
+                domain_context += "\nColumn meanings:"
+                for col, meaning in list(ctx.column_meanings.items())[:15]:
+                    domain_context += f"\n  {col}: {meaning}"
+            if ctx.filter_tips:
+                domain_context += "\nQuery tips:"
+                for tip in ctx.filter_tips[:5]:
+                    domain_context += f"\n  • {tip}"
+
+    # ── Single reasoning LLM call ────────────────────────────────────────
+    prompt = f"""\
+You are a Semantic Reasoning Agent for a natural language to SQL system.
+
+The user asked: "{question}"
+
+DATABASE SCHEMA (with sample values for each column):
+{schema_text}
+{domain_context}
+{learned_context}
+
+YOUR TASK: Understand what the user means and map their question to the actual
+database schema. Reason about:
+
+1. What entities/terms does the user mention? Map each to the EXACT column and
+   value in the database. Use the sample values shown above to find matches.
+   Think about abbreviations, codes, informal names, industry jargon.
+
+2. What metrics/measurements is the user asking about? Map to specific columns.
+
+3. Which tables should be queried?
+
+4. What filters (WHERE clauses) are needed?
+
+5. What grouping (GROUP BY) makes sense?
+
+Return JSON:
+{{
+  "resolved_query": "The question rewritten using exact database terminology",
+  "filters": [
+    {{"column": "Country", "operator": "=", "value": "Philippines", "table": "tablename",
+      "reasoning": "PP is informal for Philippines — matches Country column value"}}
+  ],
+  "metrics": ["GenAI_ML", "GenAI_Gap"],
+  "tables": ["all_account_analysis"],
+  "group_by": ["Customer"],
+  "reasoning": "How I mapped each user term to database attributes",
+  "confidence": 0.92,
+  "new_aliases": {{"telcos": "Telecommunications", "pp": "Philippines"}}
+}}
+
+Rules:
+- filter values MUST be EXACT matches from the sample values shown above
+- Do not invent column names or values that don't exist in the schema
+- new_aliases: include any term→value mappings you inferred that should be remembered
+- If you can't confidently map a term, say so in reasoning and set lower confidence
+- Return ONLY valid JSON, no markdown
+"""
+
+    try:
+        resp = await llm.complete(
+            [{"role": "user", "content": prompt}],
+            temperature=0.0,
+            max_tokens=2048,
+            json_mode=True,
+        )
+
+        raw = resp.content.strip()
+        if raw.startswith("```"):
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+            raw = raw.strip().rstrip("```").strip()
+
+        parsed = json.loads(raw)
+
+        result.resolved_query = parsed.get("resolved_query", "")
+        result.filters = parsed.get("filters", [])
+        result.metrics = parsed.get("metrics", [])
+        result.tables = parsed.get("tables", [])
+        result.group_by = parsed.get("group_by", [])
+        result.reasoning = parsed.get("reasoning", "")
+        result.confidence = parsed.get("confidence", 0.5)
+        result.new_aliases = parsed.get("new_aliases", {})
+
+        # Save new aliases for future queries
+        if result.new_aliases:
+            for sid in source_ids:
+                aliases = _load_learned_aliases(workspace_id, sid)
+                new_confs: dict[str, float] = {}
+                for term, value in result.new_aliases.items():
+                    term_lower = term.lower().strip()
+                    if term_lower and term_lower not in aliases:
+                        aliases[term_lower] = value
+                        new_confs[term_lower] = result.confidence
+                if new_confs:
+                    _save_learned_aliases(workspace_id, sid, aliases, new_confs)
+
+        logger.info(
+            "semantic.reasoning.completed",
+            question=question[:80],
+            filters=len(result.filters),
+            metrics=len(result.metrics),
+            tables=result.tables,
+            confidence=result.confidence,
+            new_aliases=len(result.new_aliases),
+        )
+
+    except Exception as exc:
+        logger.warning("semantic.reasoning.failed", error=str(exc))
+        result.reasoning = f"Reasoning failed: {exc}"
+        result.confidence = 0.3
+
+    return result
