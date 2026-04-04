@@ -2655,6 +2655,7 @@ def make_ora_node(services: Any):
         # Maps user terms to exact columns, values, tables, and metrics.
         # This is the primary intelligence — everything below is secondary.
         semantic_reasoning = None
+        _sem_trace = None
         try:
             from sqlagent.semantic_agent import (
                 reason_about_query, load_context as load_sem_ctx,
@@ -2699,6 +2700,24 @@ def make_ora_node(services: Any):
                         f"\n  New aliases: "
                         + ", ".join(f"{k}→{v}" for k, v in semantic_reasoning.new_aliases.items())
                     )
+
+                # Add trace event for Semantic Reasoning (visible in lineage)
+                _sem_trace = {
+                    "node": "semantic_reasoning",
+                    "status": "completed",
+                    "latency_ms": 0,  # included in ora latency
+                    "summary": (
+                        f"Resolved {len(semantic_reasoning.filters)} filters, "
+                        f"{len(semantic_reasoning.new_aliases)} new aliases · "
+                        f"Confidence: {int(semantic_reasoning.confidence * 100)}%"
+                    ),
+                    "thinking": semantic_reasoning.reasoning[:300],
+                    "filters": semantic_reasoning.filters,
+                    "tables": semantic_reasoning.tables,
+                    "metrics": semantic_reasoning.metrics,
+                    "new_aliases": semantic_reasoning.new_aliases,
+                    "confidence": semantic_reasoning.confidence,
+                }
 
                 # ── Disambiguation check ─────────────────────────────────
                 # If reasoning confidence is low, ask user before proceeding
@@ -3063,7 +3082,9 @@ def make_ora_node(services: Any):
             "tokens_used": state.get("tokens_used", 0) + total_tokens,
             "cost_usd": state.get("cost_usd", 0.0) + total_cost,
             "budget_exhausted": False,
-            "trace_events": state.get("trace_events", []) + [{
+            "trace_events": state.get("trace_events", [])
+            + ([_sem_trace] if _sem_trace else [])
+            + [{
                 "node": "ora",
                 "status": "completed",
                 "latency_ms": latency,
