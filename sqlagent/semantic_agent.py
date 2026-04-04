@@ -210,3 +210,317 @@ def load_context(source_id: str, workspace_id: str) -> SourceSemanticContext | N
     except Exception as exc:
         logger.warning("semantic.load_failed", source_id=source_id, error=str(exc))
         return None
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PER-QUERY SEMANTIC RESOLUTION (v2.0)
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# This is the Semantic Agent's per-query work. Called between the understand
+# node and the prune node in the LangGraph pipeline.
+#
+# Strategy (fully agentic — no difflib, no regex, no keyword lists):
+#   1. Check learned aliases (persisted from previous queries) — instant
+#   2. Check abbreviation_maps from connect-time analysis — instant
+#   3. LLM reasoning with actual column values as context — 1 call
+#   4. Save resolved aliases for future queries — persistent learning
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+@dataclass
+class SemanticResolution:
+    """Result of the Semantic Agent's per-query resolution."""
+
+    entity_map: dict[str, str] = field(default_factory=dict)
+    """User term → canonical DB value. E.g. {'MYR': 'MYS', 'PHP': 'PHL'}"""
+
+    synonyms: dict[str, str] = field(default_factory=dict)
+    """Natural language term → column.value. E.g. {'Malaysia': 'MYS'}"""
+
+    filter_hints: list[str] = field(default_factory=list)
+    """SQL WHERE fragments. E.g. ["iso_code IN ('MYS','PHL')"]"""
+
+    reasoning: str = ""
+    """LLM's reasoning trace for the resolution."""
+
+    resolved_from: dict[str, str] = field(default_factory=dict)
+    """Provenance per entity: term → source. E.g. {'MYR': 'llm', 'PHP': 'learned'}"""
+
+    confidence: float = 0.0
+    """Overall resolution confidence 0.0–1.0"""
+
+    llm_called: bool = False
+    """Whether an LLM call was needed (False = all resolved from cache/memory)"""
+
+
+# Persisted learned aliases — source_id → {user_term_lower → canonical_value}
+_learned_aliases: dict[str, dict[str, str]] = {}
+
+
+def _load_learned_aliases(workspace_id: str, source_id: str) -> dict[str, str]:
+    """Load learned aliases from disk."""
+    key = f"{workspace_id}:{source_id}"
+    if key in _learned_aliases:
+        return _learned_aliases[key]
+    try:
+        path = os.path.join(
+            os.path.expanduser("~"), ".sqlagent", "uploads", workspace_id,
+            f"aliases_{source_id}.json"
+        )
+        if os.path.exists(path):
+            with open(path) as f:
+                aliases = json.load(f)
+            _learned_aliases[key] = aliases
+            return aliases
+    except Exception:
+        pass
+    _learned_aliases[key] = {}
+    return _learned_aliases[key]
+
+
+def _save_learned_aliases(workspace_id: str, source_id: str, aliases: dict[str, str]) -> None:
+    """Persist learned aliases to disk."""
+    key = f"{workspace_id}:{source_id}"
+    _learned_aliases[key] = aliases
+    try:
+        base = os.path.join(
+            os.path.expanduser("~"), ".sqlagent", "uploads", workspace_id
+        )
+        os.makedirs(base, exist_ok=True)
+        path = os.path.join(base, f"aliases_{source_id}.json")
+        with open(path, "w") as f:
+            json.dump(aliases, f, indent=2)
+    except Exception as exc:
+        logger.warning("semantic.save_aliases_failed", error=str(exc))
+
+
+async def resolve_entities(
+    entities: list[str],
+    source_id: str,
+    workspace_id: str,
+    connector: object,
+    llm: object,
+    semantic_context: SourceSemanticContext | None = None,
+) -> SemanticResolution:
+    """Resolve user entity terms to canonical DB values using LLM reasoning.
+
+    This is the Semantic Agent's core per-query function. It replaces the old
+    difflib fuzzy matching with agentic LLM-powered resolution.
+
+    Args:
+        entities: User's entity terms, e.g. ['MYR', 'PHP', 'Malaysia']
+        source_id: Which data source to resolve against
+        workspace_id: For loading/saving persistent aliases
+        connector: DB connector for sampling column values
+        llm: LLM provider for reasoning
+        semantic_context: Connect-time analysis (abbreviation_maps, etc.)
+
+    Returns:
+        SemanticResolution with entity_map, synonyms, filter_hints
+    """
+    if not entities:
+        return SemanticResolution(confidence=1.0)
+
+    result = SemanticResolution()
+    unresolved: list[str] = []
+    learned = _load_learned_aliases(workspace_id, source_id)
+
+    # ── Step 1: Check learned aliases (instant, no cost) ─────────────────
+    for entity in entities:
+        key = entity.lower().strip()
+        if key in learned:
+            canonical = learned[key]
+            result.entity_map[entity] = canonical
+            result.resolved_from[entity] = "learned"
+            logger.info("semantic.resolve.learned", entity=entity, canonical=canonical)
+
+    # ── Step 2: Check abbreviation_maps from connect-time analysis ───────
+    if semantic_context and semantic_context.abbreviation_maps:
+        for entity in entities:
+            if entity in result.entity_map:
+                continue  # already resolved
+            entity_lower = entity.lower().strip()
+            for col, abbrev_map in semantic_context.abbreviation_maps.items():
+                # Check both keys and values in the abbreviation map
+                for code, full_name in abbrev_map.items():
+                    if (code.lower() == entity_lower
+                            or full_name.lower() == entity_lower):
+                        result.entity_map[entity] = code
+                        result.resolved_from[entity] = "abbreviation_map"
+                        logger.info(
+                            "semantic.resolve.abbrev",
+                            entity=entity, canonical=code, column=col,
+                        )
+                        break
+                if entity in result.entity_map:
+                    break
+
+    # ── Step 3: Collect unresolved entities for LLM ──────────────────────
+    for entity in entities:
+        if entity not in result.entity_map:
+            unresolved.append(entity)
+
+    if not unresolved:
+        result.confidence = 1.0
+        result.llm_called = False
+        result.reasoning = "All entities resolved from learned aliases or abbreviation maps."
+        _build_filter_hints(result, semantic_context)
+        return result
+
+    # ── Step 4: Sample actual column values for LLM context ──────────────
+    actual_values: dict[str, list[str]] = {}
+    try:
+        snap = await connector.introspect()
+        for table in snap.tables[:5]:
+            for col in table.columns:
+                if col.examples:
+                    actual_values[f"{table.name}.{col.name}"] = [
+                        str(v) for v in col.examples[:20]
+                    ]
+                # Also try to get more values for likely entity columns
+                col_lower = col.name.lower()
+                if any(kw in col_lower for kw in ("code", "iso", "country", "name", "id")):
+                    try:
+                        res = await connector.execute(
+                            f'SELECT DISTINCT "{col.name}" FROM "{table.name}" '
+                            f'WHERE "{col.name}" IS NOT NULL LIMIT 50'
+                        )
+                        import pandas as _pd
+                        if isinstance(res, _pd.DataFrame) and not res.empty:
+                            vals = [str(v) for v in res.iloc[:, 0].dropna().tolist()]
+                            actual_values[f"{table.name}.{col.name}"] = vals
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+
+    # ── Step 5: LLM-powered resolution ───────────────────────────────────
+    values_context = ""
+    for col_path, vals in actual_values.items():
+        values_context += f"  {col_path}: {vals[:30]}\n"
+
+    # Include already-resolved entities as context for the LLM
+    already_resolved = ""
+    if result.entity_map:
+        already_resolved = "\nAlready resolved:\n" + "\n".join(
+            f"  {k} → {v}" for k, v in result.entity_map.items()
+        )
+
+    prompt = f"""\
+You are an entity resolution agent for a database query system.
+
+The user mentioned these entities that need to be mapped to actual values in the database:
+  Unresolved: {unresolved}
+{already_resolved}
+
+Here are the actual values stored in the database columns:
+{values_context}
+
+For each unresolved entity, determine which actual database value it refers to.
+Consider:
+- ISO country codes (MYS=Malaysia, PHL=Philippines, VNM=Vietnam)
+- Currency codes (MYR=Malaysian Ringgit→Malaysia, PHP=Philippine Peso→Philippines)
+- Common abbreviations, nicknames, partial matches
+- The entity might be a different representation of the same thing
+
+Return JSON:
+{{
+  "resolutions": [
+    {{"entity": "MYR", "canonical": "MYS", "reasoning": "MYR is Malaysian Ringgit currency code, maps to Malaysia (MYS)", "confidence": 0.95}},
+  ],
+  "overall_reasoning": "brief summary"
+}}
+
+Rules:
+- canonical MUST be an exact value that exists in the database columns shown above
+- If you cannot confidently resolve an entity, set confidence < 0.5
+- Return ONLY valid JSON, no markdown
+"""
+
+    try:
+        resp = await llm.complete(
+            [{"role": "user", "content": prompt}],
+            temperature=0.0,
+            max_tokens=1024,
+            json_mode=True,
+        )
+        result.llm_called = True
+
+        raw = resp.content.strip()
+        if raw.startswith("```"):
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+            raw = raw.strip().rstrip("```").strip()
+
+        parsed = json.loads(raw)
+        resolutions = parsed.get("resolutions", [])
+        result.reasoning = parsed.get("overall_reasoning", "")
+
+        total_conf = 0.0
+        for res in resolutions:
+            entity = res.get("entity", "")
+            canonical = res.get("canonical", "")
+            conf = res.get("confidence", 0.0)
+            reasoning = res.get("reasoning", "")
+
+            if entity and canonical and conf >= 0.5:
+                result.entity_map[entity] = canonical
+                result.resolved_from[entity] = "llm"
+                total_conf += conf
+
+                # Save to learned aliases for next time
+                learned[entity.lower().strip()] = canonical
+                logger.info(
+                    "semantic.resolve.llm",
+                    entity=entity, canonical=canonical,
+                    confidence=conf, reasoning=reasoning,
+                )
+            else:
+                logger.warning(
+                    "semantic.resolve.low_confidence",
+                    entity=entity, canonical=canonical,
+                    confidence=conf, reasoning=reasoning,
+                )
+
+        # Persist learned aliases
+        if any(v == "llm" for v in result.resolved_from.values()):
+            _save_learned_aliases(workspace_id, source_id, learned)
+
+        # Calculate overall confidence
+        all_confs = [
+            1.0 if result.resolved_from.get(e) in ("learned", "abbreviation_map") else
+            next((r.get("confidence", 0) for r in resolutions if r.get("entity") == e), 0)
+            for e in entities
+        ]
+        result.confidence = sum(all_confs) / len(all_confs) if all_confs else 0.0
+
+    except Exception as exc:
+        logger.warning("semantic.resolve.llm_failed", error=str(exc))
+        result.reasoning = f"LLM resolution failed: {exc}"
+        result.confidence = 0.3
+
+    _build_filter_hints(result, semantic_context)
+    return result
+
+
+def _build_filter_hints(result: SemanticResolution, ctx: SourceSemanticContext | None) -> None:
+    """Generate SQL WHERE fragments from resolved entities."""
+    if not result.entity_map:
+        return
+
+    # Group resolved entities by which column they likely belong to
+    if ctx and ctx.abbreviation_maps:
+        for col, abbrev_map in ctx.abbreviation_maps.items():
+            matched_values = []
+            for entity, canonical in result.entity_map.items():
+                if canonical in abbrev_map:
+                    matched_values.append(canonical)
+            if matched_values:
+                vals_str = ", ".join(f"'{v}'" for v in matched_values)
+                result.filter_hints.append(f"{col} IN ({vals_str})")
+
+    # Also build synonyms map
+    for entity, canonical in result.entity_map.items():
+        if entity.lower() != canonical.lower():
+            result.synonyms[entity] = canonical

@@ -2598,127 +2598,78 @@ def make_ora_node(services: Any):
                     except Exception:
                         pass
 
-                # Live scan when memory miss (or partial miss)
+                # ── Semantic Agent resolution (v2.0 — replaces difflib) ──────
+                # Uses LLM reasoning to resolve entities, not string distance.
+                # Checks learned aliases first, then abbreviation maps, then LLM.
                 if len(found_entities) < len(entity_filters):
                     try:
-                        snap = await conn.introspect()
-                        # Identify entity column candidates
-                        _ecols = []
-                        for t in snap.tables:
-                            for c in t.columns:
-                                if any(kw in c.name.lower() for kw in
-                                       ("country", "name", "entity", "region", "iso")):
-                                    _ecols.append((t.name, c.name))
-                        if not _ecols and snap.tables:
-                            # fallback: first TEXT/VARCHAR column
-                            for t in snap.tables:
-                                for c in t.columns:
-                                    if any(kw in c.data_type.upper() for kw in
-                                           ("VARCHAR", "TEXT", "STRING", "NVARCHAR")):
-                                        _ecols.append((t.name, c.name))
-                                        break
+                        from sqlagent.semantic_agent import (
+                            resolve_entities, load_context as load_sem_ctx,
+                        )
+                        # Load the connect-time semantic context for this source
+                        ws_id = state.get("workspace_id", "")
+                        sem_ctx = load_sem_ctx(sid, ws_id) if ws_id else None
 
-                        import difflib as _difflib
-                        import pandas as _pd
-
-                        # Per-column value sample cache — avoids re-querying same col
-                        _col_sample_cache: dict[tuple[str, str], list[str]] = {}
-
-                        async def _sample_col_values(tname: str, cname: str) -> list[str]:
-                            key = (tname, cname)
-                            if key not in _col_sample_cache:
-                                try:
-                                    res = await conn.execute(
-                                        f'SELECT DISTINCT "{cname}" FROM "{tname}" '
-                                        f'WHERE "{cname}" IS NOT NULL LIMIT 300'
-                                    )
-                                    if isinstance(res, _pd.DataFrame) and not res.empty:
-                                        _col_sample_cache[key] = [
-                                            str(v) for v in res.iloc[:, 0].dropna().tolist()
-                                        ]
-                                    else:
-                                        _col_sample_cache[key] = []
-                                except Exception:
-                                    _col_sample_cache[key] = []
-                            return _col_sample_cache[key]
-
-                        # fuzzy_aliases: original user term → canonical DB value
-                        # (populated during scan, applied to entity_filters after)
-                        _fuzzy_aliases: dict[str, str] = {}
-
-                        scan_found: list[str] = []
-                        best_col: tuple[str, str] | None = None
-                        for tname, cname in _ecols[:6]:
-                            col_found: list[str] = []
-                            actual_vals = await _sample_col_values(tname, cname)
-                            lower_map = {v.lower(): v for v in actual_vals}
-
-                            for entity in entity_filters:
-                                if entity in found_entities:
-                                    continue  # already confirmed from memory
-
-                                # 1. Exact case-insensitive match
-                                if entity.lower() in lower_map:
-                                    col_found.append(entity)
-                                    continue
-
-                                # 2. Fuzzy match against sampled column values
-                                #    Works for any entity type: country codes, SKUs,
-                                #    store IDs, employee names, product codes, etc.
-                                if actual_vals:
-                                    matches = _difflib.get_close_matches(
-                                        entity.lower(), list(lower_map), n=1, cutoff=0.6
-                                    )
-                                    if matches:
-                                        canonical = lower_map[matches[0]]
-                                        col_found.append(entity)
-                                        if canonical.lower() != entity.lower():
-                                            _fuzzy_aliases[entity] = canonical
-
-                            if len(col_found) > len(scan_found):
-                                scan_found = col_found
-                                best_col = (tname, cname)
-
-                        # Apply fuzzy aliases: remap entity_filters so downstream
-                        # SQL generation uses the actual stored values, not user shortcuts
-                        if _fuzzy_aliases:
-                            entity_filters = [
-                                _fuzzy_aliases.get(e, e) for e in entity_filters
-                            ]
-                            entities_lower = {e.lower(): e for e in entity_filters}
-                            # Also remap scan_found to canonical values
-                            scan_found = [_fuzzy_aliases.get(e, e) for e in scan_found]
-                            ora_reasoning += (
-                                "\nFuzzy aliases resolved: "
-                                + ", ".join(f"{k}→{v}" for k, v in _fuzzy_aliases.items())
+                        # Resolve unresolved entities via Semantic Agent
+                        unresolved = [e for e in entity_filters if e not in found_entities]
+                        if unresolved:
+                            resolution = await resolve_entities(
+                                entities=unresolved,
+                                source_id=sid,
+                                workspace_id=ws_id,
+                                connector=conn,
+                                llm=services.llm,
+                                semantic_context=sem_ctx,
                             )
 
-                        if scan_found:
-                            for e in scan_found:
-                                if e not in found_entities:
-                                    found_entities.append(e)
-                        if best_col and not mem_entity_col:
-                            mem_entity_col = best_col
-                            source_entity_cols[sid] = best_col
+                            # Apply resolved aliases to entity_filters
+                            if resolution.entity_map:
+                                entity_filters = [
+                                    resolution.entity_map.get(e, e) for e in entity_filters
+                                ]
+                                entities_lower = {e.lower(): e for e in entity_filters}
+                                # Mark resolved entities as found
+                                for original, canonical in resolution.entity_map.items():
+                                    if canonical not in found_entities:
+                                        found_entities.append(canonical)
 
-                        # Persist discoveries + fuzzy aliases to SemanticMemory
-                        if semantic_memory and scan_found and best_col:
-                            try:
-                                await semantic_memory.save_discovered_entities(
-                                    sid, best_col[0], best_col[1], scan_found
+                                provenance_parts = []
+                                for ent, src in resolution.resolved_from.items():
+                                    canonical = resolution.entity_map.get(ent, ent)
+                                    provenance_parts.append(f"{ent}→{canonical} ({src})")
+                                ora_reasoning += (
+                                    f"\nSemantic Agent resolved: "
+                                    + ", ".join(provenance_parts)
                                 )
-                            except Exception:
-                                pass
-                        if semantic_memory and _fuzzy_aliases:
-                            for alias, canonical in _fuzzy_aliases.items():
-                                try:
-                                    await semantic_memory.save_entity_alias(
-                                        sid, alias, canonical
-                                    )
-                                except Exception:
-                                    pass
-                    except Exception:
-                        pass
+                                if resolution.reasoning:
+                                    ora_reasoning += f"\n  Reasoning: {resolution.reasoning}"
+
+                            # Store resolution in state for downstream nodes
+                            state_updates = state.get("semantic_resolution") or {}
+                            state_updates[sid] = {
+                                "entity_map": resolution.entity_map,
+                                "filter_hints": resolution.filter_hints,
+                                "confidence": resolution.confidence,
+                                "llm_called": resolution.llm_called,
+                                "resolved_from": resolution.resolved_from,
+                            }
+
+                            # Also persist to SemanticMemory if available
+                            if semantic_memory and resolution.entity_map:
+                                for alias, canonical in resolution.entity_map.items():
+                                    if alias.lower() != canonical.lower():
+                                        try:
+                                            await semantic_memory.save_entity_alias(
+                                                sid, alias, canonical
+                                            )
+                                        except Exception:
+                                            pass
+                    except Exception as _resolve_err:
+                        logger.warning(
+                            "semantic.resolve_failed",
+                            source_id=sid,
+                            error=str(_resolve_err),
+                        )
 
                 if mem_entity_col:
                     source_entity_cols[sid] = mem_entity_col
