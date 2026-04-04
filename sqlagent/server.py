@@ -437,7 +437,7 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
     @app.post("/query", tags=["query"])
     async def run_query(request: Request, user=Depends(get_current_user)):
         body = await request.json()
-        query = body.get("nl_query") or body.get("query", "")
+        query = body.get("nl_query") or body.get("query") or body.get("question", "")
         workspace_id = body.get("workspace_id", "")
         session_id = body.get("session_id", "")
         conversation_history = body.get("conversation_history", [])
