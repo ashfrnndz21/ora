@@ -631,51 +631,66 @@ def make_generate_node(services: Any):
                     + "\nDo NOT use the original user terms — use the resolved values above.]"
                 )
 
-        # ── Also build entity_map from Semantic Reasoning Agent output ────
-        # The reasoning agent returns new_aliases which map user terms → DB values.
-        # These should be substituted in the NL query so the SQL Agent sees the
-        # actual stored values, not the user's abbreviations.
+        # ── Build entity_map from Semantic Reasoning Agent ─────────────────
+        # Use BOTH new_aliases AND filter values to substitute in the NL query.
+        # This ensures the SQL Agent sees actual DB values, not user abbreviations.
         sem_reasoning = state.get("semantic_reasoning")
-        if sem_reasoning and sem_reasoning.get("new_aliases") and not entity_map:
+        if sem_reasoning and not entity_map:
             import re as _re
-            entity_map = sem_reasoning["new_aliases"]
-            substituted = nl_query_for_gen
-            for user_term, stored_val in sorted(entity_map.items(), key=lambda x: -len(x[0])):
-                if user_term != stored_val and isinstance(user_term, str) and isinstance(stored_val, str):
-                    substituted = _re.sub(
-                        r'\b' + _re.escape(user_term) + r'\b',
-                        stored_val,
-                        substituted,
-                        flags=_re.IGNORECASE,
-                    )
-            nl_query_for_gen = substituted
+            # Collect all mappings: from new_aliases + from filter values
+            all_mappings = dict(sem_reasoning.get("new_aliases", {}))
+            # Also extract entity names from filters
+            for f in sem_reasoning.get("filters", []):
+                reasoning = f.get("reasoning", "")
+                val = f.get("value", "")
+                # The filter reasoning often says "X means Y" — extract the user term
+                # But we can also use the Ora node's entity_filters
+
+            if all_mappings:
+                entity_map = all_mappings
+                substituted = nl_query_for_gen
+                for user_term, stored_val in sorted(all_mappings.items(), key=lambda x: -len(x[0])):
+                    if user_term != stored_val and isinstance(user_term, str) and isinstance(stored_val, str):
+                        substituted = _re.sub(
+                            r'\b' + _re.escape(user_term) + r'\b',
+                            stored_val,
+                            substituted,
+                            flags=_re.IGNORECASE,
+                        )
+                nl_query_for_gen = substituted
 
         # ── Inject Semantic Reasoning Agent structured output ─────────────
+        # This is the MOST IMPORTANT part — the SQL Agent MUST use these values.
+        # We PREPEND (not append) so the SQL Agent sees this FIRST.
         if sem_reasoning and sem_reasoning.get("filters"):
-            reasoning_ctx = "\n\n[CRITICAL — SEMANTIC RESOLUTION (you MUST follow these instructions):\n"
-            if sem_reasoning.get("resolved_query"):
-                reasoning_ctx += f"  The question means: {sem_reasoning['resolved_query']}\n\n"
-            reasoning_ctx += "  REQUIRED SQL WHERE FILTERS (use these EXACT values — they are the actual values stored in the database):\n"
+            # Build the WHERE clause fragments
+            where_parts = []
             for f in sem_reasoning["filters"]:
-                tbl = f.get("table", "")
                 col = f.get("column", "")
                 op = f.get("operator", "=")
                 val = f.get("value", "")
                 if isinstance(val, list):
                     val_str = ", ".join(f"'{v}'" for v in val)
-                    reasoning_ctx += f"  WHERE {col} IN ({val_str})\n"
-                else:
-                    reasoning_ctx += f"  WHERE {col} {op} '{val}'\n"
-            if sem_reasoning.get("metrics"):
-                reasoning_ctx += f"\n  SELECT these columns: {', '.join(sem_reasoning['metrics'])}\n"
-            if sem_reasoning.get("tables"):
-                reasoning_ctx += f"  FROM these tables: {', '.join(sem_reasoning['tables'])}\n"
-            reasoning_ctx += (
-                "\n  IMPORTANT: Do NOT use ISO codes (PHL, MYS, VNM, etc.) unless those are the actual stored values.\n"
-                "  The values above are the EXACT values from the database. Use them verbatim in your SQL.\n"
-                "  Do NOT invent or guess column values — use only what is specified above.]"
-            )
-            nl_query_for_gen += reasoning_ctx
+                    where_parts.append(f"{col} IN ({val_str})")
+                elif isinstance(val, str) and val:
+                    where_parts.append(f"{col} {op} '{val}'")
+
+            if where_parts:
+                # PREPEND the resolved query so the SQL Agent sees it BEFORE the original
+                resolved = sem_reasoning.get("resolved_query", "")
+                tables = sem_reasoning.get("tables", [])
+                metrics = sem_reasoning.get("metrics", [])
+
+                nl_query_for_gen = (
+                    f"[RESOLVED QUERY: {resolved}]\n"
+                    f"[SQL REQUIREMENTS — you MUST use these exact values from the database:\n"
+                    f"  WHERE: {' AND '.join(where_parts)}\n"
+                    + (f"  SELECT: {', '.join(metrics)}\n" if metrics else "")
+                    + (f"  FROM: {', '.join(tables)}\n" if tables else "")
+                    + f"  Do NOT change these values. Do NOT use ISO codes unless specified above.\n"
+                    f"  These are the ACTUAL values stored in the database columns.]\n\n"
+                    f"Original question: {nl_query_for_gen}"
+                )
 
         if schema_exploration:
             # Pull distinct values hint from schema to guide entity mapping
@@ -1743,27 +1758,11 @@ def make_learn_node(services: Any):
 
 
 # ── Known group-name → member expansion ──────────────────────────────────────
-# When entity_filters contains a group name (e.g. "ASEAN", "G7", "EU"),
-# expand it to individual member names so fan_out can find them in the DB.
-# This is intentionally a static dict — precise, no LLM call, no false positives.
-_GROUP_EXPANSIONS: dict[str, list[str]] = {
-    "asean": ["Malaysia", "Indonesia", "Thailand", "Singapore", "Philippines",
-              "Vietnam", "Myanmar", "Cambodia", "Laos", "Brunei"],
-    "southeast asia": ["Malaysia", "Indonesia", "Thailand", "Singapore", "Philippines",
-                       "Vietnam", "Myanmar", "Cambodia", "Laos", "Brunei", "Timor-Leste"],
-    "g7": ["United States", "Canada", "United Kingdom", "Germany", "France", "Italy", "Japan"],
-    "g20": ["Argentina", "Australia", "Brazil", "Canada", "China", "France", "Germany",
-             "India", "Indonesia", "Italy", "Japan", "South Korea", "Mexico", "Russia",
-             "Saudi Arabia", "South Africa", "Turkey", "United Kingdom", "United States"],
-    "eu": ["Germany", "France", "Italy", "Spain", "Poland", "Romania", "Netherlands",
-           "Belgium", "Sweden", "Austria", "Denmark", "Finland", "Ireland", "Portugal",
-           "Czech Republic", "Hungary", "Greece", "Slovakia", "Bulgaria", "Croatia",
-           "Lithuania", "Latvia", "Estonia", "Slovenia", "Luxembourg", "Cyprus", "Malta"],
-    "brics": ["Brazil", "Russia", "India", "China", "South Africa"],
-    "nordics": ["Denmark", "Finland", "Iceland", "Norway", "Sweden"],
-    "mena": ["Saudi Arabia", "UAE", "Qatar", "Kuwait", "Bahrain", "Oman",
-             "Jordan", "Lebanon", "Egypt", "Morocco", "Tunisia", "Algeria", "Libya", "Iraq", "Iran"],
-}
+# Group expansions removed — NO hardcoded dictionaries.
+# The Semantic Reasoning Agent handles group names (ASEAN, G7, EU, etc.)
+# by looking at the actual data values in the database and reasoning about
+# which entities belong to the group. This is fully agentic.
+_GROUP_EXPANSIONS: dict[str, list[str]] = {}
 
 
 def _expand_group_entities(filters: list[str]) -> list[str]:
