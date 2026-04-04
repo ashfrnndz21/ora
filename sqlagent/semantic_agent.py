@@ -917,6 +917,71 @@ class SemanticReasoning:
         }
 
 
+async def _schema_search(connectors: dict, column: str, search_term: str, table_hint: str = "") -> list[dict]:
+    """Ask the Schema Agent: search a column for a value across all tables.
+
+    This is how the Semantic Agent interacts with the Schema Agent —
+    targeted searches for unresolved entities.
+    """
+    results = []
+    import pandas as _pd
+    for sid, conn in connectors.items():
+        try:
+            snap = await conn.introspect()
+            for tbl in snap.tables:
+                if table_hint and table_hint.lower() not in tbl.name.lower():
+                    continue
+                for col in tbl.columns:
+                    if col.name.lower() == column.lower():
+                        try:
+                            res = await conn.execute(
+                                f"SELECT DISTINCT \"{col.name}\" FROM \"{tbl.name}\" "
+                                f"WHERE LOWER(\"{col.name}\") LIKE LOWER('%{search_term}%') LIMIT 10"
+                            )
+                            if isinstance(res, _pd.DataFrame) and not res.empty:
+                                for v in res.iloc[:, 0].dropna().tolist():
+                                    results.append({
+                                        "value": str(v),
+                                        "table": tbl.name,
+                                        "column": col.name,
+                                        "source_id": sid,
+                                    })
+                        except Exception:
+                            pass
+        except Exception:
+            pass
+    return results
+
+
+async def _schema_check_join(connectors: dict, table_a: str, table_b: str) -> dict:
+    """Ask the Schema Agent: can these two tables be joined? On what key?"""
+    result = {"joinable": False, "join_column": "", "reasoning": ""}
+    try:
+        cols_a = set()
+        cols_b = set()
+        for sid, conn in connectors.items():
+            snap = await conn.introspect()
+            for tbl in snap.tables:
+                if tbl.name.lower() == table_a.lower():
+                    cols_a = {c.name.lower() for c in tbl.columns}
+                if tbl.name.lower() == table_b.lower():
+                    cols_b = {c.name.lower() for c in tbl.columns}
+        shared = cols_a & cols_b
+        # Prefer dimension-like join keys
+        for candidate in ["country", "iso_code", "region", "id", "customer_id", "industry"]:
+            if candidate in shared:
+                result = {"joinable": True, "join_column": candidate,
+                          "reasoning": f"Shared column '{candidate}' in both tables"}
+                return result
+        if shared:
+            col = next(iter(shared))
+            result = {"joinable": True, "join_column": col,
+                      "reasoning": f"Shared column '{col}' in both tables"}
+    except Exception:
+        pass
+    return result
+
+
 async def reason_about_query(
     question: str,
     source_ids: list[str],
@@ -925,30 +990,24 @@ async def reason_about_query(
     llm: object,
     semantic_contexts: dict[str, SourceSemanticContext] | None = None,
 ) -> SemanticReasoning:
-    """Semantic Reasoning Agent — understands what the user means in data context.
+    """Semantic Reasoning Agent — iterative reasoning loop with Schema Agent interaction.
 
-    ONE LLM call with full schema + sample values + learned context.
-    Returns structured output (filters, metrics, tables) that feeds
-    directly into the SQL Agent.
+    NOT a single LLM call. The agent:
+    1. Starts with pre-loaded knowledge (domain, aliases, column meanings)
+    2. Makes an initial reasoning pass to identify what it knows vs doesn't
+    3. For unresolved entities, ASKS the Schema Agent (targeted DB search)
+    4. Checks if multi-table join is feasible via Schema Agent
+    5. Returns ONLY when confident it has the full picture
 
-    This replaces:
-      ✗ alias lookup dictionaries
-      ✗ difflib fuzzy matching
-      ✗ confidence threshold rules
-      ✗ separate entity resolution + column mapping
-
-    With:
-      ✓ One reasoning call with complete data context
-      ✓ LLM understands domain, abbreviations, context
-      ✓ Structured output feeds SQL Agent directly
-      ✓ New aliases extracted and saved automatically
+    The Semantic Agent interacts with the Schema Agent through:
+    - _schema_search(): find entity values across tables
+    - _schema_check_join(): verify if tables can be joined
     """
     result = SemanticReasoning()
 
     # ── Build schema context with sample values ──────────────────────────
     schema_sections: list[str] = []
 
-    # Use provided source_ids, but fall back to ALL connectors if none work
     effective_sources = source_ids if source_ids else list(connectors.keys())
     if not any(connectors.get(sid) for sid in effective_sources):
         effective_sources = list(connectors.keys())
@@ -1038,70 +1097,73 @@ async def reason_about_query(
                 for tip in ctx.filter_tips[:5]:
                     domain_context += f"\n  • {tip}"
 
-    # ── Single reasoning LLM call ────────────────────────────────────────
-    prompt = f"""\
-You are a Semantic Reasoning Agent for a natural language to SQL system.
+    # ══════════════════════════════════════════════════════════════════════
+    # ITERATIVE REASONING LOOP
+    # The Semantic Agent reasons in multiple passes, interacting with
+    # the Schema Agent to fill in gaps.
+    # ══════════════════════════════════════════════════════════════════════
 
-The user asked: "{question}"
+    # ── Pass 1: Initial reasoning with pre-loaded knowledge ──────────────
+    prompt_pass1 = f"""\
+You are a Semantic Reasoning Agent. Analyze this question and map EVERY term
+to the actual database schema.
 
-DATABASE SCHEMA (with sample values for each column):
+Question: "{question}"
+
+DATABASE SCHEMA:
 {schema_text}
 {domain_context}
 {learned_context}
 
-YOUR TASK: Understand what the user means and map their question to the actual
-database schema. Reason about:
+INSTRUCTIONS:
+1. Identify EVERY entity the user mentions. For each, determine:
+   - Which column it maps to
+   - The EXACT value in the database (from sample values above)
+   - If you CANNOT find an exact match in the samples, mark it as "UNRESOLVED"
 
-1. What entities/terms does the user mention? Map each to the EXACT column and
-   value in the database. Use the sample values shown above to find matches.
-   Think about abbreviations, codes, informal names, industry jargon.
+2. For correlation/comparison queries: identify ALL datasets needed (not just one side)
 
-2. What metrics/measurements is the user asking about? Map to specific columns.
+3. Identify all metrics/measurements the user wants
 
-3. Which tables should be queried?
-
-4. What filters (WHERE clauses) are needed?
-
-5. What grouping (GROUP BY) makes sense?
+4. Identify which tables are needed
 
 Return JSON:
 {{
-  "resolved_query": "The question rewritten using exact database terminology",
+  "resolved_query": "Question rewritten with exact DB terminology",
   "filters": [
-    {{"column": "Country", "operator": "=", "value": "Philippines", "table": "tablename",
-      "reasoning": "PP is informal for Philippines — matches Country column value"}}
+    {{"column": "col", "operator": "=", "value": "exact_db_value", "table": "tbl", "reasoning": "why"}}
   ],
-  "metrics": ["GenAI_ML", "GenAI_Gap"],
-  "tables": ["all_account_analysis"],
-  "group_by": ["Customer"],
-  "reasoning": "How I mapped each user term to database attributes",
-  "confidence": 0.92,
-  "new_aliases": {{"telcos": "Telecommunications", "pp": "Philippines"}}
+  "unresolved": [
+    {{"term": "True's AI", "likely_column": "Customer", "search_hint": "True",
+      "reasoning": "Not in sample values — needs targeted search"}}
+  ],
+  "metrics": ["col1", "col2"],
+  "tables": ["table1", "table2"],
+  "group_by": ["col"],
+  "reasoning": "Full reasoning trace",
+  "confidence": 0.7,
+  "new_aliases": {{"th": "Thailand"}},
+  "is_multi_dataset": false
 }}
 
 Rules:
-- filter values MUST be EXACT matches from the sample values shown above
-- Do not invent column names or values that don't exist in the schema
-- new_aliases: include any term→value mappings you inferred that should be remembered
-- If you can't confidently map a term, say so in reasoning and set lower confidence
-- Return ONLY valid JSON, no markdown
+- filter values MUST be EXACT matches from sample values
+- Mark anything you're not sure about as "unresolved" — don't guess
+- For correlation queries, identify BOTH datasets (set is_multi_dataset: true)
+- Return ONLY valid JSON
 """
 
     try:
-        resp = await llm.complete(
-            [{"role": "user", "content": prompt}],
-            temperature=0.0,
-            max_tokens=2048,
-            json_mode=True,
+        resp1 = await llm.complete(
+            [{"role": "user", "content": prompt_pass1}],
+            temperature=0.0, max_tokens=2048, json_mode=True,
         )
-
-        raw = resp.content.strip()
+        raw = resp1.content.strip()
         if raw.startswith("```"):
             raw = raw.split("```")[1]
             if raw.startswith("json"):
                 raw = raw[4:]
             raw = raw.strip().rstrip("```").strip()
-
         parsed = json.loads(raw)
 
         result.resolved_query = parsed.get("resolved_query", "")
@@ -1112,10 +1174,140 @@ Rules:
         result.reasoning = parsed.get("reasoning", "")
         result.confidence = parsed.get("confidence", 0.5)
         result.new_aliases = parsed.get("new_aliases", {})
+        unresolved = parsed.get("unresolved", [])
 
-        # Save new aliases for future queries
+        logger.info(
+            "semantic.reasoning.pass1",
+            question=question[:60],
+            filters=len(result.filters),
+            unresolved=len(unresolved),
+            tables=result.tables,
+            confidence=result.confidence,
+        )
+
+        # ── Pass 2: Resolve unresolved entities via Schema Agent ─────────
+        if unresolved:
+            schema_findings = []
+            for item in unresolved:
+                term = item.get("term", "")
+                likely_col = item.get("likely_column", "")
+                search_hint = item.get("search_hint", term)
+
+                if not search_hint:
+                    continue
+
+                # Ask Schema Agent: search for this entity across all tables
+                found = await _schema_search(
+                    connectors, likely_col, search_hint,
+                )
+                if not found and likely_col:
+                    # Try without column hint — search all text columns
+                    for sid, conn in connectors.items():
+                        try:
+                            snap = await conn.introspect()
+                            for tbl in snap.tables:
+                                for col in tbl.columns:
+                                    dt = (col.data_type or "").lower()
+                                    if any(t in dt for t in ("varchar", "text", "string")):
+                                        search_results = await _schema_search(
+                                            connectors, col.name, search_hint, tbl.name,
+                                        )
+                                        found.extend(search_results)
+                                        if found:
+                                            break
+                                if found:
+                                    break
+                        except Exception:
+                            pass
+                        if found:
+                            break
+
+                if found:
+                    best = found[0]
+                    schema_findings.append({
+                        "term": term,
+                        "resolved_value": best["value"],
+                        "column": best["column"],
+                        "table": best["table"],
+                    })
+                    # Add as a filter
+                    result.filters.append({
+                        "column": best["column"],
+                        "operator": "=",
+                        "value": best["value"],
+                        "table": best["table"],
+                        "reasoning": f"Schema Agent found '{best['value']}' via search for '{search_hint}'",
+                    })
+                    # Add to aliases
+                    result.new_aliases[term.lower()] = best["value"]
+                    # Add table if not already listed
+                    if best["table"] not in result.tables:
+                        result.tables.append(best["table"])
+
+                    logger.info(
+                        "semantic.reasoning.schema_resolved",
+                        term=term, value=best["value"],
+                        table=best["table"], column=best["column"],
+                    )
+
+            # ── Pass 2b: Check join feasibility for multi-table queries ──
+            if len(result.tables) >= 2:
+                for i, t1 in enumerate(result.tables):
+                    for t2 in result.tables[i + 1:]:
+                        join_info = await _schema_check_join(connectors, t1, t2)
+                        if join_info["joinable"]:
+                            result.reasoning += (
+                                f"\n  Join: {t1} ↔ {t2} on {join_info['join_column']}"
+                            )
+
+            # ── Pass 3: Final reasoning with Schema Agent findings ───────
+            if schema_findings:
+                findings_text = "\n".join(
+                    f"  '{f['term']}' → {f['table']}.{f['column']} = '{f['resolved_value']}'"
+                    for f in schema_findings
+                )
+                prompt_pass3 = f"""\
+The Schema Agent found these additional entities:
+{findings_text}
+
+Original question: "{question}"
+Previously resolved: {json.dumps(result.filters[:5])}
+Tables needed: {result.tables}
+
+Rewrite the resolved_query incorporating ALL findings. Update confidence.
+
+Return JSON:
+{{
+  "resolved_query": "Complete rewritten query with ALL entities resolved",
+  "confidence": 0.9,
+  "reasoning": "Updated reasoning with schema findings"
+}}
+Return ONLY valid JSON.
+"""
+                try:
+                    resp3 = await llm.complete(
+                        [{"role": "user", "content": prompt_pass3}],
+                        temperature=0.0, max_tokens=512, json_mode=True,
+                    )
+                    raw3 = resp3.content.strip()
+                    if raw3.startswith("```"):
+                        raw3 = raw3.split("```")[1]
+                        if raw3.startswith("json"):
+                            raw3 = raw3[4:]
+                        raw3 = raw3.strip().rstrip("```").strip()
+                    parsed3 = json.loads(raw3)
+                    if parsed3.get("resolved_query"):
+                        result.resolved_query = parsed3["resolved_query"]
+                    if parsed3.get("confidence"):
+                        result.confidence = parsed3["confidence"]
+                    if parsed3.get("reasoning"):
+                        result.reasoning += f"\n  Final: {parsed3['reasoning']}"
+                except Exception:
+                    pass  # Pass 3 is enhancement — don't fail on it
+
+        # ── Save learned aliases ─────────────────────────────────────────
         if result.new_aliases:
-            for sid in source_ids:
+            for sid in (source_ids or list(connectors.keys())):
                 aliases = _load_learned_aliases(workspace_id, sid)
                 new_confs: dict[str, float] = {}
                 for term, value in result.new_aliases.items():
@@ -1134,6 +1326,7 @@ Rules:
             tables=result.tables,
             confidence=result.confidence,
             new_aliases=len(result.new_aliases),
+            passes="1" if not unresolved else f"1+2{'+3' if unresolved else ''}",
         )
 
     except Exception as exc:
