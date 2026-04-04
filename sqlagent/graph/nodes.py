@@ -1790,6 +1790,9 @@ def make_decompose_node(services: Any):
             entity_map_lower = {k.lower(): v for k, v in entity_map.items()}
             resolved_filters = []
             for e in entity_filters:
+                if not isinstance(e, str):
+                    resolved_filters.append(str(e) if e else "")
+                    continue
                 if e in entity_map:
                     resolved_filters.append(entity_map[e])
                 elif e.lower() in entity_map_lower:
@@ -2689,7 +2692,12 @@ def make_ora_node(services: Any):
                 # Apply reasoning results to entity_filters for downstream
                 for f in semantic_reasoning.filters:
                     val = f.get("value", "")
-                    if val and val not in entity_filters:
+                    # LLM may return value as a list — flatten
+                    if isinstance(val, list):
+                        for v in val:
+                            if isinstance(v, str) and v and v not in entity_filters:
+                                entity_filters.append(v)
+                    elif isinstance(val, str) and val and val not in entity_filters:
                         entity_filters.append(val)
 
                 ora_reasoning += (
