@@ -659,11 +659,11 @@ def make_generate_node(services: Any):
                         )
                 nl_query_for_gen = substituted
 
-        # ── Inject Semantic Reasoning Agent structured output ─────────────
-        # This is the MOST IMPORTANT part — the SQL Agent MUST use these values.
-        # We PREPEND (not append) so the SQL Agent sees this FIRST.
+        # ── Ora assembles the FINAL refined query for the SQL Agent ────────
+        # The SQL Agent should ONLY see the refined query with exact DB values.
+        # It should NEVER see the raw user terms (CP group, TH, VNT, etc.)
+        # Ora is the orchestrator — it passes only the resolved output downstream.
         if sem_reasoning and sem_reasoning.get("filters"):
-            # Build the WHERE clause fragments
             where_parts = []
             for f in sem_reasoning["filters"]:
                 col = f.get("column", "")
@@ -676,20 +676,16 @@ def make_generate_node(services: Any):
                     where_parts.append(f"{col} {op} '{val}'")
 
             if where_parts:
-                # PREPEND the resolved query so the SQL Agent sees it BEFORE the original
-                resolved = sem_reasoning.get("resolved_query", "")
+                resolved = sem_reasoning.get("resolved_query", nl_query_for_gen)
                 tables = sem_reasoning.get("tables", [])
                 metrics = sem_reasoning.get("metrics", [])
 
+                # REPLACE the query entirely — SQL Agent never sees raw user terms
                 nl_query_for_gen = (
-                    f"[RESOLVED QUERY: {resolved}]\n"
-                    f"[SQL REQUIREMENTS — you MUST use these exact values from the database:\n"
-                    f"  WHERE: {' AND '.join(where_parts)}\n"
-                    + (f"  SELECT: {', '.join(metrics)}\n" if metrics else "")
-                    + (f"  FROM: {', '.join(tables)}\n" if tables else "")
-                    + f"  Do NOT change these values. Do NOT use ISO codes unless specified above.\n"
-                    f"  These are the ACTUAL values stored in the database columns.]\n\n"
-                    f"Original question: {nl_query_for_gen}"
+                    f"{resolved}\n\n"
+                    f"SQL WHERE clause MUST include: {' AND '.join(where_parts)}\n"
+                    + (f"Include these columns: {', '.join(metrics)}\n" if metrics else "")
+                    + (f"Query from: {', '.join(tables)}\n" if tables else "")
                 )
 
         if schema_exploration:
