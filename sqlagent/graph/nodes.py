@@ -680,12 +680,15 @@ def make_generate_node(services: Any):
                 tables = sem_reasoning.get("tables", [])
                 metrics = sem_reasoning.get("metrics", [])
 
-                # REPLACE the query entirely — SQL Agent never sees raw user terms
+                # REPLACE the query entirely — SQL Agent never sees raw user terms.
+                # Filter values are formatted as LITERAL SQL fragments — copy verbatim.
                 nl_query_for_gen = (
                     f"{resolved}\n\n"
-                    f"SQL WHERE clause MUST include: {' AND '.join(where_parts)}\n"
-                    + (f"Include these columns: {', '.join(metrics)}\n" if metrics else "")
-                    + (f"Query from: {', '.join(tables)}\n" if tables else "")
+                    f"COPY THESE EXACT SQL FRAGMENTS INTO YOUR WHERE CLAUSE (do not modify the values):\n"
+                    + "\n".join(f"  {wp}" for wp in where_parts) + "\n"
+                    + (f"SELECT columns: {', '.join(metrics)}\n" if metrics else "")
+                    + (f"FROM tables: {', '.join(tables)}\n" if tables else "")
+                    + f"\nCRITICAL: The values above (like '15+', 'Total', etc.) are the EXACT strings stored in the database. Do NOT rewrite them. Copy them character-for-character into your SQL.\n"
                 )
 
         if schema_exploration:
