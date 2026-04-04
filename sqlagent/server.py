@@ -2197,6 +2197,71 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
                     "confidence": 0.6,
                 })
 
+        # ── Load learned terms from Semantic Agent ────────────────────────────
+        synonyms: list[dict] = []
+        activity: list[dict] = []
+
+        ws_dir = os.path.join(os.path.expanduser("~"), ".sqlagent", "uploads", workspace_id)
+        if os.path.isdir(ws_dir):
+            import glob as _glob
+
+            # 1. Learned aliases (from per-query resolution)
+            for alias_file in _glob.glob(os.path.join(ws_dir, "aliases_*.json")):
+                try:
+                    with open(alias_file) as af:
+                        aliases = json.load(af)
+                    src_id = os.path.basename(alias_file).replace("aliases_", "").replace(".json", "")
+                    for term, canonical in aliases.items():
+                        synonyms.append({
+                            "term": term,
+                            "canonical": canonical,
+                            "source": "learned",
+                            "source_id": src_id,
+                        })
+                        activity.append({
+                            "type": "alias_learned",
+                            "term": term,
+                            "canonical": canonical,
+                            "source_id": src_id,
+                        })
+                except Exception:
+                    pass
+
+            # 2. Abbreviation maps (from connect-time semantic analysis)
+            for sem_file in _glob.glob(os.path.join(ws_dir, "semantic_*.json")):
+                try:
+                    with open(sem_file) as sf:
+                        sem_data = json.load(sf)
+                    src_id = sem_data.get("source_id", "")
+                    for col, abbrev_map in sem_data.get("abbreviation_maps", {}).items():
+                        for code, full_name in abbrev_map.items():
+                            synonyms.append({
+                                "term": full_name.lower(),
+                                "canonical": code,
+                                "source": "discovered",
+                                "source_id": src_id,
+                                "column": col,
+                            })
+                    # Also enrich table descriptions from semantic analysis
+                    domain = sem_data.get("domain", "")
+                    col_meanings = sem_data.get("column_meanings", {})
+                    for t in tables:
+                        if t["name"] in src_id or src_id in t["name"]:
+                            if domain and not t.get("description"):
+                                t["description"] = domain
+                            for dim in t.get("dimensions", []):
+                                if dim["name"] in col_meanings:
+                                    dim["description"] = col_meanings[dim["name"]]
+                            for meas in t.get("measures", []):
+                                if meas["name"] in col_meanings:
+                                    meas["description"] = col_meanings[meas["name"]]
+                            for td in t.get("time_dimensions", []):
+                                if td["name"] in col_meanings:
+                                    td["description"] = col_meanings[td["name"]]
+                except Exception:
+                    pass
+
+        total_terms = len(synonyms)
         return {
             "name": workspace_id,
             "version": "1.0",
@@ -2206,13 +2271,15 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
             "metrics": [],
             "verified_queries": [],
             "custom_instructions": [],
-            "synonyms": [],
+            "synonyms": synonyms,
+            "activity": activity,
             "stats": {
                 "tables": len(tables),
                 "dimensions": sum(len(t["dimensions"]) for t in tables),
                 "time_dimensions": sum(len(t["time_dimensions"]) for t in tables),
                 "measures": sum(len(t["measures"]) for t in tables),
                 "relationships": len(relationships),
+                "synonyms": total_terms,
                 "avg_confidence": 0.6,
                 "backends": list({t["backend"] for t in tables}),
             },
