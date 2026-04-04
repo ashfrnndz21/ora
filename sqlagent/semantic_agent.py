@@ -948,7 +948,12 @@ async def reason_about_query(
     # ── Build schema context with sample values ──────────────────────────
     schema_sections: list[str] = []
 
-    for sid in source_ids:
+    # Use provided source_ids, but fall back to ALL connectors if none work
+    effective_sources = source_ids if source_ids else list(connectors.keys())
+    if not any(connectors.get(sid) for sid in effective_sources):
+        effective_sources = list(connectors.keys())
+
+    for sid in effective_sources:
         conn = connectors.get(sid)
         if not conn:
             continue
@@ -989,8 +994,21 @@ async def reason_about_query(
             )
 
     if not schema_sections:
+        logger.warning(
+            "semantic.reasoning.no_schema",
+            question=question[:50],
+            source_ids=source_ids,
+            effective_sources=effective_sources,
+            connectors_available=list(connectors.keys()),
+        )
         result.reasoning = "No schema available for reasoning."
         return result
+
+    logger.info(
+        "semantic.reasoning.schema_built",
+        tables=len(schema_sections),
+        question=question[:50],
+    )
 
     schema_text = "\n\n".join(schema_sections)
 
