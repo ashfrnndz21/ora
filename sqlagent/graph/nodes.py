@@ -580,9 +580,19 @@ def make_generate_node(services: Any):
         # This prevents the SQL generator from deciding "PHP doesn't exist"
         # before it even reads the semantic context hints.
         sem_res = state.get("semantic_resolution")
-        if sem_res and sem_res.get("entity_map"):
+        # Flatten entity_map — may be nested by source_id or flat at top level
+        entity_map = {}
+        if sem_res:
+            if isinstance(sem_res, dict):
+                if "entity_map" in sem_res:
+                    entity_map = sem_res["entity_map"]
+                else:
+                    # Nested by source_id: {source_id: {entity_map: {...}}}
+                    for _sid_val in sem_res.values():
+                        if isinstance(_sid_val, dict) and "entity_map" in _sid_val:
+                            entity_map.update(_sid_val["entity_map"])
+        if entity_map:
             import re as _re
-            entity_map = sem_res["entity_map"]
             substituted = nl_query_for_gen
             # Sort by length descending so longer keys are replaced first
             for user_term, stored_val in sorted(entity_map.items(), key=lambda x: -len(x[0])):
@@ -595,6 +605,20 @@ def make_generate_node(services: Any):
                         flags=_re.IGNORECASE,
                     )
             nl_query_for_gen = substituted
+
+            # Also inject structured resolution hint into the generation prompt
+            # so the SQL Agent knows EXACTLY which column and value to filter on
+            resolution_hints = []
+            for user_term, stored_val in entity_map.items():
+                if user_term != stored_val:
+                    resolution_hints.append(f'  "{user_term}" → use value \'{stored_val}\' in SQL WHERE clause')
+            if resolution_hints:
+                nl_query_for_gen += (
+                    "\n\n[SEMANTIC RESOLUTION — use these exact values in your SQL:\n"
+                    + "\n".join(resolution_hints)
+                    + "\nDo NOT use the original user terms — use the resolved values above.]"
+                )
+
         if schema_exploration:
             # Pull distinct values hint from schema to guide entity mapping
             tables_hint = ", ".join(t["name"] for t in (pruned_schema.get("tables") or []))
