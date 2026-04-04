@@ -1253,6 +1253,28 @@ def make_respond_node(services: Any):
         except Exception as _conf_err:
             logger.warning("confidence.failed", error=str(_conf_err))
 
+        # ── Auto-visualization (LLM-selected chart) ──────────────────────
+        viz_data = None
+        if row_count > 0 and columns:
+            try:
+                from sqlagent.visualization import generate_chart
+                viz_result = await generate_chart(
+                    question=nl_query, sql=sql,
+                    columns=columns, rows=rows[:10],
+                    row_count=row_count, llm=services.llm,
+                )
+                if viz_result.chart_type != "table":
+                    viz_data = viz_result.to_dict()
+                    # Update chart_config with LLM-selected type
+                    chart_config = {
+                        "type": viz_result.chart_type,
+                        "vega_lite": viz_result.vega_lite,
+                        "title": viz_result.title,
+                        "description": viz_result.description,
+                    }
+            except Exception as _viz_err:
+                logger.warning("visualization.failed", error=str(_viz_err))
+
         return {
             "nl_response": parsed.get("summary", resp.content),
             "follow_ups": parsed.get("follow_ups", []),
@@ -2677,6 +2699,28 @@ def make_ora_node(services: Any):
                         f"\n  New aliases: "
                         + ", ".join(f"{k}→{v}" for k, v in semantic_reasoning.new_aliases.items())
                     )
+
+                # ── Disambiguation check ─────────────────────────────────
+                # If reasoning confidence is low, ask user before proceeding
+                if semantic_reasoning.confidence < 0.6:
+                    try:
+                        from sqlagent.disambiguation import detect_disambiguation
+                        schema_summary = "\n".join(
+                            f"{t['name']}: {[d['name'] for d in t.get('dimensions',[])]}"
+                            for t in (await list(services.connectors.values())[0].introspect()).tables[:5]
+                        ) if services.connectors else ""
+                        clarification = await detect_disambiguation(
+                            question=nl_query,
+                            semantic_reasoning=semantic_reasoning.to_dict(),
+                            schema_context=schema_summary,
+                            llm=services.llm,
+                            threshold=0.6,
+                        )
+                        if clarification:
+                            # Store clarification in state — UI will display dialog
+                            ora_reasoning += f"\n  ⚠ Disambiguation needed: {clarification.question}"
+                    except Exception as _disamb_err:
+                        logger.warning("disambiguation.failed_in_ora", error=str(_disamb_err))
 
         except Exception as _reason_err:
             logger.warning("semantic.reasoning.failed_in_ora", error=str(_reason_err))

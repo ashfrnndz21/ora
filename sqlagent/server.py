@@ -2392,9 +2392,26 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
 
         # ── Build intelligence summary ────────────────────────────────────
         # Group dimension values by semantic type (countries, industries, etc.)
+        # Sources: 1) abbreviation_maps from semantic analysis  2) live DuckDB query
         entity_groups: list[dict] = []
-        all_dim_values: dict[str, list[str]] = {}  # col_name → sample values
+        all_dim_values: dict[str, list[str]] = {}  # col_name → values
 
+        # 1. From semantic analysis abbreviation_maps (already discovered)
+        if os.path.isdir(ws_dir_check):
+            for sem_file in _g.glob(os.path.join(ws_dir_check, "semantic_*.json")):
+                try:
+                    with open(sem_file) as _sf3:
+                        _sd3 = json.load(_sf3)
+                    for col, abbrev_map in _sd3.get("abbreviation_maps", {}).items():
+                        if col not in all_dim_values:
+                            all_dim_values[col] = []
+                        for code, full_name in abbrev_map.items():
+                            if code not in all_dim_values[col]:
+                                all_dim_values[col].append(code)
+                except Exception:
+                    pass
+
+        # 2. From schema sample_values (if any)
         for t in tables:
             for d in t.get("dimensions", []):
                 col = d["name"]
@@ -2403,6 +2420,34 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
                     if col not in all_dim_values:
                         all_dim_values[col] = []
                     all_dim_values[col].extend(v for v in vals if v not in all_dim_values[col])
+
+        # 3. Live query DuckDB for dimension columns missing values
+        for t in tables:
+            for d in t.get("dimensions", []):
+                col = d["name"]
+                if col in all_dim_values and len(all_dim_values[col]) >= 2:
+                    continue  # already have values
+                # Try to sample from DB
+                for sid, conn in agent.services.connectors.items():
+                    try:
+                        import pandas as _pd
+                        res = await conn.execute(
+                            f'SELECT DISTINCT "{col}" FROM "{t["name"]}" '
+                            f'WHERE "{col}" IS NOT NULL LIMIT 30'
+                        )
+                        if isinstance(res, _pd.DataFrame) and not res.empty:
+                            vals = [str(v) for v in res.iloc[:, 0].dropna().tolist()]
+                            if vals:
+                                if col not in all_dim_values:
+                                    all_dim_values[col] = []
+                                all_dim_values[col].extend(
+                                    v for v in vals if v not in all_dim_values[col]
+                                )
+                                # Also update the dimension's sample_values
+                                d["sample_values"] = all_dim_values[col][:15]
+                    except Exception:
+                        pass
+                    break  # only need one source
 
         for col, vals in all_dim_values.items():
             if len(vals) >= 2:
