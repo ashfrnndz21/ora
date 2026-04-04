@@ -392,11 +392,36 @@ Rules:
 
                 for alias in aliases:
                     alias_lower = alias.lower().strip()
-                    if alias_lower and alias_lower != canonical.lower():
-                        if alias_lower not in all_aliases:
-                            all_aliases[alias_lower] = canonical
-                            all_confidences[alias_lower] = conf
-                            new_count += 1
+                    if not alias_lower or alias_lower == canonical.lower():
+                        continue
+                    if alias_lower in all_aliases:
+                        continue
+
+                    # Structural confidence adjustment — LLMs are bad at
+                    # self-reporting confidence. Apply rules:
+                    # 1. Single common word (< 4 chars or in common words) → reject
+                    # 2. Single word that's a generic English word → reduce confidence
+                    # 3. Acronyms/codes (all caps, 2-4 chars) → boost confidence
+                    adjusted_conf = conf
+                    words = alias_lower.split()
+
+                    if len(words) == 1 and len(alias_lower) <= 3:
+                        # Short codes like "my", "sg", "ph" — likely valid codes
+                        # Keep confidence as-is
+                        pass
+                    elif len(words) == 1 and len(alias_lower) <= 5 and alias_lower.isalpha():
+                        # Single short word: could be ambiguous
+                        # "power", "web", "food", "green" etc. are too generic
+                        adjusted_conf = min(conf, 0.70)  # will be below 0.85 threshold
+                    elif len(words) == 1 and alias_lower.isalpha() and len(alias_lower) >= 6:
+                        # Longer single words: "banking", "telecom", "logistics"
+                        # Slightly ambiguous but more specific
+                        adjusted_conf = min(conf, 0.82)  # just below threshold
+
+                    if adjusted_conf >= CONFIDENCE_THRESHOLD:
+                        all_aliases[alias_lower] = canonical
+                        all_confidences[alias_lower] = adjusted_conf
+                        new_count += 1
 
             logger.info(
                 "semantic.bootstrap.column_done",

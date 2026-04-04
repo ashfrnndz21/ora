@@ -2281,7 +2281,7 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
         if os.path.isdir(ws_dir):
             import glob as _glob
 
-            # 1. Learned aliases (from per-query resolution + bootstrap)
+            # 1. Aliases (from bootstrap inference + per-query resolution)
             for alias_file in _glob.glob(os.path.join(ws_dir, "aliases_*.json")):
                 try:
                     with open(alias_file) as af:
@@ -2292,10 +2292,16 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
                     aliases = data
                     for term, canonical in aliases.items():
                         conf = conf_map.get(term, 0.85)
+                        # Determine source: if confidence was set by bootstrap (round number)
+                        # vs learned from query (strengthened, typically 0.88+)
+                        source_label = "inferred" if conf <= 0.95 else "confirmed"
+                        # Check if this was strengthened by queries
+                        if conf > 0.95:
+                            source_label = "confirmed by query"
                         synonyms.append({
                             "term": term,
                             "canonical": canonical,
-                            "source": "learned",
+                            "source": source_label,
                             "source_id": src_id,
                             "confidence": round(conf, 2),
                         })
