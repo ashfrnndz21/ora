@@ -1,28 +1,29 @@
 """Compile the LangGraph StateGraph for query orchestration.
 
-This is the heart of sqlagent. The graph routes queries through:
+SIMPLIFIED PIPELINE (v2.0):
 
-- Simple path:
-    ora (intent + semantic reasoning + routing)
-    → prune (schema agent)
-    → retrieve (memory)
-    → plan
-    → generate (SQL agent)
-    → execute
-    → validate (Ora checks: does result answer the question?)
-    → respond (NL + confidence + chart)
-    → learn (saves full chain: original query + resolved + SQL + result)
+  ora → generate → execute → validate → respond → learn
+                      ↓ error
+                    correct → execute (retry)
 
-- Cross-source:
-    ora → fan_out → synthesize → respond → learn
+ONE path. No routing decisions. No fan_out/synthesize/decompose.
 
-- Correction loop:
-    execute → validate (mismatch?) → correct → execute (retry)
-    execute → correct (SQL error) → execute (retry)
+Ora does ALL the thinking:
+  - Calls Semantic Agent (iterative reasoning with Schema Agent interaction)
+  - Calls Schema Agent (prune relevant tables/columns)
+  - Retrieves similar examples from memory
+  - Produces a COMPLETE query specification
 
-Ora is the orchestrator. It calls the Semantic Agent to resolve user terms,
-then routes to Schema Agent (prune) and SQL Agent (generate).
-After execution, Ora validates the result matches the question.
+SQL Agent does ALL the writing:
+  - Receives Ora's structured query spec
+  - Translates to syntactically correct SQL
+  - Handles simple, compound, multi-table, JOIN queries — all the same way
+
+After execution:
+  - Validate checks if result matches the question
+  - Correct retries on SQL errors or validation mismatches
+  - Respond generates NL summary + confidence + chart
+  - Learn saves everything to the semantic layer
 """
 
 from __future__ import annotations
@@ -34,17 +35,15 @@ from langgraph.graph import StateGraph, END
 from sqlagent.graph.state import QueryState
 from sqlagent.graph.nodes import (
     make_ora_node,
-    make_prune_node,
-    make_retrieve_node,
-    make_plan_node,
     make_generate_node,
     make_execute_node,
     make_correct_node,
     make_validate_node,
     make_respond_node,
     make_learn_node,
-    make_fan_out_node,
-    make_synthesize_node,
+    # Legacy nodes still importable but not in the main graph:
+    # make_prune_node, make_retrieve_node, make_plan_node,
+    # make_fan_out_node, make_synthesize_node,
 )
 
 
@@ -53,28 +52,18 @@ from sqlagent.graph.nodes import (
 # ═══════════════════════════════════════════════════════════════════════════════
 
 
-def route_after_ora(state: QueryState) -> str:
-    """After Ora: route to fan_out (cross-source/compound) or prune (simple)."""
-    sub_queries = state.get("sub_queries")
-    if sub_queries:
-        return "fan_out"
-    return "prune"
-
-
 def route_after_execute(state: QueryState) -> str:
-    """After execution: success → respond, error → correct (if budget allows)."""
+    """After execution: success → validate, error → correct (if budget allows)."""
     error = state.get("execution_error", "")
     if not error:
-        return "respond"
+        return "validate"
 
-    # Check if we can still correct
     correction_round = state.get("correction_round", 0)
     max_corrections = state.get("max_corrections", 3)
     if correction_round < max_corrections:
         return "correct"
 
-    # Max corrections exceeded — respond with error
-    return "respond"
+    return "validate"  # max corrections exceeded — validate anyway (will pass to respond)
 
 
 def route_after_validate(state: QueryState) -> str:
@@ -99,7 +88,13 @@ def route_after_correct(state: QueryState) -> str:
 
 
 def compile_query_graph(services: Any) -> Any:
-    """Compile the full query orchestration graph.
+    """Compile the simplified query orchestration graph.
+
+    ONE linear path:
+      ora → generate → execute → validate → respond → learn
+
+    With correction loop:
+      execute → correct → execute (retry, up to max_corrections)
 
     Args:
         services: PipelineServices with llm, connectors, ensemble, policy, etc.
@@ -110,50 +105,33 @@ def compile_query_graph(services: Any) -> Any:
     """
     graph = StateGraph(QueryState)
 
-    # ── Add all nodes ─────────────────────────────────────────────────────────
+    # ── Add nodes ────────────────────────────────────────────────────────────
     graph.add_node("ora", make_ora_node(services))
-    graph.add_node("prune", make_prune_node(services))
-    graph.add_node("retrieve", make_retrieve_node(services))
-    graph.add_node("plan", make_plan_node(services))
     graph.add_node("generate", make_generate_node(services))
     graph.add_node("execute", make_execute_node(services))
     graph.add_node("correct", make_correct_node(services))
     graph.add_node("validate", make_validate_node(services))
     graph.add_node("respond", make_respond_node(services))
     graph.add_node("learn", make_learn_node(services))
-    graph.add_node("fan_out", make_fan_out_node(services))
-    graph.add_node("synthesize", make_synthesize_node(services))
 
-    # ── Entry point ───────────────────────────────────────────────────────────
+    # ── Entry point ──────────────────────────────────────────────────────────
     graph.set_entry_point("ora")
 
-    # ── ora → fan_out (cross-source/compound) or prune (simple) ──────────────
-    graph.add_conditional_edges(
-        "ora",
-        route_after_ora,
-        {
-            "prune": "prune",
-            "fan_out": "fan_out",
-        },
-    )
-
-    # ── Simple path (linear) ──────────────────────────────────────────────────
-    graph.add_edge("prune", "retrieve")
-    graph.add_edge("retrieve", "plan")
-    graph.add_edge("plan", "generate")
+    # ── Linear flow ──────────────────────────────────────────────────────────
+    graph.add_edge("ora", "generate")
     graph.add_edge("generate", "execute")
 
-    # ── After execute: success → validate, error → correct ─────────────────────
+    # ── After execute: validate (success) or correct (error) ─────────────────
     graph.add_conditional_edges(
         "execute",
         route_after_execute,
         {
-            "respond": "validate",   # validate BEFORE responding
+            "validate": "validate",
             "correct": "correct",
         },
     )
 
-    # ── After validate: passed → respond, mismatch → correct ─────────────────
+    # ── After validate: respond (passed) or correct (mismatch) ───────────────
     graph.add_conditional_edges(
         "validate",
         route_after_validate,
@@ -163,7 +141,7 @@ def compile_query_graph(services: Any) -> Any:
         },
     )
 
-    # ── After correct: retry execution ────────────────────────────────────────
+    # ── After correct: retry execution ───────────────────────────────────────
     graph.add_conditional_edges(
         "correct",
         route_after_correct,
@@ -172,11 +150,7 @@ def compile_query_graph(services: Any) -> Any:
         },
     )
 
-    # ── Cross-source / compound path ──────────────────────────────────────────
-    graph.add_edge("fan_out", "synthesize")
-    graph.add_edge("synthesize", "respond")
-
-    # ── Terminal ──────────────────────────────────────────────────────────────
+    # ── Terminal ─────────────────────────────────────────────────────────────
     graph.add_edge("respond", "learn")
     graph.add_edge("learn", END)
 

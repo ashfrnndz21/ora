@@ -3274,12 +3274,76 @@ def make_ora_node(services: Any):
             f"Reasoning: {ora_reasoning}"
         )
 
+        # ── Ora does inline schema pruning + example retrieval ────────────
+        # (Previously done by separate prune/retrieve/plan nodes — now Ora owns it all)
+        pruned_schema = {}
+        similar_examples = []
+        selected_tables = []
+
+        # Schema pruning: get all tables from all DuckDB sources
+        enriched_snaps = getattr(services, "_enriched_snapshots", {})
+        all_duckdb = all(
+            getattr(c, 'dialect', '') == 'duckdb' or 'file_' in sid
+            for sid, c in services.connectors.items()
+        ) if services.connectors else False
+        sources_to_scan = list(services.connectors.keys()) if all_duckdb else (target_sources or source_ids)
+
+        all_tables_for_schema = []
+        for sid in sources_to_scan:
+            conn = services.connectors.get(sid)
+            if conn:
+                try:
+                    snap = enriched_snaps.get(sid) or await conn.introspect()
+                    for table in snap.tables:
+                        all_tables_for_schema.append(table)
+                except Exception:
+                    pass
+
+        if all_tables_for_schema:
+            # Use schema selector if available, otherwise full schema
+            if services.schema_selector:
+                try:
+                    pruned = await services.schema_selector.prune(
+                        query=nl_query_resolved,
+                        tables=all_tables_for_schema,
+                        soul_context="",
+                    )
+                    if not pruned:
+                        pruned = all_tables_for_schema  # fallback to full
+                except Exception:
+                    pruned = all_tables_for_schema
+            else:
+                pruned = all_tables_for_schema
+
+            selected_tables = [t.name for t in pruned]
+            pruned_schema = {
+                "tables": [
+                    {
+                        "name": t.name,
+                        "columns": [
+                            {"name": c.name, "type": c.data_type}
+                            for c in t.columns
+                        ],
+                    }
+                    for t in pruned
+                ]
+            }
+
+        # Example retrieval
+        if services.example_store:
+            try:
+                similar_examples = await services.example_store.search(
+                    nl_query_resolved, top_k=3
+                )
+            except Exception:
+                pass
+
         return {
             "query_id": query_id,
             "nl_query": nl_query_resolved,
             "nl_query_for_pruning": nl_query_resolved,
-            "display_nl_query": nl_query,  # preserve original for UI display
-            "is_cross_source": is_cross_source,
+            "display_nl_query": nl_query,
+            "is_cross_source": False,  # no more cross-source routing
             "is_compound_query": is_compound,
             "target_sources": target_sources or source_ids,
             "complexity": complexity,
@@ -3291,8 +3355,14 @@ def make_ora_node(services: Any):
             "started_at": datetime.now(timezone.utc).isoformat(),
             "correction_round": 0,
             "max_corrections": services.config.max_corrections,
-            "sub_queries": sub_queries,
-            "decomposition_plan": decomposition_plan,
+            # Schema + examples (previously set by prune/retrieve/plan nodes)
+            "pruned_schema": pruned_schema,
+            "selected_tables": selected_tables,
+            "similar_examples": similar_examples,
+            "plan_reasoning": ora_reasoning,  # Ora IS the planner now
+            # Legacy fields (kept for compatibility)
+            "sub_queries": [],
+            "decomposition_plan": None,
             "semantic_resolution": primary_resolution.to_dict() if primary_resolution else (
                 semantic_reasoning.to_dict() if semantic_reasoning and semantic_reasoning.filters else None
             ),
