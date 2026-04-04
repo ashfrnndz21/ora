@@ -196,6 +196,165 @@ def persist_context(ctx: SourceSemanticContext, workspace_id: str) -> None:
         logger.warning("semantic.persist_failed", source_id=ctx.source_id, error=str(exc))
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# SEMANTIC LAYER EVOLUTION — called by Learn Agent after every successful query
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+def evolve_semantic_layer(
+    workspace_id: str,
+    query_result: dict,
+) -> dict:
+    """Update the semantic layer with discoveries from a successful query.
+
+    Called by the Learn Agent after every successful query. Persists:
+    1. Schema Agent findings (entity values found via search)
+    2. Confirmed table relationships (joins that worked)
+    3. Query patterns (common filters, default values)
+    4. Column meaning enrichment (what the column was used for)
+
+    Returns a summary of what was learned.
+    """
+    learned = {"aliases": 0, "relationships": 0, "patterns": 0, "enrichments": 0}
+
+    ws_dir = os.path.join(
+        os.path.expanduser("~"), ".sqlagent", "uploads", workspace_id
+    )
+    os.makedirs(ws_dir, exist_ok=True)
+
+    # ── 1. Save new aliases from semantic reasoning ──────────────────────
+    sem_reasoning = query_result.get("semantic_reasoning")
+    if sem_reasoning and sem_reasoning.get("new_aliases"):
+        target_sources = query_result.get("target_sources", [])
+        for sid in target_sources:
+            existing = _load_learned_aliases(workspace_id, sid)
+            new_confs: dict[str, float] = {}
+            for term, value in sem_reasoning["new_aliases"].items():
+                term_lower = term.lower().strip()
+                if term_lower and term_lower not in existing:
+                    existing[term_lower] = value
+                    new_confs[term_lower] = sem_reasoning.get("confidence", 0.85)
+                    learned["aliases"] += 1
+            if new_confs:
+                _save_learned_aliases(workspace_id, sid, existing, new_confs)
+
+    # ── 2. Save confirmed relationships ──────────────────────────────────
+    if sem_reasoning and len(sem_reasoning.get("tables", [])) >= 2:
+        rels_path = os.path.join(ws_dir, "relationships.json")
+        try:
+            existing_rels = []
+            if os.path.exists(rels_path):
+                with open(rels_path) as f:
+                    existing_rels = json.load(f)
+
+            tables = sem_reasoning["tables"]
+            reasoning = sem_reasoning.get("reasoning", "")
+            # Extract join info from reasoning
+            for i, t1 in enumerate(tables):
+                for t2 in tables[i + 1:]:
+                    rel_key = f"{t1}:{t2}"
+                    existing_keys = {f"{r['from_table']}:{r['to_table']}" for r in existing_rels}
+                    if rel_key not in existing_keys:
+                        existing_rels.append({
+                            "from_table": t1,
+                            "to_table": t2,
+                            "source": "query_confirmed",
+                            "confidence": 0.85,
+                            "query_count": 1,
+                        })
+                        learned["relationships"] += 1
+                    else:
+                        # Strengthen existing relationship
+                        for r in existing_rels:
+                            if f"{r['from_table']}:{r['to_table']}" == rel_key:
+                                r["query_count"] = r.get("query_count", 0) + 1
+                                r["confidence"] = min(r.get("confidence", 0.85) + 0.03, 0.99)
+
+            with open(rels_path, "w") as f:
+                json.dump(existing_rels, f, indent=2)
+        except Exception as exc:
+            logger.debug("semantic.evolve.relationships_failed", error=str(exc))
+
+    # ── 3. Save query patterns (common filters) ─────────────────────────
+    if sem_reasoning and sem_reasoning.get("filters"):
+        patterns_path = os.path.join(ws_dir, "query_patterns.json")
+        try:
+            existing_patterns = []
+            if os.path.exists(patterns_path):
+                with open(patterns_path) as f:
+                    existing_patterns = json.load(f)
+
+            for flt in sem_reasoning["filters"]:
+                col = flt.get("column", "")
+                val = flt.get("value", "")
+                tbl = flt.get("table", "")
+                if not col or not val:
+                    continue
+                # Check if this pattern already exists
+                pattern_key = f"{tbl}.{col}={val}"
+                found = False
+                for p in existing_patterns:
+                    if p.get("key") == pattern_key:
+                        p["count"] = p.get("count", 0) + 1
+                        found = True
+                        break
+                if not found:
+                    existing_patterns.append({
+                        "key": pattern_key,
+                        "table": tbl,
+                        "column": col,
+                        "value": val,
+                        "count": 1,
+                    })
+                    learned["patterns"] += 1
+
+            with open(patterns_path, "w") as f:
+                json.dump(existing_patterns, f, indent=2)
+        except Exception as exc:
+            logger.debug("semantic.evolve.patterns_failed", error=str(exc))
+
+    # ── 4. Enrich column meanings from query context ─────────────────────
+    if query_result.get("succeeded") and sem_reasoning:
+        sql = query_result.get("sql", "")
+        nl_query = query_result.get("nl_query", "")
+        tables_used = sem_reasoning.get("tables", [])
+        metrics_used = sem_reasoning.get("metrics", [])
+
+        if tables_used and metrics_used:
+            enrichments_path = os.path.join(ws_dir, "column_enrichments.json")
+            try:
+                enrichments = {}
+                if os.path.exists(enrichments_path):
+                    with open(enrichments_path) as f:
+                        enrichments = json.load(f)
+
+                for metric in metrics_used:
+                    key = f"{tables_used[0]}.{metric}"
+                    if key not in enrichments:
+                        enrichments[key] = {
+                            "column": metric,
+                            "table": tables_used[0],
+                            "used_for": [nl_query[:100]],
+                            "query_count": 1,
+                        }
+                        learned["enrichments"] += 1
+                    else:
+                        enrichments[key]["query_count"] += 1
+                        if nl_query[:100] not in enrichments[key].get("used_for", []):
+                            enrichments[key]["used_for"].append(nl_query[:100])
+                            enrichments[key]["used_for"] = enrichments[key]["used_for"][-5:]
+
+                with open(enrichments_path, "w") as f:
+                    json.dump(enrichments, f, indent=2)
+            except Exception as exc:
+                logger.debug("semantic.evolve.enrichments_failed", error=str(exc))
+
+    if any(v > 0 for v in learned.values()):
+        logger.info("semantic.evolved", **learned, workspace_id=workspace_id)
+
+    return learned
+
+
 async def bootstrap_inference_graph(
     source_id: str,
     workspace_id: str,

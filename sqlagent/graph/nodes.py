@@ -1702,21 +1702,34 @@ def make_learn_node(services: Any):
                         except Exception as exc:
                             logger.debug("learn.semantic_memory_concept_failed", error=str(exc))
 
-        # ── Strengthen semantic aliases from successful queries ─────────────
-        # When a query succeeds, the entity mappings used are confirmed correct.
-        # Strengthen their confidence in the semantic layer.
-        if state.get("succeeded") and state.get("semantic_reasoning"):
-            sem_r = state["semantic_reasoning"]
-            ws_id = state.get("workspace_id", "")
-            target_sources = state.get("target_sources", [])
-            if sem_r.get("new_aliases") and ws_id and target_sources:
-                try:
-                    from sqlagent.semantic_agent import strengthen_alias
+        # ── Evolve semantic layer from successful queries ──────────────────
+        # Persists ALL discoveries: aliases, relationships, patterns, enrichments.
+        # This is how the semantic layer gets smarter over time.
+        if state.get("succeeded") and state.get("workspace_id"):
+            try:
+                from sqlagent.semantic_agent import evolve_semantic_layer, strengthen_alias
+
+                # Evolve — saves relationships, patterns, enrichments
+                evolve_semantic_layer(
+                    workspace_id=state["workspace_id"],
+                    query_result={
+                        "semantic_reasoning": state.get("semantic_reasoning"),
+                        "target_sources": state.get("target_sources", []),
+                        "sql": state.get("sql", ""),
+                        "nl_query": state["nl_query"],
+                        "succeeded": state.get("succeeded", False),
+                    },
+                )
+
+                # Also strengthen individual aliases
+                sem_r = state.get("semantic_reasoning") or {}
+                if sem_r.get("new_aliases"):
+                    target_sources = state.get("target_sources", [])
                     for alias, canonical in sem_r["new_aliases"].items():
                         for sid in target_sources:
-                            strengthen_alias(ws_id, sid, alias, canonical)
-                except Exception:
-                    pass
+                            strengthen_alias(state["workspace_id"], sid, alias, canonical)
+            except Exception as _evolve_err:
+                logger.debug("learn.evolve_failed", error=str(_evolve_err))
 
         # SOUL observation
         if services.soul and state.get("succeeded"):

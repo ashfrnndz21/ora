@@ -2507,6 +2507,42 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
                 except Exception:
                     pass
 
+        # ── Load persisted relationships from queries ────────────────────────
+        rels_path = os.path.join(ws_dir, "relationships.json") if os.path.isdir(ws_dir) else ""
+        if rels_path and os.path.exists(rels_path):
+            try:
+                with open(rels_path) as _rf:
+                    query_rels = json.load(_rf)
+                for qr in query_rels:
+                    # Don't duplicate already-inferred relationships
+                    exists = any(
+                        r["from_table"] == qr["from_table"] and r["to_table"] == qr["to_table"]
+                        for r in relationships
+                    )
+                    if not exists:
+                        relationships.append({
+                            "from_table": qr["from_table"],
+                            "from_column": "",
+                            "to_table": qr["to_table"],
+                            "to_column": "",
+                            "join_type": "inner",
+                            "source": qr.get("source", "query_confirmed"),
+                            "confidence": qr.get("confidence", 0.85),
+                            "confirmed": qr.get("query_count", 0) >= 2,
+                        })
+            except Exception:
+                pass
+
+        # ── Load query patterns ──────────────────────────────────────────
+        patterns_path = os.path.join(ws_dir, "query_patterns.json") if os.path.isdir(ws_dir) else ""
+        query_patterns = []
+        if patterns_path and os.path.exists(patterns_path):
+            try:
+                with open(patterns_path) as _pf:
+                    query_patterns = json.load(_pf)
+            except Exception:
+                pass
+
         total_terms = len(synonyms)
         return {
             "name": workspace_id,
