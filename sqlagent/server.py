@@ -2348,18 +2348,120 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
                 except Exception:
                     pass
 
+        # ── Deduplicate tables by name ─────────────────────────────────────
+        seen_tables: dict[str, dict] = {}
+        for t in tables:
+            key = t["name"]
+            if key not in seen_tables:
+                seen_tables[key] = t
+        tables = list(seen_tables.values())
+
+        # ── Infer relationships from shared column names ──────────────────
+        if not relationships and len(tables) > 1:
+            all_table_cols: dict[str, set[str]] = {}
+            for t in tables:
+                cols = set()
+                for d in t.get("dimensions", []):
+                    cols.add(d["name"].lower())
+                for m in t.get("measures", []):
+                    cols.add(m["name"].lower())
+                for td in t.get("time_dimensions", []):
+                    cols.add(td["name"].lower())
+                all_table_cols[t["name"]] = cols
+
+            table_names = list(all_table_cols.keys())
+            for i, t1 in enumerate(table_names):
+                for t2 in table_names[i + 1:]:
+                    shared = all_table_cols[t1] & all_table_cols[t2]
+                    # Only consider dimension-like shared columns (not measures)
+                    dim_names_t1 = {d["name"].lower() for d in seen_tables[t1].get("dimensions", [])}
+                    shared_dims = shared & dim_names_t1
+                    if shared_dims:
+                        for col in list(shared_dims)[:2]:  # max 2 relationships per pair
+                            relationships.append({
+                                "from_table": t1,
+                                "from_column": col,
+                                "to_table": t2,
+                                "to_column": col,
+                                "join_type": "inner",
+                                "source": "inferred",
+                                "confidence": 0.75,
+                                "confirmed": False,
+                            })
+
+        # ── Build intelligence summary ────────────────────────────────────
+        # Group dimension values by semantic type (countries, industries, etc.)
+        entity_groups: list[dict] = []
+        all_dim_values: dict[str, list[str]] = {}  # col_name → sample values
+
+        for t in tables:
+            for d in t.get("dimensions", []):
+                col = d["name"]
+                vals = d.get("sample_values", [])
+                if vals:
+                    if col not in all_dim_values:
+                        all_dim_values[col] = []
+                    all_dim_values[col].extend(v for v in vals if v not in all_dim_values[col])
+
+        for col, vals in all_dim_values.items():
+            if len(vals) >= 2:
+                entity_groups.append({
+                    "column": col,
+                    "display_name": col.replace("_", " ").title(),
+                    "values": vals[:20],
+                    "count": len(vals),
+                })
+
+        # Key metrics (all measure columns deduplicated)
+        seen_metrics: set[str] = set()
+        key_metrics: list[dict] = []
+        for t in tables:
+            for m in t.get("measures", []):
+                if m["name"] not in seen_metrics:
+                    seen_metrics.add(m["name"])
+                    key_metrics.append({
+                        "name": m["name"],
+                        "display_name": m.get("display_name", m["name"]),
+                        "description": m.get("description", ""),
+                        "expr": m.get("expr", m["name"]),
+                    })
+
+        # Domain summary from semantic context
+        domain_summary = ""
+        domain_tips: list[str] = []
+        col_meanings: dict[str, str] = {}
+        if os.path.isdir(ws_dir):
+            for sem_file in _g.glob(os.path.join(ws_dir, "semantic_*.json")):
+                try:
+                    with open(sem_file) as _sf2:
+                        _sd2 = json.load(_sf2)
+                    if _sd2.get("domain") and not domain_summary:
+                        domain_summary = _sd2["domain"]
+                    domain_tips.extend(_sd2.get("filter_tips", []))
+                    col_meanings.update(_sd2.get("column_meanings", {}))
+                except Exception:
+                    pass
+
         total_terms = len(synonyms)
         return {
             "name": workspace_id,
             "version": "1.0",
-            "description": "Auto-generated semantic model",
+            "description": domain_summary or "Auto-generated semantic model",
             "tables": tables,
             "relationships": relationships,
-            "metrics": [],
+            "metrics": key_metrics,
             "verified_queries": [],
             "custom_instructions": [],
             "synonyms": synonyms,
             "activity": activity,
+            # Intelligence summary for dashboard
+            "intelligence": {
+                "domain": domain_summary,
+                "entity_groups": entity_groups,
+                "key_metrics": key_metrics,
+                "tips": domain_tips[:8],
+                "column_meanings": col_meanings,
+            },
             "stats": {
                 "tables": len(tables),
                 "dimensions": sum(len(t["dimensions"]) for t in tables),

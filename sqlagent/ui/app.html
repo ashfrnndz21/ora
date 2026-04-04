@@ -4591,13 +4591,14 @@ function AgentsView({workspace}) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   KNOWLEDGE VIEW — Semantic Model Graph + Inspector
+   KNOWLEDGE VIEW — Semantic Intelligence Dashboard
    ═══════════════════════════════════════════════════════════════════════════ */
 function KnowledgeView({workspace, addToast}) {
   const [spec, setSpec] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [selected, setSelected] = useState(null); // selected table name
-  const [tab, setTab] = useState('graph'); // 'graph' | 'terms' | 'activity'
+  const [selected, setSelected] = useState(null);
+  const [tab, setTab] = useState('overview');
+  const [termSearch, setTermSearch] = useState('');
 
   useEffect(() => {
     if (!workspace?.workspace_id) return;
@@ -4607,48 +4608,216 @@ function KnowledgeView({workspace, addToast}) {
       .catch(() => setLoading(false));
   }, [workspace?.workspace_id]);
 
-  if (loading) return e('div', {style:{display:'flex',alignItems:'center',justifyContent:'center',height:'100%',color:'var(--text-muted)'}}, 'Loading semantic model...');
+  if (loading) return e('div', {style:{display:'flex',alignItems:'center',justifyContent:'center',height:'100%',color:'var(--text-muted)'}}, 'Loading...');
   if (!spec || !spec.tables || spec.tables.length === 0) {
     return e('div', {style:{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'100%',gap:16}},
-      e('div', {style:{fontSize:28,opacity:0.25,fontWeight:700,letterSpacing:'0.04em',color:'var(--text)'}}, 'KNOWLEDGE'),
+      e('div', {style:{fontSize:22,opacity:0.2,fontWeight:700,color:'var(--text)'}}, 'KNOWLEDGE'),
       e('div', {style:{color:'var(--text-secondary)',fontSize:14}}, 'No semantic model yet'),
       e('div', {style:{color:'var(--text-muted)',fontSize:12,maxWidth:300,textAlign:'center'}},
-        'Upload data sources first. The Semantic Agent will auto-discover tables, classify columns, and detect relationships.'),
+        'Upload data sources. The Semantic Agent will auto-discover tables, classify columns, and build an intelligence layer.'),
     );
   }
 
   const stats = spec.stats || {};
   const tables = spec.tables || [];
   const relationships = spec.relationships || [];
+  const intel = spec.intelligence || {};
   const selectedTable = selected ? tables.find(t => t.name === selected) : null;
-
-  const backendBadge = (b) => {
-    const key = (b||'').toLowerCase();
-    const map = {
-      postgres:    {label:'PG',  color:'#4f7df9'},
-      postgresql:  {label:'PG',  color:'#4f7df9'},
-      snowflake:   {label:'SF',  color:'#29b5e8'},
-      bigquery:    {label:'BQ',  color:'#4285f4'},
-      duckdb:      {label:'DDB', color:'#fdba0a'},
-      mysql:       {label:'MY',  color:'#00758f'},
-      sqlite:      {label:'SL',  color:'#003b57'},
-      csv:         {label:'CSV', color:'#6b7280'},
-      xlsx:        {label:'XLS', color:'#217346'},
-    };
-    const badge = map[key] || {label: (key||'DB').toUpperCase().slice(0,3), color:'#6b7280'};
-    return e('span', {style:{
-      fontSize:9, fontWeight:700, fontFamily:'var(--font-mono)', letterSpacing:'0.06em',
-      color: badge.color, background: badge.color+'18',
-      border: '1px solid '+badge.color+'30',
-      padding:'2px 5px', borderRadius:4, lineHeight:1,
-    }}, badge.label);
-  };
-
   const confColor = (c) => c >= 0.9 ? 'var(--green)' : c >= 0.7 ? 'var(--amber)' : 'var(--red)';
   const confPct = (c) => Math.round((c||0.5)*100)+'%';
 
-  // ── Graph Tab (semantic canvas) ───────────────────────────────────────
-  const graphContent = e('div', {style:{position:'relative',width:'100%',flex:1,overflow:'auto',padding:24}},
+  // ── All synonyms for terms tab ──────────────────────────────────────
+  const allSynonyms = [];
+  (spec.synonyms||[]).forEach(s => {
+    allSynonyms.push({term:s.term, canonical:s.canonical, type:s.source||'inferred', confidence:s.confidence||0.85, source_id:s.source_id||''});
+  });
+  const filteredTerms = termSearch
+    ? allSynonyms.filter(s => s.term.includes(termSearch.toLowerCase()) || s.canonical.toLowerCase().includes(termSearch.toLowerCase()))
+    : allSynonyms;
+
+  // ── OVERVIEW TAB (intelligence dashboard) ─────────────────────────────
+  const overviewContent = e('div', {style:{flex:1,overflow:'auto',padding:24}},
+
+    // Domain summary card
+    intel.domain && e('div', {style:{background:'var(--glass)',border:'1px solid var(--glass-border)',borderRadius:12,padding:16,marginBottom:20}},
+      e('div', {style:{fontSize:10,fontWeight:600,color:'var(--text-muted)',letterSpacing:'0.1em',marginBottom:6}}, 'DOMAIN'),
+      e('div', {style:{fontSize:14,color:'var(--text)',lineHeight:1.5}}, intel.domain),
+    ),
+
+    // KPI row
+    e('div', {style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(120px,1fr))',gap:10,marginBottom:20}},
+      [{l:'Tables',v:stats.tables},{l:'Dimensions',v:stats.dimensions},{l:'Measures',v:stats.measures},
+       {l:'Relationships',v:stats.relationships},{l:'Terms',v:stats.synonyms||0},
+       {l:'Confidence',v:confPct(stats.avg_confidence),color:confColor(stats.avg_confidence)}].map(k =>
+        e('div', {key:k.l, style:{background:'var(--glass)',border:'1px solid var(--glass-border)',borderRadius:8,padding:'10px 14px',textAlign:'center'}},
+          e('div', {style:{fontSize:18,fontWeight:700,color:k.color||'var(--text)',fontFamily:'var(--font-mono)'}}, k.v),
+          e('div', {style:{fontSize:10,color:'var(--text-muted)',marginTop:2}}, k.l),
+        )
+      ),
+    ),
+
+    // Entity groups + Key metrics side by side
+    e('div', {style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:20}},
+
+      // Entity groups
+      e('div', {style:{background:'var(--glass)',border:'1px solid var(--glass-border)',borderRadius:12,padding:16}},
+        e('div', {style:{fontSize:10,fontWeight:600,color:'var(--blue)',letterSpacing:'0.1em',marginBottom:10}}, 'KEY ENTITIES'),
+        (intel.entity_groups||[]).length === 0
+          ? e('div', {style:{fontSize:11,color:'var(--text-muted)'}}, 'No categorical entities detected')
+          : (intel.entity_groups||[]).slice(0,6).map((eg,i) =>
+              e('div', {key:i, style:{marginBottom:10}},
+                e('div', {style:{fontSize:11,fontWeight:600,color:'var(--text)',marginBottom:3}},
+                  eg.display_name, e('span', {style:{fontWeight:400,color:'var(--text-muted)',marginLeft:4}}, '('+eg.count+')')),
+                e('div', {style:{display:'flex',flexWrap:'wrap',gap:4}},
+                  eg.values.slice(0,8).map((v,j) =>
+                    e('span', {key:j, style:{fontSize:9,padding:'2px 6px',borderRadius:4,background:'rgba(79,125,249,.06)',color:'var(--text-secondary)',fontFamily:'var(--font-mono)'}}, v)
+                  ),
+                  eg.count > 8 && e('span', {style:{fontSize:9,color:'var(--text-muted)'}}, '+'+(eg.count-8)+' more'),
+                ),
+              )
+            ),
+      ),
+
+      // Key metrics
+      e('div', {style:{background:'var(--glass)',border:'1px solid var(--glass-border)',borderRadius:12,padding:16}},
+        e('div', {style:{fontSize:10,fontWeight:600,color:'var(--green)',letterSpacing:'0.1em',marginBottom:10}}, 'KEY METRICS'),
+        (intel.key_metrics||[]).length === 0
+          ? e('div', {style:{fontSize:11,color:'var(--text-muted)'}}, 'No metrics detected')
+          : (intel.key_metrics||[]).slice(0,10).map((m,i) =>
+              e('div', {key:i, style:{display:'flex',alignItems:'center',gap:8,padding:'4px 0',borderBottom:i<(intel.key_metrics||[]).length-1?'1px solid var(--glass-border)':'none'}},
+                e('span', {style:{fontSize:11,fontWeight:500,fontFamily:'var(--font-mono)',color:'var(--text)',minWidth:140}}, m.name),
+                m.description && e('span', {style:{fontSize:10,color:'var(--text-muted)',flex:1}}, m.description),
+              )
+            ),
+      ),
+    ),
+
+    // Relationships
+    relationships.length > 0 && e('div', {style:{background:'var(--glass)',border:'1px solid var(--glass-border)',borderRadius:12,padding:16,marginBottom:20}},
+      e('div', {style:{fontSize:10,fontWeight:600,color:'var(--indigo)',letterSpacing:'0.1em',marginBottom:10}}, 'RELATIONSHIPS'),
+      e('div', {style:{display:'flex',flexDirection:'column',gap:4}},
+        relationships.slice(0,10).map((r,i) =>
+          e('div', {key:i, style:{display:'flex',alignItems:'center',gap:8,fontSize:11,color:'var(--text-secondary)'}},
+            e('span', {style:{fontFamily:'var(--font-mono)',fontWeight:500,color:'var(--text)'}}, r.from_table.split('_').slice(-2).join('_')),
+            e('span', {style:{fontFamily:'var(--font-mono)',fontSize:9}}, '.'+r.from_column),
+            e('span', {style:{color:r.confirmed?'var(--green)':'var(--amber)',margin:'0 4px'}}, r.confirmed?'→':'⇢'),
+            e('span', {style:{fontFamily:'var(--font-mono)',fontWeight:500,color:'var(--text)'}}, r.to_table.split('_').slice(-2).join('_')),
+            e('span', {style:{fontFamily:'var(--font-mono)',fontSize:9}}, '.'+r.to_column),
+            e('span', {style:{fontSize:8,color:confColor(r.confidence),fontFamily:'var(--font-mono)'}}, confPct(r.confidence)),
+            e('span', {style:{fontSize:8,padding:'1px 4px',borderRadius:3,
+              background:r.source==='fk'?'rgba(34,197,94,.08)':'rgba(245,158,11,.08)',
+              color:r.source==='fk'?'var(--green)':'var(--amber)'}}, r.source),
+          )
+        ),
+      ),
+    ),
+
+    // Tips
+    (intel.tips||[]).length > 0 && e('div', {style:{background:'var(--glass)',border:'1px solid var(--glass-border)',borderRadius:12,padding:16,marginBottom:20}},
+      e('div', {style:{fontSize:10,fontWeight:600,color:'var(--amber)',letterSpacing:'0.1em',marginBottom:8}}, 'QUERY TIPS'),
+      (intel.tips||[]).map((tip,i) =>
+        e('div', {key:i, style:{fontSize:11,color:'var(--text-secondary)',padding:'3px 0',lineHeight:1.4}}, '• '+tip)
+      ),
+    ),
+
+    // Schema compact list
+    e('div', {style:{background:'var(--glass)',border:'1px solid var(--glass-border)',borderRadius:12,padding:16}},
+      e('div', {style:{fontSize:10,fontWeight:600,color:'var(--text-muted)',letterSpacing:'0.1em',marginBottom:10}}, 'SCHEMA ('+tables.length+' tables)'),
+      tables.map((t,i) =>
+        e('div', {key:i, onClick:()=>{setSelected(t.name===selected?null:t.name);setTab('schema');},
+          style:{display:'flex',alignItems:'center',gap:10,padding:'6px 8px',borderRadius:6,cursor:'pointer',
+            background:selected===t.name?'rgba(79,125,249,.08)':'transparent',
+            borderBottom:i<tables.length-1?'1px solid var(--glass-border)':'none'}},
+          e('span', {style:{fontSize:11,fontWeight:500,color:'var(--text)',flex:1,fontFamily:'var(--font-mono)'}},
+            t.name.replace(/genai_spend_anomaly_analysis_/g,'').replace(/_/g,' ')),
+          e('span', {style:{fontSize:9,color:'var(--text-muted)'}}, (t.dimensions||[]).length+'d '+(t.measures||[]).length+'m'),
+          t.description && e('span', {style:{fontSize:9,color:'var(--text-muted)',maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}, t.description),
+        )
+      ),
+    ),
+  );
+
+  // ── TERMS TAB ─────────────────────────────────────────────────────────
+  const termsContent = e('div', {style:{flex:1,overflow:'auto',padding:24}},
+    e('div', {style:{display:'flex',alignItems:'center',gap:12,marginBottom:16}},
+      e('input', {type:'text', placeholder:'Search terms...', value:termSearch,
+        onChange:ev=>setTermSearch(ev.target.value),
+        style:{flex:1,padding:'6px 12px',borderRadius:6,border:'1px solid var(--glass-border)',
+          background:'var(--glass)',fontSize:12,color:'var(--text)',outline:'none',fontFamily:'var(--font-mono)'}}),
+      e('span', {style:{fontSize:11,color:'var(--text-muted)'}}, filteredTerms.length+' of '+allSynonyms.length),
+    ),
+    e('div', {style:{display:'flex',flexDirection:'column',gap:1}},
+      filteredTerms.slice(0,200).map((s,i) =>
+        e('div', {key:i, style:{display:'flex',alignItems:'center',gap:8,padding:'5px 10px',borderRadius:4,background:i%2===0?'var(--glass)':'transparent',fontSize:12}},
+          e('span', {style:{fontWeight:500,color:'var(--blue)',minWidth:130,fontFamily:'var(--font-mono)',fontSize:11}}, s.term),
+          e('span', {style:{color:'var(--text-muted)',fontSize:10}}, '→'),
+          e('span', {style:{fontFamily:'var(--font-mono)',color:'var(--text)',fontSize:11,flex:1}}, s.canonical),
+          s.confidence && e('span', {style:{fontSize:8,color:confColor(s.confidence),fontFamily:'var(--font-mono)'}}, Math.round(s.confidence*100)+'%'),
+          e('span', {style:{fontSize:8,padding:'1px 4px',borderRadius:3,
+            background:s.type==='inferred'?'rgba(139,92,246,.08)':s.type==='confirmed'||s.type==='confirmed by query'?'rgba(34,197,94,.08)':'rgba(79,125,249,.08)',
+            color:s.type==='inferred'?'var(--indigo)':s.type==='confirmed'||s.type==='confirmed by query'?'var(--green)':'var(--blue)'}}, s.type),
+        )
+      ),
+    ),
+  );
+
+  // ── SCHEMA TAB (table inspector) ──────────────────────────────────────
+  const schemaContent = e('div', {style:{flex:1,overflow:'auto',padding:24}},
+    !selectedTable
+      ? e('div', {style:{textAlign:'center',color:'var(--text-muted)',marginTop:40,fontSize:13}}, 'Select a table from the Overview to inspect its columns')
+      : e('div', null,
+          e('div', {style:{display:'flex',alignItems:'center',gap:8,marginBottom:16}},
+            e('div', {style:{fontSize:16,fontWeight:600,color:'var(--text)'}}, selectedTable.display_name||selectedTable.name),
+            e('span', {style:{fontSize:10,color:'var(--text-muted)',fontFamily:'var(--font-mono)'}}, selectedTable.backend||'duckdb'),
+            e('span', {style:{fontSize:9,color:confColor(selectedTable.confidence),fontFamily:'var(--font-mono)'}}, confPct(selectedTable.confidence)),
+          ),
+          selectedTable.description && e('div', {style:{fontSize:12,color:'var(--text-secondary)',marginBottom:16,lineHeight:1.5}}, selectedTable.description),
+
+          // Dimensions
+          (selectedTable.dimensions||[]).length > 0 && e('div', {style:{marginBottom:20}},
+            e('div', {style:{fontSize:10,fontWeight:600,color:'var(--blue)',letterSpacing:'0.08em',marginBottom:8}}, 'DIMENSIONS ('+selectedTable.dimensions.length+')'),
+            selectedTable.dimensions.map((d,i) =>
+              e('div', {key:i, style:{padding:'8px 10px',background:'var(--glass)',borderRadius:8,marginBottom:4,border:'1px solid var(--glass-border)'}},
+                e('div', {style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
+                  e('span', {style:{fontWeight:500,fontSize:12,fontFamily:'var(--font-mono)',color:'var(--text)'}}, d.name),
+                  e('span', {style:{fontSize:9,color:confColor(d.confidence||0.5),fontFamily:'var(--font-mono)'}}, confPct(d.confidence)),
+                ),
+                d.description && e('div', {style:{fontSize:10,color:'var(--text-muted)',marginTop:2}}, d.description),
+                (d.sample_values||[]).length > 0 && e('div', {style:{fontSize:9,color:'var(--text-muted)',marginTop:3,fontFamily:'var(--font-mono)'}}, d.sample_values.slice(0,6).join(' · ')),
+              )
+            ),
+          ),
+
+          // Measures
+          (selectedTable.measures||[]).length > 0 && e('div', {style:{marginBottom:20}},
+            e('div', {style:{fontSize:10,fontWeight:600,color:'var(--green)',letterSpacing:'0.08em',marginBottom:8}}, 'MEASURES ('+selectedTable.measures.length+')'),
+            selectedTable.measures.map((m,i) =>
+              e('div', {key:i, style:{padding:'8px 10px',background:'var(--glass)',borderRadius:8,marginBottom:4,border:'1px solid var(--glass-border)'}},
+                e('div', {style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
+                  e('span', {style:{fontWeight:500,fontSize:12,fontFamily:'var(--font-mono)',color:'var(--text)'}}, m.name),
+                  e('span', {style:{fontSize:9,color:confColor(m.confidence||0.5),fontFamily:'var(--font-mono)'}}, confPct(m.confidence)),
+                ),
+                m.description && e('div', {style:{fontSize:10,color:'var(--text-muted)',marginTop:2}}, m.description),
+                m.expr && e('div', {style:{fontSize:9,color:'var(--green)',marginTop:2,fontFamily:'var(--font-mono)'}}, '= '+m.expr),
+              )
+            ),
+          ),
+
+          // Time dimensions
+          (selectedTable.time_dimensions||[]).length > 0 && e('div', null,
+            e('div', {style:{fontSize:10,fontWeight:600,color:'var(--amber)',letterSpacing:'0.08em',marginBottom:8}}, 'TIME ('+selectedTable.time_dimensions.length+')'),
+            selectedTable.time_dimensions.map((td,i) =>
+              e('div', {key:i, style:{padding:'8px 10px',background:'var(--glass)',borderRadius:8,marginBottom:4,border:'1px solid var(--glass-border)'}},
+                e('span', {style:{fontWeight:500,fontSize:12,fontFamily:'var(--font-mono)',color:'var(--text)'}}, td.name),
+                td.description && e('div', {style:{fontSize:10,color:'var(--text-muted)',marginTop:2}}, td.description),
+              )
+            ),
+          ),
+        ),
+  );
+
+  // (old graph/terms/inspector code removed — replaced by overview/terms/schema tabs above)
+  const _DEAD = e('div', {style:{display:'none'}},
     // Stats bar
     e('div', {style:{display:'flex',gap:16,marginBottom:20,flexWrap:'wrap'}},
       e('div', {style:{background:'var(--glass)',border:'1px solid var(--glass-border)',borderRadius:8,padding:'8px 16px',fontSize:12}},
@@ -4815,31 +4984,40 @@ function KnowledgeView({workspace, addToast}) {
       'Source: '+(selectedTable.source||'auto')+' · Confidence: '+confPct(selectedTable.confidence)),
   );
 
+  const tabConfig = [
+    {id:'overview', label:'Overview'},
+    {id:'terms', label:'Terms ('+allSynonyms.length+')'},
+    {id:'schema', label:'Schema'},
+  ];
+
   return e('div', {style:{display:'flex',flexDirection:'column',height:'100%'}},
     // Header
-    e('div', {style:{padding:'16px 24px',borderBottom:'1px solid var(--glass-border)',display:'flex',alignItems:'center',justifyContent:'space-between'}},
-      e('div', {style:{display:'flex',alignItems:'center',gap:12}},
-        e('div', {style:{width:28,height:28,borderRadius:8,background:'linear-gradient(135deg,#4f7df9,#6366f1)',display:'flex',alignItems:'center',justifyContent:'center'}},
-          e('span', {style:{color:'#fff',fontSize:13,fontWeight:700}}, 'K')),
+    e('div', {style:{padding:'14px 24px',borderBottom:'1px solid var(--glass-border)',display:'flex',alignItems:'center',justifyContent:'space-between'}},
+      e('div', {style:{display:'flex',alignItems:'center',gap:10}},
+        e('div', {style:{width:26,height:26,borderRadius:7,background:'linear-gradient(135deg,#4f7df9,#6366f1)',display:'flex',alignItems:'center',justifyContent:'center'}},
+          e('span', {style:{color:'#fff',fontSize:12,fontWeight:700}}, 'K')),
         e('div', null,
-          e('div', {style:{fontWeight:600,fontSize:15,color:'var(--text)'}}, 'Knowledge'),
-          e('div', {style:{fontSize:11,color:'var(--text-muted)'}}, 'Semantic model · '+tables.length+' tables · '+(stats.synonyms||allSynonyms.length)+' terms'),
+          e('div', {style:{fontWeight:600,fontSize:14,color:'var(--text)'}}, 'Semantic Intelligence'),
+          e('div', {style:{fontSize:10,color:'var(--text-muted)'}},
+            tables.length+' tables · '+(stats.synonyms||0)+' terms · '+confPct(stats.avg_confidence)+' confidence'),
         ),
       ),
-      e('div', {style:{display:'flex',gap:4}},
-        ['graph','terms'].map(t =>
-          e('button', {key:t, onClick:()=>setTab(t), style:{
-            padding:'4px 12px', borderRadius:6, border:'1px solid '+(tab===t?'var(--blue)':'var(--glass-border)'),
-            background: tab===t?'rgba(79,125,249,.1)':'transparent', color: tab===t?'var(--blue)':'var(--text-muted)',
-            fontSize:11, cursor:'pointer', fontWeight:tab===t?600:400}},
-            t.charAt(0).toUpperCase()+t.slice(1))
+      e('div', {style:{display:'flex',gap:3}},
+        tabConfig.map(t =>
+          e('button', {key:t.id, onClick:()=>setTab(t.id), style:{
+            padding:'4px 10px', borderRadius:5, border:'1px solid '+(tab===t.id?'var(--blue)':'var(--glass-border)'),
+            background:tab===t.id?'rgba(79,125,249,.1)':'transparent', color:tab===t.id?'var(--blue)':'var(--text-muted)',
+            fontSize:10, cursor:'pointer', fontWeight:tab===t.id?600:400, fontFamily:'var(--font-ui)'}},
+            t.label)
         ),
       ),
     ),
     // Body
-    e('div', {style:{display:'flex',flex:1,overflow:'hidden'}},
-      tab === 'graph' ? graphContent : termsContent,
-      inspector,
+    e('div', {style:{flex:1,overflow:'hidden',display:'flex'}},
+      tab === 'overview' ? overviewContent :
+      tab === 'terms' ? termsContent :
+      tab === 'schema' ? schemaContent :
+      overviewContent,
     ),
   );
 }
