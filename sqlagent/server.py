@@ -1518,24 +1518,31 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
                     if block and block not in agent._semantic_context_notes:
                         agent._semantic_context_notes.append(block)
 
-                    # Bootstrap inferential alias graph — builds complete
-                    # alias map for every entity value (MYS→my,myr,malaysia,...)
-                    # so ALL future queries resolve instantly with zero LLM cost
-                    try:
-                        alias_count = await bootstrap_inference_graph(
-                            source_id, workspace_id or "default",
-                            conn, agent.services.llm, sem_ctx,
-                        )
-                        structlog.get_logger().info(
-                            "semantic.bootstrap.done",
-                            source_id=source_id,
-                            aliases=len(alias_count) if isinstance(alias_count, dict) else 0,
-                        )
-                    except Exception as _boot_err:
-                        structlog.get_logger().warning(
-                            "semantic.bootstrap.failed",
-                            source_id=source_id, error=str(_boot_err),
-                        )
+                    # Bootstrap inferential alias graph IN BACKGROUND
+                    # Don't block upload — user gets data immediately, semantic
+                    # terms populate progressively as bootstrap completes
+                    import asyncio as _asyncio
+
+                    async def _run_bootstrap(_sid, _wsid, _conn, _llm, _ctx):
+                        try:
+                            alias_count = await bootstrap_inference_graph(
+                                _sid, _wsid, _conn, _llm, _ctx,
+                            )
+                            structlog.get_logger().info(
+                                "semantic.bootstrap.done",
+                                source_id=_sid,
+                                aliases=len(alias_count) if isinstance(alias_count, dict) else 0,
+                            )
+                        except Exception as _err:
+                            structlog.get_logger().warning(
+                                "semantic.bootstrap.failed",
+                                source_id=_sid, error=str(_err),
+                            )
+
+                    _asyncio.create_task(_run_bootstrap(
+                        source_id, workspace_id or "default",
+                        conn, agent.services.llm, sem_ctx,
+                    ))
                     logger.info(
                         "upload.semantic_analyzed",
                         source=source_id,
