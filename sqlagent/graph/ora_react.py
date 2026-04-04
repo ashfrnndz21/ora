@@ -208,13 +208,13 @@ async def ora_react(state: QueryState, services: Any) -> dict:
     winner_generator = ""
     correction_round = 0
 
-    # Get examples for few-shot
+    # Get examples for few-shot (gracefully handle missing/broken store)
     similar_examples = []
-    if services.example_store:
-        try:
+    try:
+        if services.example_store and hasattr(services.example_store, 'search'):
             similar_examples = await services.example_store.search(nl_query, top_k=3)
-        except Exception:
-            pass
+    except Exception:
+        pass  # example store not available — generate from scratch
 
     # Semantic context notes
     data_context_notes = list(state.get("data_context_notes", []))
@@ -222,9 +222,10 @@ async def ora_react(state: QueryState, services: Any) -> dict:
     for attempt in range(MAX_ATTEMPTS):
         # ── Generate SQL ─────────────────────────────────────────────
         try:
+            # Pass the actual table objects (not dict) — generators use MSchemaSerializer
             candidates = await services.ensemble.generate(
                 nl_query=nl_query_for_sql,
-                tables=pruned,
+                pruned_schema=pruned,  # list of SchemaTable objects
                 examples=similar_examples,
                 context_notes=data_context_notes,
             )
@@ -245,6 +246,7 @@ async def ora_react(state: QueryState, services: Any) -> dict:
             total_cost += sum(c.get("cost_usd", 0.0) for c in candidates)
 
         except Exception as gen_err:
+            logger.error("ora.react.generate_failed", error=str(gen_err), attempt=attempt)
             trace_events.append({
                 "node": "generate", "status": "failed",
                 "summary": f"SQL generation failed: {str(gen_err)[:80]}",
