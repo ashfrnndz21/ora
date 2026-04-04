@@ -2226,18 +2226,23 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
         if os.path.isdir(ws_dir):
             import glob as _glob
 
-            # 1. Learned aliases (from per-query resolution)
+            # 1. Learned aliases (from per-query resolution + bootstrap)
             for alias_file in _glob.glob(os.path.join(ws_dir, "aliases_*.json")):
                 try:
                     with open(alias_file) as af:
-                        aliases = json.load(af)
+                        data = json.load(af)
                     src_id = os.path.basename(alias_file).replace("aliases_", "").replace(".json", "")
+                    # Extract confidence metadata if present
+                    conf_map = data.pop("_confidence", {}) if isinstance(data, dict) else {}
+                    aliases = data
                     for term, canonical in aliases.items():
+                        conf = conf_map.get(term, 0.85)
                         synonyms.append({
                             "term": term,
                             "canonical": canonical,
                             "source": "learned",
                             "source_id": src_id,
+                            "confidence": round(conf, 2),
                         })
                         activity.append({
                             "type": "alias_learned",

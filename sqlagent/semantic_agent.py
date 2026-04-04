@@ -268,6 +268,9 @@ async def bootstrap_inference_graph(
         logger.info("semantic.bootstrap.no_coded_columns", source_id=source_id)
         return all_aliases
 
+    # Accumulate confidence scores across all columns
+    all_confidences: dict[str, float] = {}
+
     # Build inference prompt for each coded column
     for col_path, values in coded_columns.items():
         # Skip if we already have extensive aliases for these values
@@ -315,7 +318,8 @@ Rules:
 - canonical MUST be the exact value as stored in the database
 - aliases should be LOWERCASE
 - Include the full name, 2-letter code, 3-letter code, currency code, and any common abbreviations
-- Only include aliases you're confident about (confidence > 0.7)
+- Only include aliases you're confident about (confidence > 0.85)
+- Be conservative — only map aliases you are VERY sure about
 - Return ONLY valid JSON, no markdown
 """
 
@@ -343,7 +347,12 @@ Rules:
                 aliases = entry.get("aliases", [])
                 conf = entry.get("confidence", 0.8)
 
-                if not canonical or conf < 0.7:
+                if not canonical or conf < CONFIDENCE_THRESHOLD:
+                    logger.debug(
+                        "semantic.bootstrap.below_threshold",
+                        canonical=canonical, confidence=conf,
+                        threshold=CONFIDENCE_THRESHOLD,
+                    )
                     continue
 
                 for alias in aliases:
@@ -351,6 +360,7 @@ Rules:
                     if alias_lower and alias_lower != canonical.lower():
                         if alias_lower not in all_aliases:
                             all_aliases[alias_lower] = canonical
+                            all_confidences[alias_lower] = conf
                             new_count += 1
 
             logger.info(
@@ -367,8 +377,8 @@ Rules:
                 column=col_path, error=str(exc),
             )
 
-    # Persist the complete alias map
-    _save_learned_aliases(workspace_id, source_id, all_aliases)
+    # Persist the complete alias map with confidence scores
+    _save_learned_aliases(workspace_id, source_id, all_aliases, all_confidences)
 
     logger.info(
         "semantic.bootstrap.completed",
@@ -436,8 +446,15 @@ class SemanticResolution:
     """Whether an LLM call was needed (False = all resolved from cache/memory)"""
 
 
+# ── Confidence threshold ──────────────────────────────────────────────────────
+# Only aliases above this threshold are saved to the semantic layer.
+# Below this → the Semantic Agent asks the LLM per-query instead of assuming.
+CONFIDENCE_THRESHOLD = 0.85
+
 # Persisted learned aliases — source_id → {user_term_lower → canonical_value}
+# Each alias also has a confidence score stored in a parallel dict.
 _learned_aliases: dict[str, dict[str, str]] = {}
+_alias_confidence: dict[str, dict[str, float]] = {}
 
 
 def _load_learned_aliases(workspace_id: str, source_id: str) -> dict[str, str]:
@@ -452,29 +469,84 @@ def _load_learned_aliases(workspace_id: str, source_id: str) -> dict[str, str]:
         )
         if os.path.exists(path):
             with open(path) as f:
-                aliases = json.load(f)
-            _learned_aliases[key] = aliases
-            return aliases
+                data = json.load(f)
+            # Support both old format (flat dict) and new format (with confidence)
+            if isinstance(data, dict) and "_confidence" in data:
+                aliases = {k: v for k, v in data.items() if k != "_confidence"}
+                _learned_aliases[key] = aliases
+                _alias_confidence[key] = data["_confidence"]
+            else:
+                _learned_aliases[key] = data
+                _alias_confidence[key] = {k: 0.9 for k in data}
+            return _learned_aliases[key]
     except Exception:
         pass
     _learned_aliases[key] = {}
+    _alias_confidence[key] = {}
     return _learned_aliases[key]
 
 
-def _save_learned_aliases(workspace_id: str, source_id: str, aliases: dict[str, str]) -> None:
-    """Persist learned aliases to disk."""
+def _get_alias_confidence(workspace_id: str, source_id: str, alias: str) -> float:
+    """Get confidence for a specific alias."""
+    key = f"{workspace_id}:{source_id}"
+    return _alias_confidence.get(key, {}).get(alias.lower(), 0.5)
+
+
+def _save_learned_aliases(
+    workspace_id: str,
+    source_id: str,
+    aliases: dict[str, str],
+    confidence: dict[str, float] | None = None,
+) -> None:
+    """Persist learned aliases to disk with confidence scores."""
     key = f"{workspace_id}:{source_id}"
     _learned_aliases[key] = aliases
+    if confidence:
+        if key not in _alias_confidence:
+            _alias_confidence[key] = {}
+        _alias_confidence[key].update(confidence)
+
     try:
         base = os.path.join(
             os.path.expanduser("~"), ".sqlagent", "uploads", workspace_id
         )
         os.makedirs(base, exist_ok=True)
         path = os.path.join(base, f"aliases_{source_id}.json")
+        # Save with confidence metadata
+        save_data = dict(aliases)
+        save_data["_confidence"] = _alias_confidence.get(key, {})
         with open(path, "w") as f:
-            json.dump(aliases, f, indent=2)
+            json.dump(save_data, f, indent=2)
     except Exception as exc:
         logger.warning("semantic.save_aliases_failed", error=str(exc))
+
+
+def strengthen_alias(workspace_id: str, source_id: str, alias: str, canonical: str) -> None:
+    """Strengthen confidence for an alias that was confirmed by a successful query.
+
+    Called by the learn node after a query succeeds — progressively builds
+    confidence in the semantic layer.
+    """
+    key = f"{workspace_id}:{source_id}"
+    aliases = _load_learned_aliases(workspace_id, source_id)
+    alias_lower = alias.lower().strip()
+
+    # Add or update the alias
+    aliases[alias_lower] = canonical
+
+    # Increase confidence (cap at 0.99)
+    if key not in _alias_confidence:
+        _alias_confidence[key] = {}
+    current = _alias_confidence[key].get(alias_lower, 0.85)
+    new_conf = min(current + 0.03, 0.99)  # Each confirmation adds 3%
+    _alias_confidence[key][alias_lower] = new_conf
+
+    _save_learned_aliases(workspace_id, source_id, aliases, _alias_confidence.get(key))
+    logger.info(
+        "semantic.alias_strengthened",
+        alias=alias, canonical=canonical,
+        confidence=round(new_conf, 3),
+    )
 
 
 async def resolve_entities(
@@ -652,8 +724,9 @@ Rules:
                 result.resolved_from[entity] = "llm"
                 total_conf += conf
 
-                # Save to learned aliases for next time
-                learned[entity.lower().strip()] = canonical
+                # Save to learned aliases only if confidence ≥ threshold
+                if conf >= CONFIDENCE_THRESHOLD:
+                    learned[entity.lower().strip()] = canonical
                 logger.info(
                     "semantic.resolve.llm",
                     entity=entity, canonical=canonical,
@@ -666,9 +739,14 @@ Rules:
                     confidence=conf, reasoning=reasoning,
                 )
 
-        # Persist learned aliases
+        # Persist learned aliases with confidence scores
         if any(v == "llm" for v in result.resolved_from.values()):
-            _save_learned_aliases(workspace_id, source_id, learned)
+            new_confs = {}
+            for res in resolutions:
+                e_key = res.get("entity", "").lower().strip()
+                if e_key and res.get("confidence", 0) >= CONFIDENCE_THRESHOLD:
+                    new_confs[e_key] = res.get("confidence", 0.85)
+            _save_learned_aliases(workspace_id, source_id, learned, new_confs)
 
         # Calculate overall confidence
         all_confs = [
