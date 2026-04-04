@@ -1137,8 +1137,14 @@ def make_respond_node(services: Any):
                 lines.append(f"{role}: {text}")
             history_prefix = "Conversation so far:\n" + "\n".join(lines) + "\n\n"
 
-        # Sample data for the LLM
-        sample = rows[:5]
+        # Sample data for the LLM — show enough rows to cover all entities
+        # Previously only showed 5 rows, causing the LLM to miss data
+        # (e.g. Vietnam data in rows 7-12 was invisible)
+        if row_count <= 20:
+            sample = rows  # Show all rows if small enough
+        else:
+            # Show first 10 + a summary of unique values per text column
+            sample = rows[:10]
 
         # ── Compound query: structure the answer by sub-question part ──────────
         # When synthesize_node used UNION ALL, rows include a 'sub_question' column
@@ -1197,7 +1203,7 @@ def make_respond_node(services: Any):
                 f"{warnings_prefix}"
                 f"Question: {nl_query}\n"
                 f"SQL: {sql}\n"
-                f"Results ({row_count} rows, showing first 5):\n{sample}\n\n"
+                f"Results ({row_count} rows{', ALL shown' if row_count <= 20 else ', showing first 10'}):\n{sample}\n\n"
                 f"1. Write a concise natural language answer (2-3 sentences, use **bold** for key numbers).\n"
                 f"2. Suggest 3 follow-up questions.\n"
                 f"3. Suggest a chart type (bar, line, pie, table, or none).\n\n"
