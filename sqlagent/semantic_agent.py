@@ -230,24 +230,51 @@ async def bootstrap_inference_graph(
     existing = _load_learned_aliases(workspace_id, source_id)
     all_aliases.update(existing)
 
-    # Identify which columns have coded/abbreviated values
+    # Identify ALL dimension columns that could benefit from alias inference.
+    # Not just coded columns — ANY column with categorical/entity values
+    # should have inferential aliases built so the Semantic Agent can resolve
+    # user terms like "MY" → "Malaysia", "genai" → "GenAI", etc.
     coded_columns: dict[str, list[str]] = {}  # col_path → all distinct values
 
     try:
         snap = await connector.introspect()
-        for table in snap.tables[:5]:
+        for table in snap.tables[:8]:
             for col in table.columns:
                 col_lower = col.name.lower()
-                # Check if this column was identified as having abbreviations
-                is_coded = False
-                if semantic_context and semantic_context.abbreviation_maps:
-                    if col.name in semantic_context.abbreviation_maps:
-                        is_coded = True
-                # Also check if column name suggests it's a code column
-                if any(kw in col_lower for kw in ("code", "iso", "id", "type", "category", "status")):
-                    is_coded = True
+                dt_lower = (col.data_type or "").lower()
 
-                if is_coded:
+                # Include this column if ANY of:
+                # 1. It was identified as having abbreviations by analyze_source
+                # 2. Column name suggests it's an entity/category column
+                # 3. It's a text/string column classified as a dimension
+                # 4. It has low cardinality (< 200 distinct values = likely categorical)
+                is_dimension = False
+
+                if semantic_context:
+                    if col.name in (semantic_context.abbreviation_maps or {}):
+                        is_dimension = True
+                    if col.name in (semantic_context.dimension_columns or []):
+                        is_dimension = True
+
+                if any(kw in col_lower for kw in (
+                    "code", "iso", "name", "type", "category", "status", "region",
+                    "country", "city", "state", "segment", "tier", "channel",
+                    "product", "service", "vendor", "provider", "department",
+                )):
+                    is_dimension = True
+
+                # Text/string columns are likely dimensions
+                if any(t in dt_lower for t in ("varchar", "text", "string", "nvarchar", "char")):
+                    is_dimension = True
+
+                # Skip numeric, date, and boolean columns
+                if any(t in dt_lower for t in (
+                    "int", "float", "double", "decimal", "numeric", "date",
+                    "time", "bool", "bigint", "money", "real",
+                )):
+                    is_dimension = False
+
+                if is_dimension:
                     try:
                         res = await connector.execute(
                             f'SELECT DISTINCT "{col.name}" FROM "{table.name}" '
@@ -265,8 +292,15 @@ async def bootstrap_inference_graph(
         return all_aliases
 
     if not coded_columns:
-        logger.info("semantic.bootstrap.no_coded_columns", source_id=source_id)
+        logger.info("semantic.bootstrap.no_dimension_columns", source_id=source_id)
         return all_aliases
+
+    logger.info(
+        "semantic.bootstrap.starting",
+        source_id=source_id,
+        dimension_columns=list(coded_columns.keys()),
+        total_values=sum(len(v) for v in coded_columns.values()),
+    )
 
     # Accumulate confidence scores across all columns
     all_confidences: dict[str, float] = {}
@@ -290,36 +324,37 @@ async def bootstrap_inference_graph(
             )
 
         prompt = f"""\
-You are building a semantic alias map for a database column.
+You are building a semantic alias map for a database column so that a natural language
+query system can resolve user terms to actual stored values.
 
 Column: {col_path}
 All distinct values in the database: {values[:100]}
 {abbrev_context}
 
-For EACH value, generate ALL possible ways a user might refer to it.
+For EACH value, generate ALL possible ways a user might refer to it in a question.
 Think about:
-- ISO 2-letter codes (MY, PH, VN, TH, ID, SG, ...)
-- ISO 3-letter codes (MYS, PHL, VNM, THA, IDN, SGP, ...)
-- Currency codes (MYR, PHP, VND, THB, IDR, SGD, ...)
-- Full names in English (Malaysia, Philippines, Vietnam, ...)
-- Common abbreviations (Msia, Phil, Indo, S'pore, ...)
-- Common misspellings or informal names
-- Alternate official names (Viet Nam vs Vietnam, ...)
+- Abbreviations and acronyms (e.g. "AWS" for "Amazon Web Services", "SG" for "Singapore")
+- ISO codes if applicable (MY, MYS, MYR for Malaysia)
+- Informal names, nicknames, short forms (e.g. "genai" for "Gen AI", "indo" for "Indonesia")
+- Alternate spellings or casing (e.g. "Viet Nam" vs "Vietnam")
+- Related concepts (e.g. "cloud" might map to a specific service category)
+- Plural/singular forms
+- Common user-facing labels vs internal database values
 
 Return JSON:
 {{
   "aliases": [
-    {{"canonical": "MYS", "aliases": ["my", "myr", "malaysia", "malay", "msia"], "confidence": 0.95}},
-    {{"canonical": "PHL", "aliases": ["ph", "php", "philippines", "pinoy", "phil"], "confidence": 0.95}}
+    {{"canonical": "Malaysia", "aliases": ["my", "mys", "myr", "malay", "msia", "malaysian"], "confidence": 0.95}},
+    {{"canonical": "Gen AI", "aliases": ["genai", "generative ai", "gen-ai", "llm services"], "confidence": 0.90}}
   ]
 }}
 
 Rules:
-- canonical MUST be the exact value as stored in the database
+- canonical MUST be the EXACT value as stored in the database (case-sensitive match)
 - aliases should be LOWERCASE
-- Include the full name, 2-letter code, 3-letter code, currency code, and any common abbreviations
-- Only include aliases you're confident about (confidence > 0.85)
+- Only include aliases with confidence > 0.85
 - Be conservative — only map aliases you are VERY sure about
+- If a value is already a plain English word with no obvious aliases, you can skip it
 - Return ONLY valid JSON, no markdown
 """
 

@@ -2159,7 +2159,7 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
                             "time_grain": "day",
                             "synonyms": [],
                             "source": "auto",
-                            "confidence": 0.6,
+                            "confidence": 0.40,
                         })
                     elif dt_lower in ("int", "integer", "bigint", "float", "double", "decimal", "numeric", "number", "money", "real"):
                         measures.append({
@@ -2171,7 +2171,7 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
                             "aggregation": "sum",
                             "synonyms": [],
                             "source": "auto",
-                            "confidence": 0.6,
+                            "confidence": 0.40,
                         })
                     else:
                         dims.append({
@@ -2183,7 +2183,7 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
                             "synonyms": [],
                             "sample_values": [str(v) for v in samples[:10]] if samples else [],
                             "source": "auto",
-                            "confidence": 0.6,
+                            "confidence": 0.40,
                         })
 
                     # Detect FK relationships
@@ -2218,7 +2218,55 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
                     "confidence": 0.6,
                 })
 
-        # ── Load learned terms from Semantic Agent ────────────────────────────
+        # ── Load Semantic Agent context to calculate real confidence ──────────
+        # Confidence is NOT a static number — it's computed from what the
+        # Semantic Agent actually knows about this source:
+        #   - Has description from LLM analysis? +0.15
+        #   - Has column meanings? +0.15
+        #   - Has abbreviation maps? +0.10
+        #   - Has learned aliases from queries? +0.10
+        #   - Has filter tips? +0.05
+        #   Base: 0.40 (schema introspected but nothing else)
+        ws_dir_check = os.path.join(os.path.expanduser("~"), ".sqlagent", "uploads", workspace_id)
+        base_confidence = 0.40
+        sem_enrichments = 0.0
+        has_sem_context = False
+        has_aliases = False
+
+        if os.path.isdir(ws_dir_check):
+            import glob as _g
+            # Check if semantic analysis ran
+            sem_files = _g.glob(os.path.join(ws_dir_check, "semantic_*.json"))
+            if sem_files:
+                has_sem_context = True
+                sem_enrichments += 0.20  # domain + column meanings
+                try:
+                    with open(sem_files[0]) as _sf:
+                        _sd = json.load(_sf)
+                    if _sd.get("abbreviation_maps"):
+                        sem_enrichments += 0.10
+                    if _sd.get("filter_tips"):
+                        sem_enrichments += 0.05
+                except Exception:
+                    pass
+            # Check if aliases exist
+            alias_files = _g.glob(os.path.join(ws_dir_check, "aliases_*.json"))
+            if alias_files:
+                has_aliases = True
+                sem_enrichments += 0.10
+
+        real_confidence = round(min(base_confidence + sem_enrichments, 0.95), 2)
+
+        # Apply real confidence to all auto-generated entries
+        for t in tables:
+            t["confidence"] = real_confidence
+            for d in t.get("dimensions", []):
+                d["confidence"] = real_confidence
+            for m in t.get("measures", []):
+                m["confidence"] = real_confidence
+            for td in t.get("time_dimensions", []):
+                td["confidence"] = real_confidence
+
         synonyms: list[dict] = []
         activity: list[dict] = []
 
@@ -2306,7 +2354,7 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
                 "measures": sum(len(t["measures"]) for t in tables),
                 "relationships": len(relationships),
                 "synonyms": total_terms,
-                "avg_confidence": 0.6,
+                "avg_confidence": real_confidence,
                 "backends": list({t["backend"] for t in tables}),
             },
         }
