@@ -741,11 +741,47 @@ def make_generate_node(services: Any):
         total_cost = sum(c.get("cost_usd", 0.0) for c in candidates)
         latency = int((time.monotonic() - started) * 1000)
 
+        # ── Ora validates SQL before execution ─────────────────────────────
+        # Check that the generated SQL contains the exact filter values from
+        # semantic reasoning. If not, the SQL Agent rewrote them (e.g. Malaysia → MYS).
+        # Fix inline by replacing wrong values.
+        sql = winner.get("sql", "") if winner else ""
+        sem_reasoning = state.get("semantic_reasoning")
+        if sql and sem_reasoning and sem_reasoning.get("filters"):
+            sql_upper = sql.upper()
+            for f in sem_reasoning["filters"]:
+                val = f.get("value", "")
+                if not val or not isinstance(val, str):
+                    continue
+                # Check if the exact value is in the SQL
+                if f"'{val}'" not in sql and f'"{val}"' not in sql:
+                    # Value missing — the SQL Agent may have converted it
+                    # Try to find and fix common conversions
+                    col = f.get("column", "")
+                    if col:
+                        import re as _re_fix
+                        # Look for the column with a different value and replace
+                        pattern = _re_fix.compile(
+                            rf"({_re_fix.escape(col)}\s*=\s*)'([^']*)'",
+                            _re_fix.IGNORECASE
+                        )
+                        match = pattern.search(sql)
+                        if match:
+                            old_val = match.group(2)
+                            if old_val != val:
+                                sql = sql.replace(f"'{old_val}'", f"'{val}'")
+                                logger.info(
+                                    "generate.ora_fixed_value",
+                                    column=col,
+                                    old_value=old_val,
+                                    new_value=val,
+                                )
+
         return {
             "candidates": candidates,
             "winner": winner,
             "winner_generator": winner.get("generator_id", "") if winner else "",
-            "sql": winner.get("sql", "") if winner else "",
+            "sql": sql,
             "selection_reasoning": selection_reasoning,
             "generation_tokens": total_tokens,
             "generation_cost_usd": total_cost,

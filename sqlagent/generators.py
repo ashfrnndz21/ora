@@ -110,15 +110,11 @@ class FewshotGenerator:
             f"Schema:\n{schema_text}\n"
             f"{learned_context}"
             f"\nIMPORTANT RULES:\n"
-            f"1. Column values shown in [values:...] are SAMPLE values only — NOT exhaustive.\n"
-            f"   The column contains MANY more values not shown. Use samples to understand the\n"
-            f"   data FORMAT (e.g. 3-letter ISO codes like MYS, VNM, MMR) and code style.\n"
-            f"   NEVER conclude that an entity is absent just because it is not in the samples.\n"
-            f"2. When a question asks about a specific entity type (e.g. 'countries', 'cities',\n"
-            f"   'products', 'customers'), look at the actual column values. Use your knowledge\n"
-            f"   to distinguish individual entities from aggregate/bucket groupings, and filter out\n"
-            f"   the aggregates. Apply this reasoning generically to whatever aggregates appear\n"
-            f"   in THIS dataset's values.\n"
+            f"1. When the question contains explicit filter values like Country = 'Malaysia' or\n"
+            f"   age = '15+', use those EXACT values in your SQL. Do NOT convert them to codes,\n"
+            f"   abbreviations, or any other format. Copy them character-for-character.\n"
+            f"2. Column values shown in [values:...] are SAMPLE values — not exhaustive.\n"
+            f"   NEVER conclude an entity is absent just because it's not in the samples.\n"
             f"3. If a correction note appears in examples (e.g. '[learn: ...]'), apply that\n"
             f"   lesson directly to the current query.\n"
         )
@@ -201,6 +197,8 @@ class PlanGenerator:
 
         prompt = (
             f"You are an expert SQL writer using a plan-then-code approach.\n\n"
+            f"CRITICAL RULE: When the question contains explicit filter values like Country = 'Malaysia' "
+            f"or age = '15+', use those EXACT values in your SQL. Do NOT convert to codes or abbreviations.\n\n"
             f"Schema:\n{schema_text}\n"
             f"{learned_context}"
             f"Question: {nl_query}\n\n"
@@ -279,6 +277,8 @@ class DecomposeGenerator:
 
         prompt = (
             f"You are an expert SQL writer. Use CTEs (WITH clauses) to decompose the query.\n\n"
+            f"CRITICAL RULE: When the question contains explicit filter values like Country = 'Malaysia' "
+            f"or age = '15+', use those EXACT values in your SQL. Do NOT convert to codes or abbreviations.\n\n"
             f"Schema:\n{schema_text}\n"
             f"{learned_context}"
             f"Question: {nl_query}\n\n"
