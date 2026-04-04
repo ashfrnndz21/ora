@@ -1507,7 +1507,9 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
 
             # Run semantic analysis for this source (one-time, at connect time)
             try:
-                from sqlagent.semantic_agent import analyze_source, persist_context
+                from sqlagent.semantic_agent import (
+                    analyze_source, persist_context, bootstrap_inference_graph,
+                )
 
                 sem_ctx = await analyze_source(source_id, conn, agent.services.llm)
                 if sem_ctx:
@@ -1515,6 +1517,25 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
                     block = sem_ctx.to_context_block()
                     if block and block not in agent._semantic_context_notes:
                         agent._semantic_context_notes.append(block)
+
+                    # Bootstrap inferential alias graph — builds complete
+                    # alias map for every entity value (MYS→my,myr,malaysia,...)
+                    # so ALL future queries resolve instantly with zero LLM cost
+                    try:
+                        alias_count = await bootstrap_inference_graph(
+                            source_id, workspace_id or "default",
+                            conn, agent.services.llm, sem_ctx,
+                        )
+                        structlog.get_logger().info(
+                            "semantic.bootstrap.done",
+                            source_id=source_id,
+                            aliases=len(alias_count) if isinstance(alias_count, dict) else 0,
+                        )
+                    except Exception as _boot_err:
+                        structlog.get_logger().warning(
+                            "semantic.bootstrap.failed",
+                            source_id=source_id, error=str(_boot_err),
+                        )
                     logger.info(
                         "upload.semantic_analyzed",
                         source=source_id,

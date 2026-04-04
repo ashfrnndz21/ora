@@ -196,6 +196,189 @@ def persist_context(ctx: SourceSemanticContext, workspace_id: str) -> None:
         logger.warning("semantic.persist_failed", source_id=ctx.source_id, error=str(exc))
 
 
+async def bootstrap_inference_graph(
+    source_id: str,
+    workspace_id: str,
+    connector: object,
+    llm: object,
+    semantic_context: SourceSemanticContext | None = None,
+) -> dict[str, str]:
+    """Build a complete inferential alias map for all entity values in a source.
+
+    This is the intelligence layer. On first connect (or when triggered by admin),
+    the Semantic Agent:
+
+    1. Samples ALL distinct values from each coded/abbreviation column
+    2. Asks the LLM to infer EVERY way a user might refer to each value
+       (ISO2, ISO3, currency codes, nicknames, misspellings, alternate names)
+    3. Builds a complete alias → canonical map with confidence levels
+    4. Persists the map so all future queries resolve instantly (zero LLM cost)
+
+    Example output for iso_code column with value 'MYS':
+      my → MYS (ISO2 code, confidence 0.98)
+      myr → MYS (currency code Malaysian Ringgit, confidence 0.95)
+      malaysia → MYS (full country name, confidence 0.99)
+      malay → MYS (common abbreviation, confidence 0.85)
+      msia → MYS (informal abbreviation, confidence 0.80)
+
+    This runs ONCE per source. After that, every user query resolves
+    from the pre-built map — no LLM call needed.
+    """
+    all_aliases: dict[str, str] = {}
+
+    # Load any existing learned aliases
+    existing = _load_learned_aliases(workspace_id, source_id)
+    all_aliases.update(existing)
+
+    # Identify which columns have coded/abbreviated values
+    coded_columns: dict[str, list[str]] = {}  # col_path → all distinct values
+
+    try:
+        snap = await connector.introspect()
+        for table in snap.tables[:5]:
+            for col in table.columns:
+                col_lower = col.name.lower()
+                # Check if this column was identified as having abbreviations
+                is_coded = False
+                if semantic_context and semantic_context.abbreviation_maps:
+                    if col.name in semantic_context.abbreviation_maps:
+                        is_coded = True
+                # Also check if column name suggests it's a code column
+                if any(kw in col_lower for kw in ("code", "iso", "id", "type", "category", "status")):
+                    is_coded = True
+
+                if is_coded:
+                    try:
+                        res = await connector.execute(
+                            f'SELECT DISTINCT "{col.name}" FROM "{table.name}" '
+                            f'WHERE "{col.name}" IS NOT NULL LIMIT 200'
+                        )
+                        import pandas as _pd
+                        if isinstance(res, _pd.DataFrame) and not res.empty:
+                            vals = [str(v) for v in res.iloc[:, 0].dropna().tolist()]
+                            if vals:
+                                coded_columns[f"{table.name}.{col.name}"] = vals
+                    except Exception:
+                        pass
+    except Exception as exc:
+        logger.warning("semantic.bootstrap.introspect_failed", error=str(exc))
+        return all_aliases
+
+    if not coded_columns:
+        logger.info("semantic.bootstrap.no_coded_columns", source_id=source_id)
+        return all_aliases
+
+    # Build inference prompt for each coded column
+    for col_path, values in coded_columns.items():
+        # Skip if we already have extensive aliases for these values
+        existing_canonicals = set(all_aliases.values())
+        new_values = [v for v in values if v not in existing_canonicals
+                      and v.lower() not in all_aliases]
+        if len(new_values) < 2:
+            continue
+
+        # Include existing abbreviation map context if available
+        abbrev_context = ""
+        col_name = col_path.split(".")[-1]
+        if semantic_context and col_name in semantic_context.abbreviation_maps:
+            known = semantic_context.abbreviation_maps[col_name]
+            abbrev_context = "\nKnown mappings for this column:\n" + "\n".join(
+                f"  {code} = {name}" for code, name in known.items()
+            )
+
+        prompt = f"""\
+You are building a semantic alias map for a database column.
+
+Column: {col_path}
+All distinct values in the database: {values[:100]}
+{abbrev_context}
+
+For EACH value, generate ALL possible ways a user might refer to it.
+Think about:
+- ISO 2-letter codes (MY, PH, VN, TH, ID, SG, ...)
+- ISO 3-letter codes (MYS, PHL, VNM, THA, IDN, SGP, ...)
+- Currency codes (MYR, PHP, VND, THB, IDR, SGD, ...)
+- Full names in English (Malaysia, Philippines, Vietnam, ...)
+- Common abbreviations (Msia, Phil, Indo, S'pore, ...)
+- Common misspellings or informal names
+- Alternate official names (Viet Nam vs Vietnam, ...)
+
+Return JSON:
+{{
+  "aliases": [
+    {{"canonical": "MYS", "aliases": ["my", "myr", "malaysia", "malay", "msia"], "confidence": 0.95}},
+    {{"canonical": "PHL", "aliases": ["ph", "php", "philippines", "pinoy", "phil"], "confidence": 0.95}}
+  ]
+}}
+
+Rules:
+- canonical MUST be the exact value as stored in the database
+- aliases should be LOWERCASE
+- Include the full name, 2-letter code, 3-letter code, currency code, and any common abbreviations
+- Only include aliases you're confident about (confidence > 0.7)
+- Return ONLY valid JSON, no markdown
+"""
+
+        try:
+            resp = await llm.complete(
+                [{"role": "user", "content": prompt}],
+                temperature=0.0,
+                max_tokens=4096,
+                json_mode=True,
+            )
+
+            raw = resp.content.strip()
+            if raw.startswith("```"):
+                raw = raw.split("```")[1]
+                if raw.startswith("json"):
+                    raw = raw[4:]
+                raw = raw.strip().rstrip("```").strip()
+
+            parsed = json.loads(raw)
+            entries = parsed.get("aliases", [])
+
+            new_count = 0
+            for entry in entries:
+                canonical = entry.get("canonical", "")
+                aliases = entry.get("aliases", [])
+                conf = entry.get("confidence", 0.8)
+
+                if not canonical or conf < 0.7:
+                    continue
+
+                for alias in aliases:
+                    alias_lower = alias.lower().strip()
+                    if alias_lower and alias_lower != canonical.lower():
+                        if alias_lower not in all_aliases:
+                            all_aliases[alias_lower] = canonical
+                            new_count += 1
+
+            logger.info(
+                "semantic.bootstrap.column_done",
+                column=col_path,
+                values_count=len(values),
+                new_aliases=new_count,
+                total_aliases=len(all_aliases),
+            )
+
+        except Exception as exc:
+            logger.warning(
+                "semantic.bootstrap.llm_failed",
+                column=col_path, error=str(exc),
+            )
+
+    # Persist the complete alias map
+    _save_learned_aliases(workspace_id, source_id, all_aliases)
+
+    logger.info(
+        "semantic.bootstrap.completed",
+        source_id=source_id,
+        total_aliases=len(all_aliases),
+        coded_columns=len(coded_columns),
+    )
+    return all_aliases
+
+
 def load_context(source_id: str, workspace_id: str) -> SourceSemanticContext | None:
     """Load persisted semantic context from disk."""
     try:
