@@ -268,7 +268,20 @@ def make_prune_node(services: Any):
         enriched_snaps = getattr(services, "_enriched_snapshots", {})
         all_tables = []
         total_columns = 0
-        for sid in target_sources:
+
+        # Include ALL connectors' tables when they're all DuckDB (same workspace)
+        # This ensures JOINs between occupazione + disoccupazione work
+        all_duckdb = all(
+            getattr(c, 'dialect', '') == 'duckdb' or 'file_' in sid
+            for sid, c in services.connectors.items()
+        ) if services.connectors else False
+
+        sources_to_scan = (
+            list(services.connectors.keys()) if all_duckdb
+            else target_sources
+        )
+
+        for sid in sources_to_scan:
             conn = services.connectors.get(sid)
             if conn:
                 snap = enriched_snaps.get(sid) or await conn.introspect()
@@ -770,10 +783,46 @@ def make_execute_node(services: Any):
         # Execute against first target source (fall back to any available connector)
         source_id = target_sources[0] if target_sources else None
         if not source_id:
-            # No target source set — use first available connector
             available = list(services.connectors.keys())
             source_id = available[0] if available else None
         conn = services.connectors.get(source_id) if source_id else None
+
+        # ── Multi-table DuckDB fix: register all file tables in one connection ──
+        # When SQL references tables from multiple file sources (e.g. JOIN
+        # occupazione o ON ... JOIN disoccupazione d ON ...), each file source
+        # has its own DuckDB connection with only one table. We need to register
+        # ALL tables into the executing connector's DuckDB instance.
+        if conn and hasattr(conn, '_conn') and conn._conn is not None:
+            for other_sid, other_conn in services.connectors.items():
+                if other_sid != source_id and hasattr(other_conn, '_conn') and other_conn._conn is not None:
+                    try:
+                        # Check what tables the other connector has
+                        other_snap = await other_conn.introspect()
+                        for other_table in other_snap.tables:
+                            # Check if this table exists in our connection
+                            try:
+                                conn._conn.execute(f'SELECT 1 FROM "{other_table.name}" LIMIT 0')
+                            except Exception:
+                                # Table doesn't exist — register it from the other connection
+                                try:
+                                    df = other_conn._conn.execute(
+                                        f'SELECT * FROM "{other_table.name}"'
+                                    ).fetchdf()
+                                    conn._conn.register(other_table.name, df)
+                                    logger.info(
+                                        "execute.registered_cross_table",
+                                        table=other_table.name,
+                                        from_source=other_sid,
+                                        into_source=source_id,
+                                    )
+                                except Exception as _reg_err:
+                                    logger.debug(
+                                        "execute.register_failed",
+                                        table=other_table.name,
+                                        error=str(_reg_err),
+                                    )
+                    except Exception:
+                        pass
 
         if not conn:
             return {
@@ -2707,6 +2756,30 @@ def make_ora_node(services: Any):
                     f"\n  Metrics: {semantic_reasoning.metrics}"
                     f"\n  Confidence: {semantic_reasoning.confidence}"
                 )
+
+                # ── Override cross-source if all tables are in the same backend ──
+                # The Semantic Reasoning Agent knows which tables are needed.
+                # If all needed tables are DuckDB file sources in the same workspace,
+                # they can be JOINed directly — no cross-source decomposition needed.
+                if semantic_reasoning.tables and is_cross_source:
+                    reasoning_tables = set(semantic_reasoning.tables)
+                    # Check if all connectors are DuckDB (file sources)
+                    all_duckdb = all(
+                        getattr(services.connectors.get(sid), 'dialect', '') == 'duckdb'
+                        or 'file_' in sid
+                        for sid in target_sources
+                    )
+                    if all_duckdb:
+                        # All tables are in DuckDB — treat as single source with JOIN
+                        is_cross_source = False
+                        is_compound = False
+                        # Route to the first source that has connectors
+                        if target_sources:
+                            target_sources = [target_sources[0]]
+                        ora_reasoning += (
+                            "\n  Routing override: all tables in DuckDB — using single-source "
+                            "JOIN instead of cross-source decomposition"
+                        )
 
                 # Save new aliases learned from this query
                 if semantic_reasoning.new_aliases:
