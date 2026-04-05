@@ -244,27 +244,37 @@ def _node_name(node_key: str, event: dict | None = None) -> str:
         opts = ["Bringing the results together", "Merging across sources", "Joining everything up"]
         return _random.choice(opts)
 
+    # Dynamic agent trace events — use the action field as name
+    action = (event or {}).get("action", "")
+    if action:
+        return action
+
     return node_key.replace("_", " ").title()
 
 
 def _agent_for_node(node_key: str) -> str:
     """Map node to a short, readable agent label."""
     agents = {
-        "understand": "",  # no badge needed — it's trivial routing
+        "understand": "",
         "semantic_resolve": "semantic",
         "prune": "schema",
         "retrieve": "memory",
         "plan": "planner",
         "generate": "SQL agent",
-        "execute": "",  # no badge — mechanical
+        "execute": "",
         "correct": "self-heal",
         "respond": "writer",
         "learn": "memory",
         "decompose": "planner",
         "fan_out": "",
         "synthesize": "DuckDB",
+        # New multi-agent orchestration nodes
+        "ora": "orchestrator",
+        "semantic_agent": "semantic",
+        "schema_agent": "schema",
+        "sql_agent": "SQL agent",
     }
-    return agents.get(node_key, "")
+    return agents.get(node_key, node_key.replace("_", " "))
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
