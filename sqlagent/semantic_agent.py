@@ -1306,9 +1306,14 @@ Return JSON:
 }}
 
 Rules:
-- filter values MUST be EXACT matches from sample values
-- Mark anything you're not sure about as "unresolved" — don't guess
+- filter values MUST be EXACT character-for-character matches from the sample values shown above
+  Example: if samples show 'Viet Nam', use 'Viet Nam' — NOT 'Vietnam'
+  Example: if samples show '15+', use '15+' — NOT '15 years and over'
+- Look at the ACTUAL sample values in the schema. Use ONLY values you can see.
+- For time ranges: convert "1990s" to 1990-1999, "2000s" to 2000-2009
+- For ratio/calculation queries: identify ALL source tables needed
 - For correlation queries, identify BOTH datasets (set is_multi_dataset: true)
+- Mark anything you're not sure about as "unresolved" — don't guess
 - Return ONLY valid JSON
 """
 

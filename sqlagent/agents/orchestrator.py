@@ -71,9 +71,14 @@ class OraOrchestrator:
 
         # Validate semantic output
         sem_valid = self._validate_semantic(decomp, sem_response)
+        checks_detail = "\n".join(
+            f"  {'✓' if c.get('passed') else '✗'} {c.get('check','')}"
+            for c in sem_valid.checks
+        )
         self._trace.record("ora", "Validates semantic output",
                            input_context=f"Confidence: {sem_response.confidence}, Filters: {len(sem_response.result.get('filters',[]))}",
-                           output="Approved" if sem_valid.passed else f"Issues: {sem_valid.issues[:3]}",
+                           output=f"{'Approved' if sem_valid.passed else 'ISSUES FOUND'}:\n{checks_detail}",
+                           reasoning=f"Issues: {sem_valid.issues}" if sem_valid.issues else "All checks passed",
                            status="completed" if sem_valid.passed else "warning",
                            validation={"checks": sem_valid.checks, "approved": sem_valid.passed})
 
@@ -148,9 +153,14 @@ class OraOrchestrator:
 
             # ── Ora validates SQL ────────────────────────────────
             sql, sql_valid = self._validate_sql(sql, sem_response)
+            sql_checks_detail = "\n".join(
+                f"  {'✓' if c.get('passed') else '✗'} {c.get('check','')}" + (f" [FIXED]" if c.get('fixed') else "")
+                for c in sql_valid.checks
+            )
             self._trace.record("ora", "Validates SQL",
-                               input_context=f"Checking structure + filter values",
-                               output="Approved" if sql_valid.passed else f"Fixed: {sql_valid.issues}",
+                               input_context=f"Checking {len(sql_valid.checks)} filter values + table presence",
+                               output=f"{'Approved' if not sql_valid.issues else 'Fixed issues'}:\n{sql_checks_detail}",
+                               reasoning=f"Fixes applied: {sql_valid.issues}" if sql_valid.issues else "All values correct",
                                status="completed",
                                validation={"checks": sql_valid.checks, "approved": sql_valid.passed})
 
@@ -355,10 +365,16 @@ class OraOrchestrator:
             decomp._tokens = 0
 
         latency = int((time.monotonic() - start) * 1000)
+        # Show FULL decomposition details in trace
+        parts_detail = " | ".join(f"Part {p.get('id','?')}: {p.get('description','')[:60]}" for p in decomp.parts)
         self._trace.record("ora", "Decomposed query",
-                           input_context=query[:80],
-                           output=f"{len(decomp.parts)} parts, {len(decomp.entities_to_resolve)} entities, {len(decomp.calculations_needed)} calculations",
-                           reasoning=f"Comparison: {decomp.comparison_type}" if decomp.comparison_type else "",
+                           input_context=query[:120],
+                           output=f"Parts: {parts_detail}",
+                           reasoning=(
+                               f"Entities to resolve: {decomp.entities_to_resolve}\n"
+                               f"Calculations: {decomp.calculations_needed}\n"
+                               f"Comparison: {decomp.comparison_type}"
+                           ),
                            latency_ms=latency)
 
         return decomp
@@ -488,7 +504,7 @@ class OraOrchestrator:
         return sql, ValidationResult(passed=True, issues=issues, checks=checks)  # always pass after fixes
 
     def _validate_result(self, rows, row_count, error, decomp) -> ValidationResult:
-        """Validate execution result answers the question."""
+        """Validate execution result answers the question — checks against decomposition."""
         issues = []
         checks = []
 
@@ -497,8 +513,27 @@ class OraOrchestrator:
             checks.append({"check": "no errors", "passed": False})
             return ValidationResult(passed=False, issues=issues, checks=checks)
 
+        # Check row count
         checks.append({"check": "rows > 0", "passed": row_count > 0})
         if row_count == 0:
             issues.append("Zero rows returned")
+            return ValidationResult(passed=False, issues=issues, checks=checks)
 
-        return ValidationResult(passed=row_count > 0, issues=issues, checks=checks)
+        # Check against decomposition: does result have enough data for all parts?
+        num_parts = len(decomp.parts)
+        if num_parts > 1 and row_count < num_parts:
+            issues.append(f"Question has {num_parts} parts but only {row_count} rows — may be incomplete")
+            checks.append({"check": f"rows >= parts ({num_parts})", "passed": row_count >= num_parts})
+
+        # Check if result columns cover expected metrics
+        if rows and decomp.calculations_needed:
+            result_cols = set(rows[0].keys()) if rows else set()
+            has_numeric = any(
+                isinstance(v, (int, float)) for v in (rows[0].values() if rows else [])
+            )
+            checks.append({"check": "has numeric columns for calculations", "passed": has_numeric})
+            if not has_numeric:
+                issues.append("No numeric columns in result — calculations may be missing")
+
+        passed = row_count > 0 and len(issues) == 0
+        return ValidationResult(passed=passed, issues=issues, checks=checks)

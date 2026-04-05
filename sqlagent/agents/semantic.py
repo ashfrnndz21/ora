@@ -59,17 +59,23 @@ class SemanticAgent:
         if reasoning.confidence < 0.5:
             unresolved.append("low_confidence")
 
-        # Record to trace
+        # Record DETAILED trace — show every entity→value mapping
+        filter_detail = "\n".join(
+            f"  {f.get('column','?')} {f.get('operator','=')} '{f.get('value','')}' (table: {f.get('table','')})"
+            for f in reasoning.filters
+        )
+        alias_detail = ", ".join(f"{k}→{v}" for k, v in reasoning.new_aliases.items()) if reasoning.new_aliases else "none"
+
         trace.record(
             agent="semantic_agent",
             action="Resolved entities",
             status="completed" if reasoning.confidence >= 0.5 else "partial",
-            input_context=f"Query: {query[:80]}, Decomposition: {len(decomposition.get('parts', []))} parts",
+            input_context=f"Query: {query[:100]}",
             output=(
-                f"Filters: {len(reasoning.filters)}, "
-                f"Tables: {reasoning.tables}, "
-                f"Metrics: {reasoning.metrics}, "
-                f"Aliases: {reasoning.new_aliases}"
+                f"Resolved {len(reasoning.filters)} filters to exact DB values:\n{filter_detail}\n"
+                f"Tables: {reasoning.tables}\n"
+                f"Metrics: {reasoning.metrics}\n"
+                f"New aliases: {alias_detail}"
             ),
             reasoning=reasoning.reasoning,
             latency_ms=latency,
