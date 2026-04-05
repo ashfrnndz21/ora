@@ -62,7 +62,7 @@ class OraOrchestrator:
         # PHASE 1: DECOMPOSE — Ora thinks about the query structure
         # ══════════════════════════════════════════════════════════════
         decomp = await self._decompose(nl_query)
-        total_tokens += decomp.get("_tokens", 0)
+        total_tokens += getattr(decomp, "_tokens", 0)
 
         # ══════════════════════════════════════════════════════════════
         # PHASE 2: SEMANTIC RESOLUTION — call Semantic Agent
