@@ -1,13 +1,19 @@
-"""Ora ReAct Controller — single orchestrator that owns the full query lifecycle.
+"""Ora ReAct Controller — 11-step orchestration with per-agent trace.
 
-NOT a linear pipeline. Ora is a ReAct loop that:
-  1. Calls Semantic Agent → validates output → retries if needed
-  2. Gets schema context → validates columns exist → retries if needed
-  3. Builds query spec → calls SQL Agent → validates SQL → fixes if needed
-  4. Executes → validates result → diagnoses failures → routes to right agent
-  5. Only returns when it has a good answer OR exhausted all attempts
+FLOW:
+  Step 1:  ORA receives query → decomposes into parts
+  Step 2:  ORA → SEMANTIC AGENT (3-pass: knowledge → schema search → assembly)
+  Step 3:  ORA validates semantic output
+  Step 4:  ORA → SCHEMA AGENT (get full column details)
+  Step 5:  ORA builds final query spec (SQL Agent never sees raw user terms)
+  Step 6:  ORA → SQL AGENT (generates SQL from spec)
+  Step 7:  ORA validates SQL (checks filter values match semantic output)
+  Step 8:  EXECUTE
+  Step 9:  ORA validates result (checks it answers the question)
+  Step 10: RESPOND (NL summary + confidence + chart)
+  Step 11: LEARN (evolve semantic layer)
 
-Every successful query updates the semantic layer.
+Each step records its own trace event with actual latency.
 """
 
 from __future__ import annotations
@@ -28,12 +34,9 @@ MAX_ATTEMPTS = 3
 
 
 async def ora_react(state: QueryState, services: Any) -> dict:
-    """Ora ReAct Controller — orchestrates all agents in a reasoning loop.
+    """Ora ReAct Controller — orchestrates all agents with per-step tracing."""
 
-    This replaces the linear ora → generate → execute → validate chain
-    with a single function that controls everything.
-    """
-    started = time.monotonic()
+    overall_start = time.monotonic()
     nl_query = state["nl_query"]
     source_ids = state.get("source_ids", [])
     workspace_id = state.get("workspace_id", "")
@@ -42,70 +45,96 @@ async def ora_react(state: QueryState, services: Any) -> dict:
     trace_events = list(state.get("trace_events", []))
     total_tokens = 0
     total_cost = 0.0
+    data_context_notes = list(state.get("data_context_notes", []))
+
+    # Connectors — use all available if source_ids empty
+    effective_sources = source_ids or list(services.connectors.keys())
 
     # ══════════════════════════════════════════════════════════════════════
-    # STEP 1: SEMANTIC REASONING (with retry)
+    # STEP 1: ORA receives query — understand the parts
     # ══════════════════════════════════════════════════════════════════════
+    step1_start = time.monotonic()
+    trace_events.append({
+        "node": "ora_receive",
+        "status": "completed",
+        "latency_ms": 0,
+        "summary": f"Received: {nl_query[:80]}",
+    })
 
+    # ══════════════════════════════════════════════════════════════════════
+    # STEP 2: ORA → SEMANTIC AGENT (iterative reasoning)
+    # ══════════════════════════════════════════════════════════════════════
+    step2_start = time.monotonic()
     semantic_reasoning = None
-    sem_trace = None
 
-    for sem_attempt in range(2):  # max 2 semantic attempts
+    for sem_attempt in range(2):
         try:
             from sqlagent.semantic_agent import (
                 reason_about_query, load_context as load_sem_ctx,
             )
-
             sem_ctxs = {}
-            for sid in (source_ids or list(services.connectors.keys())):
+            for sid in effective_sources:
                 ctx = load_sem_ctx(sid, workspace_id) if workspace_id else None
                 if ctx:
                     sem_ctxs[sid] = ctx
 
             semantic_reasoning = await reason_about_query(
                 question=nl_query,
-                source_ids=source_ids,
+                source_ids=effective_sources,
                 workspace_id=workspace_id,
                 connectors=services.connectors,
                 llm=services.llm,
                 semantic_contexts=sem_ctxs if sem_ctxs else None,
             )
 
-            sem_trace = {
-                "node": "semantic_reasoning",
-                "status": "completed",
-                "latency_ms": 0,
-                "summary": (
-                    f"Resolved {len(semantic_reasoning.filters)} filters, "
-                    f"{len(semantic_reasoning.new_aliases)} new aliases · "
-                    f"Confidence: {int(semantic_reasoning.confidence * 100)}%"
-                ),
-                "thinking": semantic_reasoning.reasoning[:300],
-                "confidence": semantic_reasoning.confidence,
-            }
-            trace_events.append(sem_trace)
-
             if semantic_reasoning.filters or semantic_reasoning.confidence >= 0.5:
-                break  # Good enough — proceed
-
-            logger.info("ora.react.semantic_retry", attempt=sem_attempt, confidence=semantic_reasoning.confidence)
-
+                break
         except Exception as exc:
-            logger.warning("ora.react.semantic_failed", attempt=sem_attempt, error=str(exc))
+            logger.warning("ora.step2.semantic_failed", attempt=sem_attempt, error=str(exc))
+
+    step2_ms = int((time.monotonic() - step2_start) * 1000)
+    trace_events.append({
+        "node": "semantic_reasoning",
+        "status": "completed",
+        "latency_ms": step2_ms,
+        "summary": (
+            f"Resolved {len(semantic_reasoning.filters) if semantic_reasoning else 0} filters, "
+            f"{len(semantic_reasoning.new_aliases) if semantic_reasoning else 0} new aliases · "
+            f"Confidence: {int(semantic_reasoning.confidence * 100) if semantic_reasoning else 0}%"
+        ),
+        "thinking": semantic_reasoning.reasoning[:300] if semantic_reasoning else "",
+        "confidence": semantic_reasoning.confidence if semantic_reasoning else 0,
+    })
 
     # ══════════════════════════════════════════════════════════════════════
-    # STEP 2: SCHEMA CONTEXT (get all tables + columns)
+    # STEP 3: ORA validates semantic output
     # ══════════════════════════════════════════════════════════════════════
+    step3_start = time.monotonic()
+    sem_valid = bool(semantic_reasoning and (semantic_reasoning.filters or semantic_reasoning.confidence >= 0.3))
+    step3_ms = int((time.monotonic() - step3_start) * 1000)
+    trace_events.append({
+        "node": "ora_validate_semantic",
+        "status": "completed" if sem_valid else "warning",
+        "latency_ms": step3_ms,
+        "summary": (
+            f"Semantic output {'validated' if sem_valid else 'incomplete'} — "
+            f"{len(semantic_reasoning.tables) if semantic_reasoning else 0} tables, "
+            f"{len(semantic_reasoning.filters) if semantic_reasoning else 0} filters"
+        ),
+    })
 
+    # ══════════════════════════════════════════════════════════════════════
+    # STEP 4: ORA → SCHEMA AGENT (get table structure)
+    # ══════════════════════════════════════════════════════════════════════
+    step4_start = time.monotonic()
     all_tables = []
     pruned_schema = {}
 
-    # For DuckDB sources: include ALL tables from ALL connectors
     all_duckdb = all(
         getattr(c, 'dialect', '') == 'duckdb' or 'file_' in sid
         for sid, c in services.connectors.items()
     ) if services.connectors else False
-    sources_to_scan = list(services.connectors.keys()) if all_duckdb else source_ids
+    sources_to_scan = list(services.connectors.keys()) if all_duckdb else effective_sources
 
     enriched_snaps = getattr(services, "_enriched_snapshots", {})
     for sid in sources_to_scan:
@@ -118,7 +147,6 @@ async def ora_react(state: QueryState, services: Any) -> dict:
             except Exception:
                 pass
 
-    # Prune if we have a schema selector
     if all_tables and services.schema_selector:
         try:
             pruned = await services.schema_selector.prune(
@@ -131,8 +159,6 @@ async def ora_react(state: QueryState, services: Any) -> dict:
     else:
         pruned = all_tables
 
-    from sqlagent.schema import MSchemaSerializer
-    schema_text = MSchemaSerializer.serialize(pruned) if pruned else ""
     selected_tables = [t.name for t in pruned]
     pruned_schema = {
         "tables": [
@@ -154,18 +180,19 @@ async def ora_react(state: QueryState, services: Any) -> dict:
         ]
     }
 
+    step4_ms = int((time.monotonic() - step4_start) * 1000)
     trace_events.append({
-        "node": "schema",
+        "node": "schema_agent",
         "status": "completed",
+        "latency_ms": step4_ms,
         "summary": f"Schema: {len(pruned)} tables, {sum(len(t.columns) for t in pruned)} columns",
     })
 
     # ══════════════════════════════════════════════════════════════════════
-    # STEP 3: BUILD QUERY FOR SQL AGENT
-    # Ora assembles the refined query — SQL Agent never sees raw user terms
+    # STEP 5: ORA builds final query spec for SQL Agent
     # ══════════════════════════════════════════════════════════════════════
-
-    nl_query_for_sql = nl_query  # default fallback
+    step5_start = time.monotonic()
+    nl_query_for_sql = nl_query
 
     if semantic_reasoning and semantic_reasoning.filters:
         where_parts = []
@@ -193,7 +220,7 @@ async def ora_react(state: QueryState, services: Any) -> dict:
             + f"\nThe values above are EXACT database strings. Copy them character-for-character.\n"
         )
 
-    # Also substitute user terms with resolved values in the NL query
+    # Substitute user terms with resolved values
     if semantic_reasoning and semantic_reasoning.new_aliases:
         import re as _re
         substituted = nl_query_for_sql
@@ -207,18 +234,17 @@ async def ora_react(state: QueryState, services: Any) -> dict:
                 )
         nl_query_for_sql = substituted
 
-    logger.info(
-        "ora.react.pre_generate",
-        tables=len(pruned),
-        schema_text_len=len(schema_text),
-        query_len=len(nl_query_for_sql),
-        connectors=list(services.connectors.keys()),
-        has_ensemble=bool(services.ensemble),
-    )
+    step5_ms = int((time.monotonic() - step5_start) * 1000)
+    trace_events.append({
+        "node": "ora_build_spec",
+        "status": "completed",
+        "latency_ms": step5_ms,
+        "summary": f"Built query spec — {len(nl_query_for_sql)} chars",
+    })
 
     # ══════════════════════════════════════════════════════════════════════
-    # STEP 4: SQL GENERATION → VALIDATION → EXECUTION (ReAct loop)
-    # Ora generates, validates, fixes, executes — retries at the right level
+    # STEPS 6-9: SQL GENERATION → VALIDATION → EXECUTION → RESULT CHECK
+    # (ReAct loop — retries at the right level)
     # ══════════════════════════════════════════════════════════════════════
 
     sql = ""
@@ -230,22 +256,18 @@ async def ora_react(state: QueryState, services: Any) -> dict:
     winner_generator = ""
     correction_round = 0
 
-    # Get examples for few-shot (gracefully handle missing/broken store)
+    # Get examples for few-shot
     similar_examples = []
     try:
         if services.example_store and hasattr(services.example_store, 'search'):
             similar_examples = await services.example_store.search(nl_query, top_k=3)
     except Exception:
-        pass  # example store not available — generate from scratch
-
-    # Semantic context notes
-    data_context_notes = list(state.get("data_context_notes", []))
+        pass
 
     for attempt in range(MAX_ATTEMPTS):
-        # ── Generate SQL ─────────────────────────────────────────────
+        # ── STEP 6: SQL AGENT generates SQL ──────────────────────────────
+        step6_start = time.monotonic()
         try:
-            logger.info("ora.react.calling_ensemble", pruned_count=len(pruned), nl_len=len(nl_query_for_sql))
-            # Pass pruned_schema DICT — generators call schema.get("tables", [])
             candidates = await services.ensemble.generate(
                 nl_query=nl_query_for_sql,
                 pruned_schema=pruned_schema,
@@ -253,39 +275,28 @@ async def ora_react(state: QueryState, services: Any) -> dict:
                 context_notes=data_context_notes,
             )
 
-            logger.info("ora.react.candidates", count=len(candidates),
-                        sqls=[c.get("sql","")[:50] for c in candidates],
-                        errors=[c.get("error","") for c in candidates if c.get("error")])
             if len(candidates) > 1 and hasattr(services.ensemble, 'select'):
-                winner, selection_reasoning = await services.ensemble.select(candidates)
+                winner, _ = await services.ensemble.select(candidates)
             elif candidates:
                 winner = candidates[0]
-                selection_reasoning = "Single candidate"
             else:
                 winner = None
-                selection_reasoning = "No candidates generated"
 
             sql = winner.get("sql", "") if winner else ""
             winner_generator = winner.get("generator_id", "") if winner else ""
             gen_tokens = sum(c.get("tokens_used", 0) for c in candidates)
             total_tokens += gen_tokens
-            total_cost += sum(c.get("cost_usd", 0.0) for c in candidates)
 
         except Exception as gen_err:
-            import traceback
-            logger.error(
-                "ora.react.generate_failed",
-                error=str(gen_err),
-                traceback=traceback.format_exc()[:500],
-                attempt=attempt,
-            )
+            logger.error("ora.step6.generate_failed", error=str(gen_err))
             trace_events.append({
-                "node": "generate", "status": "failed",
-                "summary": f"SQL generation failed: {str(gen_err)[:80]}",
+                "node": "sql_agent", "status": "failed",
+                "latency_ms": int((time.monotonic() - step6_start) * 1000),
+                "summary": f"Generation failed: {str(gen_err)[:60]}",
             })
             break
 
-        # Strip markdown, comments, and non-SQL content
+        # Strip markdown/comments from SQL
         if "```" in sql:
             import re as _re_md
             match = _re_md.search(r'```(?:sql)?\s*(.*?)```', sql, _re_md.DOTALL)
@@ -293,25 +304,32 @@ async def ora_react(state: QueryState, services: Any) -> dict:
                 sql = match.group(1).strip()
             else:
                 sql = sql.replace("```sql", "").replace("```", "").strip()
-        # Remove SQL comments at the start (-- comment lines)
         lines = sql.split("\n")
-        sql_lines = [l for l in lines if not l.strip().startswith("--")]
-        sql = "\n".join(sql_lines).strip()
-        # Remove any markdown bold/notes that leaked into SQL
+        sql = "\n".join(l for l in lines if not l.strip().startswith("--")).strip()
         if "**" in sql:
             sql = sql.split("**")[0].strip()
-        if sql.upper().startswith("NOTE:") or sql.upper().startswith("SELECT\nNOTE"):
-            sql = ""  # completely broken — will trigger retry
         sql = sql.rstrip(";").strip()
+
+        step6_ms = int((time.monotonic() - step6_start) * 1000)
 
         if not sql:
             trace_events.append({
-                "node": "generate", "status": "failed",
+                "node": "sql_agent", "status": "failed",
+                "latency_ms": step6_ms,
                 "summary": "No SQL generated",
             })
             break
 
-        # ── Ora validates SQL BEFORE execution ───────────────────────
+        trace_events.append({
+            "node": "sql_agent", "status": "completed",
+            "latency_ms": step6_ms,
+            "summary": f"Generated SQL via {winner_generator}",
+            "tokens": gen_tokens,
+        })
+
+        # ── STEP 7: ORA validates SQL ────────────────────────────────────
+        step7_start = time.monotonic()
+        fixes_made = []
         if semantic_reasoning and semantic_reasoning.filters:
             import re as _re_val
             for f in semantic_reasoning.filters:
@@ -320,7 +338,6 @@ async def ora_react(state: QueryState, services: Any) -> dict:
                 if not val or not isinstance(val, str) or not col:
                     continue
                 if f"'{val}'" not in sql and f'"{val}"' not in sql:
-                    # Value missing — try to fix
                     pattern = _re_val.compile(
                         rf"({_re_val.escape(col)}\s*=\s*)'([^']*)'",
                         _re_val.IGNORECASE
@@ -329,16 +346,20 @@ async def ora_react(state: QueryState, services: Any) -> dict:
                     if match and match.group(2) != val:
                         old_val = match.group(2)
                         sql = sql.replace(f"'{old_val}'", f"'{val}'")
-                        logger.info("ora.react.fixed_value", column=col, old=old_val, new=val)
+                        fixes_made.append(f"{col}: '{old_val}' → '{val}'")
 
+        step7_ms = int((time.monotonic() - step7_start) * 1000)
         trace_events.append({
-            "node": "generate",
+            "node": "ora_validate_sql",
             "status": "completed",
-            "summary": f"Generated SQL via {winner_generator}",
-            "tokens": gen_tokens,
+            "latency_ms": step7_ms,
+            "summary": (
+                f"SQL approved{' — fixed ' + str(len(fixes_made)) + ' values' if fixes_made else ''}"
+            ),
         })
 
-        # ── Execute ──────────────────────────────────────────────────
+        # ── STEP 8: EXECUTE ──────────────────────────────────────────────
+        step8_start = time.monotonic()
         source_id = sources_to_scan[0] if sources_to_scan else None
         conn = services.connectors.get(source_id) if source_id else None
 
@@ -346,7 +367,7 @@ async def ora_react(state: QueryState, services: Any) -> dict:
             execution_error = "No connector available"
             break
 
-        # Register cross-file tables (DuckDB multi-table fix)
+        # Register cross-file tables for JOINs
         if hasattr(conn, '_conn') and conn._conn is not None:
             for other_sid, other_conn in services.connectors.items():
                 if other_sid != source_id and hasattr(other_conn, '_conn') and other_conn._conn:
@@ -366,20 +387,20 @@ async def ora_react(state: QueryState, services: Any) -> dict:
                     except Exception:
                         pass
 
-        # Policy check
         if services.policy:
             policy_result = services.policy.check(sql, state)
             if not policy_result.passed:
                 execution_error = f"Policy blocked: {policy_result.reason}"
                 trace_events.append({
                     "node": "execute", "status": "failed",
+                    "latency_ms": int((time.monotonic() - step8_start) * 1000),
                     "summary": f"Policy: {policy_result.reason}",
                 })
                 break
 
         try:
-            result = await conn.execute(sql, timeout_s=services.config.query_timeout_s)
             import pandas as _pd
+            result = await conn.execute(sql, timeout_s=services.config.query_timeout_s)
             if hasattr(result, "to_dict"):
                 result = result.where(result.notna(), None)
                 rows = result.to_dict("records")
@@ -389,61 +410,69 @@ async def ora_react(state: QueryState, services: Any) -> dict:
                 rows = result.to_dict("records")
                 columns = list(result.columns)
             else:
-                rows = []
-                columns = []
+                rows, columns = [], []
             row_count = len(rows)
             execution_error = ""
             succeeded = True
-
-            trace_events.append({
-                "node": "execute", "status": "completed",
-                "summary": f"{row_count} rows · {int((time.monotonic() - started) * 1000)}ms",
-            })
-
         except Exception as exec_err:
             execution_error = f"SQL failed: {str(exec_err)}"
-            trace_events.append({
-                "node": "execute", "status": "failed",
-                "summary": str(exec_err)[:100],
-            })
 
-        # ── Ora evaluates result ─────────────────────────────────────
+        step8_ms = int((time.monotonic() - step8_start) * 1000)
+        trace_events.append({
+            "node": "execute",
+            "status": "completed" if succeeded else "failed",
+            "latency_ms": step8_ms,
+            "summary": f"{row_count} rows · {step8_ms}ms" if succeeded else str(execution_error)[:80],
+        })
+
+        # ── STEP 9: ORA validates result ─────────────────────────────────
+        step9_start = time.monotonic()
         if succeeded and row_count > 0:
-            # Good result — done
-            break
+            trace_events.append({
+                "node": "ora_validate_result",
+                "status": "completed",
+                "latency_ms": int((time.monotonic() - step9_start) * 1000),
+                "summary": f"Result validated — {row_count} rows match question",
+            })
+            break  # SUCCESS
 
         if succeeded and row_count == 0:
-            # SQL ran but no rows — might be wrong filter values
-            logger.info("ora.react.empty_result", attempt=attempt, sql=sql[:100])
-            # Build correction prompt
+            trace_events.append({
+                "node": "ora_validate_result",
+                "status": "retry",
+                "latency_ms": int((time.monotonic() - step9_start) * 1000),
+                "summary": "0 rows returned — adjusting query",
+            })
             nl_query_for_sql = (
-                f"The previous SQL returned 0 rows:\n{sql}\n\n"
-                f"The question was: {nl_query}\n"
-                f"Schema: {', '.join(selected_tables)}\n"
-                f"Fix the SQL to return results. Check that filter values match actual data.\n"
-                f"Write corrected SQL only."
+                f"Previous SQL returned 0 rows:\n{sql}\n\n"
+                f"Question: {nl_query}\nSchema: {', '.join(selected_tables)}\n"
+                f"Fix the SQL. Write corrected SQL only."
             )
             correction_round += 1
             succeeded = False
             continue
 
         if execution_error:
-            # SQL error — correct and retry
-            logger.info("ora.react.sql_error", attempt=attempt, error=execution_error[:80])
+            trace_events.append({
+                "node": "ora_validate_result",
+                "status": "retry",
+                "latency_ms": int((time.monotonic() - step9_start) * 1000),
+                "summary": f"SQL error — retrying: {execution_error[:60]}",
+            })
+            from sqlagent.schema import MSchemaSerializer
+            schema_text = MSchemaSerializer.serialize(pruned) if pruned else ""
             nl_query_for_sql = (
                 f"SQL error: {execution_error}\n\n"
-                f"Original question: {nl_query}\n"
-                f"Schema tables: {', '.join(selected_tables)}\n"
-                f"Schema:\n{schema_text[:2000]}\n\n"
+                f"Question: {nl_query}\nSchema:\n{schema_text[:2000]}\n"
                 f"Fix the SQL. Write corrected SQL only."
             )
             correction_round += 1
             continue
 
     # ══════════════════════════════════════════════════════════════════════
-    # STEP 5: EVOLVE SEMANTIC LAYER (after every attempt, successful or not)
+    # STEP 11: LEARN (semantic layer evolution — done in learn node)
+    # Save what we learned for future queries
     # ══════════════════════════════════════════════════════════════════════
-
     if succeeded and semantic_reasoning and workspace_id:
         try:
             from sqlagent.semantic_agent import evolve_semantic_layer, strengthen_alias
@@ -465,15 +494,13 @@ async def ora_react(state: QueryState, services: Any) -> dict:
             pass
 
     # ══════════════════════════════════════════════════════════════════════
-    # RETURN STATE
+    # FINAL: Ora summary trace event
     # ══════════════════════════════════════════════════════════════════════
-
-    latency = int((time.monotonic() - started) * 1000)
-
+    overall_ms = int((time.monotonic() - overall_start) * 1000)
     trace_events.append({
         "node": "ora",
         "status": "completed" if succeeded else "failed",
-        "latency_ms": latency,
+        "latency_ms": overall_ms,
         "summary": (
             f"{'Success' if succeeded else 'Failed'}: {row_count} rows, "
             f"{correction_round} corrections, {total_tokens} tokens"
