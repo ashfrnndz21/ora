@@ -240,6 +240,9 @@ async def ora_react(state: QueryState, services: Any) -> dict:
                 context_notes=data_context_notes,
             )
 
+            logger.info("ora.react.candidates", count=len(candidates),
+                        sqls=[c.get("sql","")[:50] for c in candidates],
+                        errors=[c.get("error","") for c in candidates if c.get("error")])
             if len(candidates) > 1 and hasattr(services.ensemble, 'select'):
                 winner, selection_reasoning = await services.ensemble.select(candidates)
             elif candidates:
