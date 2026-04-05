@@ -231,6 +231,7 @@ async def ora_react(state: QueryState, services: Any) -> dict:
     for attempt in range(MAX_ATTEMPTS):
         # ── Generate SQL ─────────────────────────────────────────────
         try:
+            logger.info("ora.react.calling_ensemble", pruned_count=len(pruned), nl_len=len(nl_query_for_sql))
             # Pass the actual table objects (not dict) — generators use MSchemaSerializer
             candidates = await services.ensemble.generate(
                 nl_query=nl_query_for_sql,
