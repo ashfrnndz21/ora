@@ -285,6 +285,20 @@ async def ora_react(state: QueryState, services: Any) -> dict:
             })
             break
 
+        # Strip markdown code blocks from SQL
+        if sql.startswith("```"):
+            lines = sql.split("\n")
+            sql_lines = []
+            in_block = False
+            for line in lines:
+                if line.strip().startswith("```"):
+                    in_block = not in_block
+                    continue
+                if in_block or not line.strip().startswith("```"):
+                    sql_lines.append(line)
+            sql = "\n".join(sql_lines).strip()
+        sql = sql.rstrip(";").strip()
+
         if not sql:
             trace_events.append({
                 "node": "generate", "status": "failed",
