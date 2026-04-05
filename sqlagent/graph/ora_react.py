@@ -194,6 +194,15 @@ async def ora_react(state: QueryState, services: Any) -> dict:
                 )
         nl_query_for_sql = substituted
 
+    logger.info(
+        "ora.react.pre_generate",
+        tables=len(pruned),
+        schema_text_len=len(schema_text),
+        query_len=len(nl_query_for_sql),
+        connectors=list(services.connectors.keys()),
+        has_ensemble=bool(services.ensemble),
+    )
+
     # ══════════════════════════════════════════════════════════════════════
     # STEP 4: SQL GENERATION → VALIDATION → EXECUTION (ReAct loop)
     # Ora generates, validates, fixes, executes — retries at the right level
@@ -246,7 +255,13 @@ async def ora_react(state: QueryState, services: Any) -> dict:
             total_cost += sum(c.get("cost_usd", 0.0) for c in candidates)
 
         except Exception as gen_err:
-            logger.error("ora.react.generate_failed", error=str(gen_err), attempt=attempt)
+            import traceback
+            logger.error(
+                "ora.react.generate_failed",
+                error=str(gen_err),
+                traceback=traceback.format_exc()[:500],
+                attempt=attempt,
+            )
             trace_events.append({
                 "node": "generate", "status": "failed",
                 "summary": f"SQL generation failed: {str(gen_err)[:80]}",
