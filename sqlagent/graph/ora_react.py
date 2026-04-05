@@ -136,7 +136,20 @@ async def ora_react(state: QueryState, services: Any) -> dict:
     selected_tables = [t.name for t in pruned]
     pruned_schema = {
         "tables": [
-            {"name": t.name, "columns": [{"name": c.name, "type": c.data_type} for c in t.columns]}
+            {
+                "name": t.name,
+                "columns": [
+                    {
+                        "name": c.name,
+                        "data_type": c.data_type or "",
+                        "is_pk": getattr(c, "is_primary_key", False),
+                        "is_fk": getattr(c, "is_foreign_key", False),
+                        "description": getattr(c, "description", ""),
+                        "examples": getattr(c, "examples", []) or [],
+                    }
+                    for c in t.columns
+                ],
+            }
             for t in pruned
         ]
     }
@@ -232,10 +245,10 @@ async def ora_react(state: QueryState, services: Any) -> dict:
         # ── Generate SQL ─────────────────────────────────────────────
         try:
             logger.info("ora.react.calling_ensemble", pruned_count=len(pruned), nl_len=len(nl_query_for_sql))
-            # Pass the actual table objects (not dict) — generators use MSchemaSerializer
+            # Pass pruned_schema DICT — generators call schema.get("tables", [])
             candidates = await services.ensemble.generate(
                 nl_query=nl_query_for_sql,
-                pruned_schema=pruned,  # list of SchemaTable objects
+                pruned_schema=pruned_schema,
                 examples=similar_examples,
                 context_notes=data_context_notes,
             )
