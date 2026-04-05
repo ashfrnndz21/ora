@@ -285,18 +285,23 @@ async def ora_react(state: QueryState, services: Any) -> dict:
             })
             break
 
-        # Strip markdown code blocks from SQL
-        if sql.startswith("```"):
-            lines = sql.split("\n")
-            sql_lines = []
-            in_block = False
-            for line in lines:
-                if line.strip().startswith("```"):
-                    in_block = not in_block
-                    continue
-                if in_block or not line.strip().startswith("```"):
-                    sql_lines.append(line)
-            sql = "\n".join(sql_lines).strip()
+        # Strip markdown, comments, and non-SQL content
+        if "```" in sql:
+            import re as _re_md
+            match = _re_md.search(r'```(?:sql)?\s*(.*?)```', sql, _re_md.DOTALL)
+            if match:
+                sql = match.group(1).strip()
+            else:
+                sql = sql.replace("```sql", "").replace("```", "").strip()
+        # Remove SQL comments at the start (-- comment lines)
+        lines = sql.split("\n")
+        sql_lines = [l for l in lines if not l.strip().startswith("--")]
+        sql = "\n".join(sql_lines).strip()
+        # Remove any markdown bold/notes that leaked into SQL
+        if "**" in sql:
+            sql = sql.split("**")[0].strip()
+        if sql.upper().startswith("NOTE:") or sql.upper().startswith("SELECT\nNOTE"):
+            sql = ""  # completely broken — will trigger retry
         sql = sql.rstrip(";").strip()
 
         if not sql:
