@@ -307,9 +307,14 @@ class OraOrchestrator:
 
             if result_valid.passed:
                 # ── Semantic fitness check ──────────────────────────
-                # Structural validation passed (rows > 0, no errors).
-                # Now ask: does this result ACTUALLY answer the question?
-                # One LLM call — Ora reviews its own work like an analyst.
+                # Only on first attempt — skip on correction rounds to avoid timeout.
+                # Corrections already have targeted fix instructions.
+                if correction_round > 0:
+                    self._trace.record("ora", "Semantic fitness check",
+                                       status="completed",
+                                       output="Skipped (correction round — fix was targeted)")
+                    break
+
                 fitness = await self._check_semantic_fitness(
                     nl_query, sql, columns, rows[:5], decomp,
                 )
