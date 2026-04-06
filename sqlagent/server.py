@@ -527,19 +527,22 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
 
             # Use query_stream for true per-node streaming
             # Pass original_query as display_nl_query so task records store the clean question
-            async for event in agent.query_stream(
-                nl_query=query,
-                user_id=user.user_id,
-                workspace_id=workspace_id,
-                display_nl_query=original_query,
-                conversation_history=conversation_history,
-            ):
-                event_type = event["type"]
-                event_data = event["data"]
-                yield f"event: {event_type}\ndata: {json.dumps(event_data, default=_sse_json)}\n\n"
-                # Yield a comment to flush buffers between events
-                yield ": keep-alive\n\n"
-                await _aio.sleep(0)  # Yield control to event loop so data is flushed
+            try:
+                async for event in agent.query_stream(
+                    nl_query=query,
+                    user_id=user.user_id,
+                    workspace_id=workspace_id,
+                    display_nl_query=original_query,
+                    conversation_history=conversation_history,
+                ):
+                    event_type = event["type"]
+                    event_data = event["data"]
+                    yield f"event: {event_type}\ndata: {json.dumps(event_data, default=_sse_json)}\n\n"
+                    yield ": keep-alive\n\n"
+                    await _aio.sleep(0)
+            except Exception as stream_err:
+                logger.error("stream.error", error=str(stream_err))
+                yield f"event: query.error\ndata: {json.dumps({'error': str(stream_err)})}\n\n"
 
         headers = {
             "Cache-Control": "no-cache",
@@ -693,10 +696,10 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
         if not snapshots:
             return {"error": "No schemas to analyze"}
 
-        # Run the SchemaAgent
-        from sqlagent.agents import SchemaAgent
+        # Run the full SchemaAgent (5-stage analysis pipeline)
+        from sqlagent.schema_agent import FullSchemaAgent
 
-        schema_agent = SchemaAgent(llm=agent.services.llm, embedder=agent.services.embedder)
+        schema_agent = FullSchemaAgent(llm=agent.services.llm, embedder=agent.services.embedder)
         kg = await schema_agent.analyze(
             workspace_id=workspace_id or "default",
             snapshots=snapshots,
@@ -839,27 +842,97 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
 
         schema_context = "\n".join(schema_context_parts)
 
+        # Inject full semantic layer context so the agent answers from real knowledge
+        semantic_context = ""
+        ws_id = workspace_id or "default"
+        ws_dir = os.path.join(os.path.expanduser("~"), ".sqlagent", "uploads", ws_id)
+        try:
+            # Load aliases
+            alias_parts = []
+            if os.path.isdir(ws_dir):
+                for fname in os.listdir(ws_dir):
+                    if fname.startswith("aliases_") and fname.endswith(".json"):
+                        with open(os.path.join(ws_dir, fname)) as f:
+                            data = json.load(f)
+                        for k, v in data.items():
+                            if k != "_confidence":
+                                alias_parts.append(f"  {k} → {v}")
+            if alias_parts:
+                semantic_context += "\nLEARNED ALIASES (entity mappings the system has learned):\n" + "\n".join(alias_parts[:30])
+
+            # Load patterns
+            patterns_path = os.path.join(ws_dir, "query_patterns.json")
+            if os.path.exists(patterns_path):
+                with open(patterns_path) as f:
+                    patterns = json.load(f)
+                if patterns:
+                    semantic_context += "\nLEARNED QUERY PATTERNS (auto-injected defaults):\n"
+                    for p in patterns[:10]:
+                        semantic_context += f"  {p.get('key','')} (used {p.get('count',0)}x)\n"
+
+            # Load relationships
+            rels_path = os.path.join(ws_dir, "relationships.json")
+            if os.path.exists(rels_path):
+                with open(rels_path) as f:
+                    rels = json.load(f)
+                if rels:
+                    semantic_context += "\nCONFIRMED TABLE RELATIONSHIPS:\n"
+                    for r in rels[:10]:
+                        semantic_context += f"  {r.get('from_table','')} ↔ {r.get('to_table','')} ({r.get('query_count',0)}x used, {int(r.get('confidence',0)*100)}% confidence)\n"
+
+            # Load rules
+            try:
+                from sqlagent.rules import load_rules
+                rules = load_rules(ws_id)
+                if rules:
+                    semantic_context += "\nACTIVE RULES (from user corrections):\n"
+                    for r in rules[:5]:
+                        semantic_context += f"  {r.get('text','')} ({int(r.get('confidence',0)*100)}% confidence)\n"
+            except Exception:
+                pass
+
+            # Load evolution history
+            from sqlagent.semantic_agent import _load_manifest
+            manifest = _load_manifest(ws_id)
+            if manifest.get("history"):
+                semantic_context += f"\nSEMANTIC LAYER VERSION: v{manifest.get('iteration_id',0)}\n"
+                semantic_context += "RECENT EVOLUTION:\n"
+                for h in manifest["history"][-5:]:
+                    learned = h.get("learned", {})
+                    items = [f"+{v} {k}" for k, v in learned.items() if v]
+                    semantic_context += f"  v{h.get('iteration_id',0)}: {', '.join(items) or 'initial'}"
+                    if h.get("nl_query"):
+                        semantic_context += f" (from: \"{h['nl_query'][:50]}\")"
+                    semantic_context += "\n"
+        except Exception:
+            pass
+
         system_prompt = (
-            "You are a Schema Intelligence assistant embedded in a data analytics platform.\n"
-            "Your role is to help users deeply understand their database schema, relationships, "
-            "and business concepts — so they can ask better natural language questions.\n\n"
-            f"{schema_context}\n\n"
+            "You are the Semantic Agent — the intelligence layer of a data analytics platform.\n"
+            "You have deep knowledge of the data schema AND what you've learned from queries.\n"
+            "Answer from your ACTUAL knowledge — what you've discovered, learned, and confirmed.\n"
+            "Never say you don't have context — you do. Reference specific tables, columns, "
+            "aliases, patterns, and relationships.\n\n"
+            f"SCHEMA:\n{schema_context}\n\n"
+            f"{semantic_context}\n\n"
             "Guidelines:\n"
-            "- Be specific: reference exact table/column names\n"
-            "- Explain relationships in plain English (avoid raw SQL unless asked)\n"
-            "- If the user defines or confirms a business term, extract it in this format on its own line:\n"
-            "  GLOSSARY: <term> = <definition>\n"
-            "- If the user asks how to query something, describe which tables/joins are needed\n"
-            "- Keep answers concise (3–6 sentences unless more detail is needed)"
+            "- Answer as if YOU are the agent describing what YOU know\n"
+            "- Be specific: reference exact table/column names, learned aliases, confirmed joins\n"
+            "- When asked about patterns or learning: describe what you actually learned and from which queries\n"
+            "- Plain text only — no markdown, no bullet points with **, no headers with #\n"
+            "- Keep answers concise (3–5 sentences)\n"
+            "- If the user defines a business term: GLOSSARY: <term> = <definition>"
         )
 
         try:
-            response = await agent.services.llm.complete(
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": message},
-                ]
-            )
+            # Build messages with conversation history for context
+            chat_history = body.get("history", [])
+            messages = [{"role": "system", "content": system_prompt}]
+            for h in chat_history[:-1]:  # all except the latest (which IS the message)
+                messages.append({"role": h.get("role","user"), "content": h.get("content","")})
+            messages.append({"role": "user", "content": message})
+
+            response = await agent.services.llm.complete(messages=messages)
             raw_answer = response.content if hasattr(response, "content") else str(response)
 
             # Extract GLOSSARY: lines
@@ -978,6 +1051,21 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
                         agent._data_context_notes = agent._data_context_notes[-20:]
                     logger.info("learn.context_note_saved", lesson=lesson_to_save[:80])
 
+            # ── Create structured rule from the correction ───────────────────
+            if lesson_to_save and workspace_id:
+                try:
+                    from sqlagent.rules import create_rule
+                    create_rule(
+                        workspace_id=workspace_id,
+                        text=lesson_to_save,
+                        scope=f"workspace",
+                        source="user_correction",
+                        confidence=0.9,
+                        query_example=nl[:100],
+                    )
+                except Exception as _rule_err:
+                    logger.debug("learn.rule_create_failed", error=str(_rule_err))
+
             # ── Persist LessonRecord to SQLite ────────────────────────────────
             # This is the full chain: original → domain insight → rule → corrected SQL
             import uuid as _uuid
@@ -1058,6 +1146,9 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
         body = await request.json()
         workspace_id = body.get("workspace_id", "")
         agent = await _get_or_create_agent(workspace_id, user.user_id)
+        # Ensure agent is fully initialized (compiles _learn_graph etc.)
+        if hasattr(agent, '_ensure_ready'):
+            await agent._ensure_ready()
 
         from sqlagent.graph.learn_graph import LearnState
 
@@ -1110,6 +1201,47 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
             "tokens_used": final_state.get("tokens_used", 0),
             "learn_trace_events": final_state.get("learn_trace_events", []),
         }
+
+    @app.post("/learn/re-execute", tags=["train"])
+    async def learn_re_execute(request: Request, user=Depends(get_current_user)):
+        """Re-execute user-edited SQL from the Learn Agent correction flow.
+
+        Called when the user edits the improved SQL and wants to test it
+        before saving to training. Returns rows/columns or execution error.
+        """
+        body = await request.json()
+        workspace_id = body.get("workspace_id", "")
+        sql = body.get("sql", "").strip()
+        if not sql:
+            return {"rows": [], "columns": [], "row_count": 0, "exec_error": "No SQL provided"}
+
+        agent = await _get_or_create_agent(workspace_id, user.user_id)
+
+        # Find a connector to execute against
+        conn = None
+        source_id = body.get("source_id", "")
+        if source_id and source_id in agent.services.connectors:
+            conn = agent.services.connectors[source_id]
+        elif agent.services.connectors:
+            conn = next(iter(agent.services.connectors.values()))
+
+        if not conn:
+            return {"rows": [], "columns": [], "row_count": 0,
+                    "exec_error": "No database connection available"}
+
+        try:
+            import pandas as pd
+            result = await conn.execute(sql, timeout_s=30)
+            if isinstance(result, pd.DataFrame):
+                columns = list(result.columns)
+                rows = result.head(20).to_dict(orient="records")
+                row_count = len(result)
+            else:
+                columns, rows, row_count = [], [], 0
+            return {"rows": rows, "columns": columns, "row_count": row_count, "exec_error": ""}
+        except Exception as exc:
+            return {"rows": [], "columns": [], "row_count": 0,
+                    "exec_error": f"SQL failed: {exc}"}
 
     @app.get("/hub/packs", tags=["hub"])
     async def list_hub_packs():
@@ -1509,7 +1641,8 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
             # Run semantic analysis for this source (one-time, at connect time)
             try:
                 from sqlagent.semantic_agent import (
-                    analyze_source, persist_context, bootstrap_inference_graph,
+                    analyze_source, persist_context,
+                    build_initial_taxonomy, bootstrap_inference_graph,
                 )
 
                 sem_ctx = await analyze_source(source_id, conn, agent.services.llm)
@@ -1519,35 +1652,59 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
                     if block and block not in agent._semantic_context_notes:
                         agent._semantic_context_notes.append(block)
 
-                    # Bootstrap inferential alias graph IN BACKGROUND
-                    # Don't block upload — user gets data immediately, semantic
-                    # terms populate progressively as bootstrap completes
+                    # Build semantic layer IN BACKGROUND
+                    # Default: lightweight taxonomy (cross-source joins + entity types)
+                    # Opt-in: exhaustive alias bootstrap (--bootstrap-aliases)
                     import asyncio as _asyncio
 
-                    async def _run_bootstrap(_sid, _wsid, _conn, _llm, _ctx):
-                        try:
-                            alias_count = await bootstrap_inference_graph(
-                                _sid, _wsid, _conn, _llm, _ctx,
-                            )
-                            structlog.get_logger().info(
-                                "semantic.bootstrap.done",
-                                source_id=_sid,
-                                aliases=len(alias_count) if isinstance(alias_count, dict) else 0,
-                            )
-                        except Exception as _err:
-                            structlog.get_logger().warning(
-                                "semantic.bootstrap.failed",
-                                source_id=_sid, error=str(_err),
-                            )
+                    _ws_id = workspace_id or "default"
+                    _sem_ctxs = {source_id: sem_ctx}
 
-                    _asyncio.create_task(_run_bootstrap(
-                        source_id, workspace_id or "default",
-                        conn, agent.services.llm, sem_ctx,
-                    ))
+                    if cfg.bootstrap_aliases:
+                        async def _run_bootstrap(_sid, _wsid, _conn, _llm, _ctx):
+                            try:
+                                alias_count = await bootstrap_inference_graph(
+                                    _sid, _wsid, _conn, _llm, _ctx,
+                                )
+                                structlog.get_logger().info(
+                                    "semantic.bootstrap.done",
+                                    source_id=_sid,
+                                    aliases=len(alias_count) if isinstance(alias_count, dict) else 0,
+                                )
+                            except Exception as _err:
+                                structlog.get_logger().warning(
+                                    "semantic.bootstrap.failed",
+                                    source_id=_sid, error=str(_err),
+                                )
+                        _asyncio.create_task(_run_bootstrap(
+                            source_id, _ws_id, conn, agent.services.llm, sem_ctx,
+                        ))
+                    else:
+                        async def _run_taxonomy(_wsid, _conns, _llm, _ctxs):
+                            try:
+                                result = await build_initial_taxonomy(
+                                    _wsid, _conns, _llm, _ctxs,
+                                )
+                                structlog.get_logger().info(
+                                    "semantic.taxonomy.done",
+                                    workspace_id=_wsid,
+                                    joins=len(result.get("cross_source_joins", [])),
+                                    entity_types=len(result.get("entity_types", {})),
+                                )
+                            except Exception as _err:
+                                structlog.get_logger().warning(
+                                    "semantic.taxonomy.failed",
+                                    workspace_id=_wsid, error=str(_err),
+                                )
+                        _asyncio.create_task(_run_taxonomy(
+                            _ws_id, agent.services.connectors, agent.services.llm, _sem_ctxs,
+                        ))
+
                     logger.info(
                         "upload.semantic_analyzed",
                         source=source_id,
                         domain=sem_ctx.domain,
+                        mode="bootstrap" if cfg.bootstrap_aliases else "taxonomy",
                     )
             except Exception as sem_exc:
                 logger.warning("upload.semantic_failed", source=source_id, error=str(sem_exc))
@@ -2573,6 +2730,297 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
                 "avg_confidence": real_confidence,
                 "backends": list({t["backend"] for t in tables}),
             },
+        }
+
+    @app.get("/api/semantic/history", tags=["semantic"])
+    async def get_semantic_history(workspace_id: str = "", user=Depends(get_current_user)):
+        """Returns the semantic layer evolution history with iteration diffs."""
+        from sqlagent.semantic_agent import _load_manifest, _load_learned_aliases
+
+        manifest = _load_manifest(workspace_id)
+        history = manifest.get("history", [])
+
+        # Load current state counts
+        ws_dir = os.path.join(os.path.expanduser("~"), ".sqlagent", "uploads", workspace_id)
+        alias_count = 0
+        pattern_count = 0
+        relationship_count = 0
+        enrichment_count = 0
+
+        # Count aliases across all sources
+        if os.path.isdir(ws_dir):
+            for fname in os.listdir(ws_dir):
+                if fname.startswith("aliases_") and fname.endswith(".json"):
+                    try:
+                        with open(os.path.join(ws_dir, fname)) as f:
+                            data = json.load(f)
+                        alias_count += len([k for k in data if k != "_confidence"])
+                    except Exception:
+                        pass
+
+            # Count patterns
+            patterns_path = os.path.join(ws_dir, "query_patterns.json")
+            if os.path.exists(patterns_path):
+                try:
+                    with open(patterns_path) as f:
+                        pattern_count = len(json.load(f))
+                except Exception:
+                    pass
+
+            # Count relationships
+            rels_path = os.path.join(ws_dir, "relationships.json")
+            if os.path.exists(rels_path):
+                try:
+                    with open(rels_path) as f:
+                        relationship_count = len(json.load(f))
+                except Exception:
+                    pass
+
+            # Count enrichments
+            enrich_path = os.path.join(ws_dir, "column_enrichments.json")
+            if os.path.exists(enrich_path):
+                try:
+                    with open(enrich_path) as f:
+                        enrichment_count = len(json.load(f))
+                except Exception:
+                    pass
+
+        # Load rules
+        rule_count = 0
+        try:
+            from sqlagent.rules import load_rules
+            rule_count = len(load_rules(workspace_id))
+        except Exception:
+            pass
+
+        return {
+            "iteration_id": manifest.get("iteration_id", 0),
+            "history": history[-30:],  # Last 30 iterations
+            "current_state": {
+                "aliases": alias_count,
+                "patterns": pattern_count,
+                "relationships": relationship_count,
+                "enrichments": enrichment_count,
+                "rules": rule_count,
+            },
+            "taxonomy": manifest.get("taxonomy", {}),
+        }
+
+    @app.get("/api/semantic/graph", tags=["semantic"])
+    async def get_semantic_graph(workspace_id: str = "", user=Depends(get_current_user)):
+        """Returns a graph-ready semantic model: tables as nodes, relationships as edges,
+        dimensions/measures as child nodes, synonyms as decorations, all with confidence."""
+        agent = await _get_or_create_agent(workspace_id, user.user_id)
+        if not agent.services or not agent.services.connectors:
+            return {"nodes": [], "edges": [], "layers": [], "stats": {}, "iteration_id": 0}
+
+        from sqlagent.semantic_agent import _load_manifest, _load_learned_aliases, load_context
+
+        manifest = _load_manifest(workspace_id)
+        ws_dir = os.path.join(os.path.expanduser("~"), ".sqlagent", "uploads", workspace_id)
+
+        nodes = []
+        edges = []
+        layers = []
+
+        # Load semantic contexts for all sources
+        sem_contexts = {}
+        for sid in agent.services.connectors:
+            ctx = load_context(sid, workspace_id)
+            if ctx:
+                sem_contexts[sid] = ctx
+
+        # Build nodes from connected sources
+        for sid, conn in agent.services.connectors.items():
+            try:
+                snap = await conn.introspect()
+            except Exception:
+                continue
+
+            ctx = sem_contexts.get(sid)
+
+            for table in snap.tables[:15]:
+                # Table node
+                dim_cols = []
+                measure_cols = []
+                time_cols = []
+
+                for col in table.columns:
+                    dt = (col.data_type or "").lower()
+                    col_name_lower = col.name.lower()
+
+                    # Classify column
+                    is_time = any(k in col_name_lower for k in ("date", "year", "month", "time", "quarter", "week", "day"))
+                    is_measure = any(k in dt for k in ("int", "float", "double", "decimal", "numeric", "bigint"))
+                    is_dimension = not is_measure or any(k in col_name_lower for k in ("id", "code", "name", "type", "category", "status"))
+
+                    # Override with semantic context if available
+                    if ctx:
+                        if col.name in (ctx.dimension_columns or []):
+                            is_dimension = True
+                            is_measure = False
+                        if col.name in (ctx.measure_columns or []):
+                            is_measure = True
+                            is_dimension = False
+
+                    if is_time:
+                        time_cols.append(col.name)
+                    elif is_measure and not is_dimension:
+                        measure_cols.append(col.name)
+                    else:
+                        dim_cols.append(col.name)
+
+                # Get column meanings from context
+                meanings = ctx.column_meanings if ctx else {}
+
+                nodes.append({
+                    "id": f"tbl:{table.name}",
+                    "type": "table",
+                    "name": table.name,
+                    "source_id": sid,
+                    "rows": table.row_count_estimate,
+                    "dimensions": dim_cols,
+                    "measures": measure_cols,
+                    "time_dimensions": time_cols,
+                    "columns": [c.name for c in table.columns],
+                    "meanings": {c: meanings.get(c, "") for c in [col.name for col in table.columns] if c in meanings},
+                    "confidence": 0.5 + (0.2 if ctx else 0) + (0.1 if meanings else 0),
+                })
+
+        # Build edges from relationships
+        rels_path = os.path.join(ws_dir, "relationships.json")
+        if os.path.exists(rels_path):
+            try:
+                with open(rels_path) as f:
+                    rels = json.load(f)
+                for rel in rels:
+                    edges.append({
+                        "source": f"tbl:{rel['from_table']}",
+                        "target": f"tbl:{rel['to_table']}",
+                        "type": rel.get("source", "inferred"),
+                        "confidence": rel.get("confidence", 0.5),
+                        "query_count": rel.get("query_count", 0),
+                    })
+            except Exception:
+                pass
+
+        # Add FK edges from schema introspection
+        for sid, conn in agent.services.connectors.items():
+            try:
+                snap = await conn.introspect()
+                for fk in snap.foreign_keys:
+                    edge_key = f"{fk.from_table}:{fk.to_table}"
+                    if not any(e["source"] == f"tbl:{fk.from_table}" and e["target"] == f"tbl:{fk.to_table}" for e in edges):
+                        edges.append({
+                            "source": f"tbl:{fk.from_table}",
+                            "target": f"tbl:{fk.to_table}",
+                            "type": "declared_fk",
+                            "confidence": 1.0,
+                            "join_columns": {"from": fk.from_column, "to": fk.to_column},
+                        })
+            except Exception:
+                pass
+
+        # Add cross-source join candidates from taxonomy
+        taxonomy = manifest.get("taxonomy", {})
+        for join in taxonomy.get("cross_source_joins", []):
+            edges.append({
+                "source": f"tbl:{join['from'].split('.')[1] if '.' in join['from'] else join['from']}",
+                "target": f"tbl:{join['to'].split('.')[1] if '.' in join['to'] else join['to']}",
+                "type": "cross_source",
+                "confidence": join.get("confidence", 0.7),
+            })
+
+        # Synonyms/aliases as decorations
+        synonyms = []
+        for sid in agent.services.connectors:
+            aliases = _load_learned_aliases(workspace_id, sid)
+            for term, canonical in aliases.items():
+                if term != "_confidence":
+                    synonyms.append({"term": term, "canonical": canonical, "source_id": sid})
+
+        # Patterns
+        patterns = []
+        patterns_path = os.path.join(ws_dir, "query_patterns.json")
+        if os.path.exists(patterns_path):
+            try:
+                with open(patterns_path) as f:
+                    patterns = json.load(f)
+            except Exception:
+                pass
+
+        # Rules
+        rules = []
+        try:
+            from sqlagent.rules import load_rules
+            rules = load_rules(workspace_id)
+        except Exception:
+            pass
+
+        return {
+            "nodes": nodes,
+            "edges": edges,
+            "layers": layers,
+            "synonyms": synonyms[:50],
+            "patterns": [p for p in patterns if p.get("count", 0) >= 2][:20],
+            "rules": rules[:10],
+            "iteration_id": manifest.get("iteration_id", 0),
+            "history": manifest.get("history", [])[-10:],
+            "stats": {
+                "tables": len(nodes),
+                "edges": len(edges),
+                "synonyms": len(synonyms),
+                "patterns": len(patterns),
+                "rules": len(rules),
+                "iteration": manifest.get("iteration_id", 0),
+            },
+        }
+
+    @app.get("/api/learn/impact", tags=["train"])
+    async def get_learn_impact(workspace_id: str = "", user=Depends(get_current_user)):
+        """Returns learning impact metrics — accuracy trend, rule effectiveness."""
+        # Query traces.db for success rate over time
+        try:
+            traces = await _state["trace_store"].list_for_workspace(workspace_id, limit=50)
+            tasks = traces.get("tasks", []) if isinstance(traces, dict) else []
+        except Exception:
+            tasks = []
+
+        # Calculate accuracy trend
+        total = len(tasks)
+        succeeded = sum(1 for t in tasks if t.get("succeeded"))
+        accuracy = (succeeded / total * 100) if total > 0 else 0
+
+        # Split into first half vs second half for trend
+        if total >= 4:
+            mid = total // 2
+            first_half = tasks[mid:]  # older
+            second_half = tasks[:mid]  # newer
+            first_acc = sum(1 for t in first_half if t.get("succeeded")) / len(first_half) * 100
+            second_acc = sum(1 for t in second_half if t.get("succeeded")) / len(second_half) * 100
+            trend = second_acc - first_acc
+        else:
+            first_acc = accuracy
+            second_acc = accuracy
+            trend = 0
+
+        # Load rules
+        rules = []
+        try:
+            from sqlagent.rules import load_rules
+            rules = load_rules(workspace_id, active_only=False)
+        except Exception:
+            pass
+
+        return {
+            "total_queries": total,
+            "succeeded": succeeded,
+            "accuracy_pct": round(accuracy, 1),
+            "trend": round(trend, 1),
+            "first_half_accuracy": round(first_acc, 1),
+            "second_half_accuracy": round(second_acc, 1),
+            "active_rules": [r for r in rules if r.get("confidence", 0) >= 0.3],
+            "expired_rules": [r for r in rules if r.get("confidence", 0) < 0.3],
         }
 
     @app.post("/api/semantic/save", tags=["semantic"])

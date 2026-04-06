@@ -46,8 +46,10 @@ class QueryDecomposition:
     """Ora's decomposition of a user query into logical parts."""
 
     parts: list[dict] = field(default_factory=list)
-    # Each part: {"id": "A", "description": "...", "needs_calculation": "...", "depends_on": []}
+    # Each part: {"id": "A", "description": "...", "target_domain": "...", "target_source": "..."}
     entities_to_resolve: list[str] = field(default_factory=list)
     calculations_needed: list[str] = field(default_factory=list)
     comparison_type: str = ""
     raw_query: str = ""
+    is_cross_source: bool = False  # True if parts target different data sources
+    data_gaps: list[dict] = field(default_factory=list)  # schema gaps detected per part

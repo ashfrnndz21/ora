@@ -1354,6 +1354,18 @@ def make_respond_node(services: Any):
             # Show first 10 + a summary of unique values per text column
             sample = rows[:10]
 
+        # ── Analyze which columns vary vs are constant across result rows ────
+        # Used for chart axis selection and table display optimization
+        varying_cols = []
+        constant_cols = []
+        if rows and len(rows) > 1:
+            for col in columns:
+                vals = set(str(r.get(col, '')) for r in rows[:20])
+                if len(vals) > 1:
+                    varying_cols.append(col)
+                else:
+                    constant_cols.append(f"{col}={next(iter(vals))}")
+
         # ── Compound query: structure the answer by sub-question part ──────────
         # When synthesize_node used UNION ALL, rows include a 'sub_question' column
         # (values like 'sq_a', 'sq_b'). Tell the LLM to narrate each part separately.
@@ -1406,17 +1418,33 @@ def make_respond_node(services: Any):
                 f'Return JSON: {{"summary": "...", "follow_ups": ["..."], "chart_type": "bar|line|pie|table|none"}}'
             )
         else:
+            col_analysis = ""
+            if varying_cols or constant_cols:
+                col_analysis = (
+                    f"\nColumn analysis:\n"
+                    f"  Columns that VARY across rows: {varying_cols}\n"
+                    f"  Columns that are CONSTANT (same value every row): {constant_cols}\n"
+                    f"  Use VARYING columns for chart axes and table display.\n\n"
+                )
+
             prompt = (
                 f"{history_prefix}"
                 f"{warnings_prefix}"
                 f"Question: {nl_query}\n"
                 f"SQL: {sql}\n"
-                f"Results ({row_count} rows{', ALL shown' if row_count <= 20 else ', showing first 10'}):\n{sample}\n\n"
+                f"Results ({row_count} rows{', ALL shown' if row_count <= 20 else ', showing first 10'}):\n{sample}\n"
+                f"{col_analysis}"
                 f"1. Write a concise natural language answer (2-3 sentences, use **bold** for key numbers).\n"
                 f"2. Suggest 3 follow-up questions.\n"
-                f"3. Suggest a chart type (bar, line, pie, table, or none).\n\n"
+                f"3. Choose the best chart type (bar, line, pie, table, or none).\n"
+                f"4. Pick x_column and y_column for the chart from the VARYING columns.\n"
+                f"5. If some columns are constant across all rows, suggest showing them as KPI cards instead of repeating in the table.\n\n"
                 f'Return JSON: {{"summary": "...", "follow_ups": ["..."], '
-                f'"chart_type": "bar|line|pie|table|none"}}'
+                f'"chart_type": "bar|line|pie|table|none", '
+                f'"x_column": "column name for x-axis (must vary across rows)", '
+                f'"y_column": "column name for y-axis (numeric, must vary)", '
+                f'"kpi_cards": [{{"label": "...", "value": "..."}}], '
+                f'"hide_columns": ["columns to hide from table (constant/redundant)"]}}'
             )
 
         resp = await services.llm.complete(
@@ -1441,10 +1469,23 @@ def make_respond_node(services: Any):
         chart_config = None
         chart_type = parsed.get("chart_type", "table")
         if chart_type in ("bar", "line", "pie") and len(columns) >= 2:
+            # Use LLM-picked axes if available, fall back to varying column analysis
+            x_col = parsed.get("x_column", "")
+            y_col = parsed.get("y_column", "")
+            # Validate the LLM's picks exist in actual columns
+            if x_col not in columns:
+                x_col = varying_cols[0] if varying_cols else columns[0]
+            if y_col not in columns:
+                # Pick the first varying numeric column
+                y_col = next(
+                    (c for c in varying_cols if c != x_col
+                     and rows and isinstance(rows[0].get(c), (int, float))),
+                    columns[-1],
+                )
             chart_config = {
                 "type": chart_type,
-                "x_column": columns[0],
-                "y_column": columns[-1],
+                "x_column": x_col,
+                "y_column": y_col,
             }
 
         tokens = resp.tokens_input + resp.tokens_output
@@ -1493,6 +1534,8 @@ def make_respond_node(services: Any):
             "nl_response": parsed.get("summary", resp.content),
             "follow_ups": parsed.get("follow_ups", []),
             "chart_config": chart_config,
+            "kpi_cards": parsed.get("kpi_cards", []),
+            "hide_columns": parsed.get("hide_columns", []),
             "confidence": confidence_data,
             "completed_at": datetime.now(timezone.utc).isoformat(),
             "tokens_used": state.get("tokens_used", 0) + tokens,

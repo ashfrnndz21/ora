@@ -197,6 +197,232 @@ def persist_context(ctx: SourceSemanticContext, workspace_id: str) -> None:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# SEMANTIC MANIFEST — versioned snapshot of semantic layer state
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+def _load_manifest(workspace_id: str) -> dict:
+    """Load the current semantic manifest (or create a fresh one)."""
+    ws_dir = os.path.join(
+        os.path.expanduser("~"), ".sqlagent", "uploads", workspace_id
+    )
+    path = os.path.join(ws_dir, "semantic_manifest.json")
+    if os.path.exists(path):
+        try:
+            with open(path) as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {"iteration_id": 0, "history": []}
+
+
+def _save_manifest(workspace_id: str, manifest: dict) -> None:
+    """Persist the semantic manifest to disk."""
+    ws_dir = os.path.join(
+        os.path.expanduser("~"), ".sqlagent", "uploads", workspace_id
+    )
+    os.makedirs(ws_dir, exist_ok=True)
+    path = os.path.join(ws_dir, "semantic_manifest.json")
+    with open(path, "w") as f:
+        json.dump(manifest, f, indent=2)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# LIGHTWEIGHT TAXONOMY — replaces exhaustive bootstrap at connect time
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+async def build_initial_taxonomy(
+    workspace_id: str,
+    connectors: dict,
+    llm: object,
+    semantic_contexts: dict[str, SourceSemanticContext] | None = None,
+) -> dict:
+    """Build a lightweight semantic taxonomy at connect time.
+
+    Instead of pre-computing aliases for every value (expensive, 90% confidence),
+    this function:
+    1. Detects cross-source join candidates (no LLM — column name/type matching)
+    2. Classifies entity types and detects group memberships (single LLM call)
+    3. Saves as iteration_id=1 in the semantic manifest
+
+    The taxonomy evolves through actual queries via evolve_semantic_layer().
+    """
+    from datetime import datetime, timezone
+
+    manifest = _load_manifest(workspace_id)
+    result = {
+        "cross_source_joins": [],
+        "entity_types": {},
+        "group_memberships": {},
+        "source_summaries": {},
+    }
+
+    # ── Phase 1: Cross-source join detection (no LLM) ──────────────────
+    all_tables: dict[str, list[dict]] = {}  # source_id → [{table, columns}]
+
+    for sid, conn in connectors.items():
+        try:
+            snap = await conn.introspect()
+            tables_info = []
+            for table in snap.tables[:10]:
+                cols = [
+                    {"name": col.name, "type": (col.data_type or "").lower()}
+                    for col in table.columns
+                ]
+                tables_info.append({"table": table.name, "columns": cols})
+            all_tables[sid] = tables_info
+        except Exception:
+            continue
+
+    # Compare columns across all table pairs (within and across sources)
+    all_flat = []
+    for sid, tables in all_tables.items():
+        for t in tables:
+            for col in t["columns"]:
+                all_flat.append({
+                    "source": sid, "table": t["table"],
+                    "column": col["name"], "type": col["type"],
+                })
+
+    for i, a in enumerate(all_flat):
+        for b in all_flat[i + 1:]:
+            if a["source"] == b["source"] and a["table"] == b["table"]:
+                continue
+            # Same column name = candidate join
+            a_name = a["column"].lower().rstrip("_id")
+            b_name = b["column"].lower().rstrip("_id")
+            if a_name == b_name and a_name:
+                # Check type compatibility
+                a_type = a["type"]
+                b_type = b["type"]
+                compatible = (
+                    a_type == b_type
+                    or (any(t in a_type for t in ("varchar", "text", "char"))
+                        and any(t in b_type for t in ("varchar", "text", "char")))
+                    or (any(t in a_type for t in ("int", "bigint", "numeric"))
+                        and any(t in b_type for t in ("int", "bigint", "numeric")))
+                )
+                if compatible:
+                    join = {
+                        "from": f"{a['source']}.{a['table']}.{a['column']}",
+                        "to": f"{b['source']}.{b['table']}.{b['column']}",
+                        "confidence": 0.9 if a["column"] == b["column"] else 0.7,
+                        "method": "name_match",
+                    }
+                    # Deduplicate
+                    key = tuple(sorted([join["from"], join["to"]]))
+                    if not any(
+                        tuple(sorted([j["from"], j["to"]])) == key
+                        for j in result["cross_source_joins"]
+                    ):
+                        result["cross_source_joins"].append(join)
+
+    # ── Phase 2: Entity classification (single LLM call) ──────────────
+    # Build a compact schema summary for the LLM
+    schema_summary = []
+    for sid, tables in all_tables.items():
+        ctx = (semantic_contexts or {}).get(sid)
+        for t in tables:
+            dim_cols = []
+            for col in t["columns"]:
+                is_dim = ctx and col["name"] in (ctx.dimension_columns or [])
+                if is_dim or any(
+                    kw in col["name"].lower()
+                    for kw in ("code", "iso", "name", "type", "country", "region", "category")
+                ):
+                    dim_cols.append(col["name"])
+            if dim_cols:
+                # Get sample values from semantic context if available
+                samples = ""
+                if ctx and ctx.abbreviation_maps:
+                    for dc in dim_cols[:3]:
+                        if dc in ctx.abbreviation_maps:
+                            vals = list(ctx.abbreviation_maps[dc].keys())[:8]
+                            samples += f"\n      {dc} samples: {vals}"
+                schema_summary.append(
+                    f"  {sid}.{t['table']}: dimensions=[{', '.join(dim_cols)}]{samples}"
+                )
+
+    if schema_summary:
+        taxonomy_prompt = f"""\
+Analyze these data source dimensions and classify the entity types.
+
+SOURCES AND DIMENSIONS:
+{chr(10).join(schema_summary)}
+
+CROSS-SOURCE JOINS DETECTED:
+{json.dumps(result['cross_source_joins'][:10], indent=2) if result['cross_source_joins'] else 'None detected'}
+
+Return JSON:
+{{
+  "entity_types": {{
+    "column_name": "entity_type (e.g. country_code, year, industry, gender, age_group)"
+  }},
+  "group_memberships": {{
+    "column_name": {{
+      "group_name": ["member1", "member2", "..."]
+    }}
+  }}
+}}
+
+Rules:
+- entity_types: map EVERY dimension column to its semantic type
+- group_memberships: ONLY include well-known groups you can identify from samples
+  (e.g. ASEAN countries, G7, EU, age brackets, gender categories)
+- For country/region columns: identify which geopolitical groups the sample values belong to
+- Return ONLY valid JSON
+"""
+        try:
+            resp = await llm.complete(
+                [{"role": "user", "content": taxonomy_prompt}],
+                temperature=0.0, max_tokens=1024, json_mode=True,
+            )
+            raw = resp.content.strip()
+            if raw.startswith("```"):
+                raw = raw.split("```")[1]
+                if raw.startswith("json"):
+                    raw = raw[4:]
+                raw = raw.strip().rstrip("```").strip()
+            parsed = json.loads(raw)
+            result["entity_types"] = parsed.get("entity_types", {})
+            result["group_memberships"] = parsed.get("group_memberships", {})
+        except Exception as exc:
+            logger.warning("semantic.taxonomy.llm_failed", error=str(exc))
+
+    # ── Phase 3: Save manifest with iteration_id ──────────────────────
+    manifest["iteration_id"] += 1
+    manifest["history"].append({
+        "iteration_id": manifest["iteration_id"],
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "trigger": "connect",
+        "cross_source_joins": len(result["cross_source_joins"]),
+        "entity_types": len(result["entity_types"]),
+        "groups_detected": list(
+            g for col_groups in result["group_memberships"].values()
+            for g in col_groups.keys()
+        ),
+    })
+    # Keep history bounded
+    manifest["history"] = manifest["history"][-50:]
+
+    # Save taxonomy data into manifest
+    manifest["taxonomy"] = result
+    _save_manifest(workspace_id, manifest)
+
+    logger.info(
+        "semantic.taxonomy.built",
+        workspace_id=workspace_id,
+        iteration_id=manifest["iteration_id"],
+        joins=len(result["cross_source_joins"]),
+        entity_types=len(result["entity_types"]),
+        groups=len(result["group_memberships"]),
+    )
+
+    return result
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # SEMANTIC LAYER EVOLUTION — called by Learn Agent after every successful query
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -216,6 +442,8 @@ def evolve_semantic_layer(
     Returns a summary of what was learned.
     """
     learned = {"aliases": 0, "relationships": 0, "patterns": 0, "enrichments": 0}
+    # Track actual items for history detail
+    learned_details = {"aliases": [], "relationships": [], "patterns": [], "enrichments": []}
 
     ws_dir = os.path.join(
         os.path.expanduser("~"), ".sqlagent", "uploads", workspace_id
@@ -235,6 +463,7 @@ def evolve_semantic_layer(
                     existing[term_lower] = value
                     new_confs[term_lower] = sem_reasoning.get("confidence", 0.85)
                     learned["aliases"] += 1
+                    learned_details["aliases"].append(f"{term_lower} → {value}")
             if new_confs:
                 _save_learned_aliases(workspace_id, sid, existing, new_confs)
 
@@ -263,6 +492,7 @@ def evolve_semantic_layer(
                             "query_count": 1,
                         })
                         learned["relationships"] += 1
+                        learned_details["relationships"].append(f"{t1} ↔ {t2}")
                     else:
                         # Strengthen existing relationship
                         for r in existing_rels:
@@ -307,6 +537,7 @@ def evolve_semantic_layer(
                         "count": 1,
                     })
                     learned["patterns"] += 1
+                    learned_details["patterns"].append(f"{tbl}.{col} = '{val}'")
 
             with open(patterns_path, "w") as f:
                 json.dump(existing_patterns, f, indent=2)
@@ -338,6 +569,7 @@ def evolve_semantic_layer(
                             "query_count": 1,
                         }
                         learned["enrichments"] += 1
+                        learned_details["enrichments"].append(f"{tables_used[0]}.{metric} used for '{nl_query[:50]}'")
                     else:
                         enrichments[key]["query_count"] += 1
                         if nl_query[:100] not in enrichments[key].get("used_for", []):
@@ -351,6 +583,24 @@ def evolve_semantic_layer(
 
     if any(v > 0 for v in learned.values()):
         logger.info("semantic.evolved", **learned, workspace_id=workspace_id)
+
+        # ── Increment semantic manifest iteration ────────────────────────
+        try:
+            from datetime import datetime as _dt, timezone as _tz
+            manifest = _load_manifest(workspace_id)
+            manifest["iteration_id"] += 1
+            manifest["history"].append({
+                "iteration_id": manifest["iteration_id"],
+                "timestamp": _dt.now(_tz.utc).isoformat(),
+                "trigger": "query_success",
+                "learned": learned,
+                "details": {k: v[:5] for k, v in learned_details.items() if v},
+                "nl_query": query_result.get("nl_query", "")[:100],
+            })
+            manifest["history"] = manifest["history"][-50:]
+            _save_manifest(workspace_id, manifest)
+        except Exception:
+            pass  # Never fail a query over manifest tracking
 
     return learned
 
@@ -766,6 +1016,104 @@ def strengthen_alias(workspace_id: str, source_id: str, alias: str, canonical: s
         alias=alias, canonical=canonical,
         confidence=round(new_conf, 3),
     )
+
+
+def _save_resolution_log(
+    workspace_id: str,
+    question: str,
+    filters: list[dict],
+    confidence: float,
+    new_aliases: dict[str, str],
+) -> None:
+    """Append a resolution entry to the resolution log.
+
+    Tracks every resolution attempt so the agent can reflect on failures
+    and avoid repeating mistakes.
+    """
+    ws_dir = os.path.join(
+        os.path.expanduser("~"), ".sqlagent", "uploads", workspace_id
+    )
+    os.makedirs(ws_dir, exist_ok=True)
+    log_path = os.path.join(ws_dir, "resolution_log.json")
+
+    try:
+        existing: list[dict] = []
+        if os.path.exists(log_path):
+            with open(log_path) as f:
+                existing = json.load(f)
+
+        # Add entry for each resolved filter
+        from datetime import datetime, timezone
+        ts = datetime.now(timezone.utc).isoformat()
+        for flt in filters:
+            existing.append({
+                "question": question[:200],
+                "term": flt.get("reasoning", "")[:100],
+                "resolved_as": flt.get("value", ""),
+                "column": flt.get("column", ""),
+                "table": flt.get("table", ""),
+                "confidence": confidence,
+                "succeeded": True,  # Updated to False by record_resolution_failure
+                "timestamp": ts,
+            })
+
+        # Keep last 200 entries
+        existing = existing[-200:]
+        with open(log_path, "w") as f:
+            json.dump(existing, f, indent=2)
+    except Exception as exc:
+        logger.debug("semantic.resolution_log.save_failed", error=str(exc))
+
+
+def record_resolution_failure(
+    workspace_id: str,
+    question: str,
+    failed_filters: list[dict],
+    error: str,
+    correct_value: str = "",
+) -> None:
+    """Record a negative signal — a resolution that led to a failed query.
+
+    Called by the orchestrator when a query fails after semantic resolution.
+    The failure context is loaded by future reason_about_query() calls to
+    avoid repeating the same mistake.
+    """
+    ws_dir = os.path.join(
+        os.path.expanduser("~"), ".sqlagent", "uploads", workspace_id
+    )
+    os.makedirs(ws_dir, exist_ok=True)
+    log_path = os.path.join(ws_dir, "resolution_log.json")
+
+    try:
+        existing: list[dict] = []
+        if os.path.exists(log_path):
+            with open(log_path) as f:
+                existing = json.load(f)
+
+        from datetime import datetime, timezone
+        ts = datetime.now(timezone.utc).isoformat()
+        for flt in failed_filters:
+            existing.append({
+                "question": question[:200],
+                "term": flt.get("reasoning", "")[:100],
+                "resolved_as": flt.get("value", ""),
+                "column": flt.get("column", ""),
+                "table": flt.get("table", ""),
+                "confidence": 0.0,
+                "succeeded": False,
+                "error": error[:200],
+                "correct_value": correct_value,
+                "timestamp": ts,
+            })
+
+        existing = existing[-200:]
+        with open(log_path, "w") as f:
+            json.dump(existing, f, indent=2)
+
+        logger.info("semantic.resolution_failure_recorded",
+                     filters=len(failed_filters), question=question[:60])
+    except Exception as exc:
+        logger.debug("semantic.resolution_log.failure_save_failed", error=str(exc))
 
 
 async def resolve_entities(
@@ -1241,6 +1589,103 @@ async def reason_about_query(
                 f"  '{k}' → '{v}'" for k, v in sample_aliases
             )
 
+    # ── Pre-check: resolve high-confidence aliases deterministically ─────
+    # Aliases with confidence >= 0.93 are treated as ground truth.
+    # These are injected as pre-resolved filters so the LLM doesn't
+    # have to re-discover them. Only applies to entities found in the
+    # question text (case-insensitive substring match).
+    pre_resolved: list[dict] = []
+    question_lower = question.lower()
+    for sid in (source_ids or list(connectors.keys())):
+        aliases = _load_learned_aliases(workspace_id, sid)
+        key = f"{workspace_id}:{sid}"
+        confs = _alias_confidence.get(key, {})
+        for term, canonical in aliases.items():
+            if term in question_lower and confs.get(term, 0) >= 0.93:
+                pre_resolved.append({
+                    "term": term,
+                    "canonical": canonical,
+                    "confidence": confs[term],
+                    "source_id": sid,
+                })
+    if pre_resolved:
+        learned_context += "\n\nHIGH-CONFIDENCE pre-resolved entities (use these directly):\n"
+        for pr in pre_resolved:
+            learned_context += f"  '{pr['term']}' = '{pr['canonical']}' (confidence: {pr['confidence']:.2f})\n"
+        logger.info("semantic.reasoning.pre_resolved",
+                     count=len(pre_resolved),
+                     terms=[p["term"] for p in pre_resolved])
+
+    # ── Load known query patterns (auto-inject common filters) ───────────
+    patterns_context = ""
+    if workspace_id:
+        patterns_path = os.path.join(
+            os.path.expanduser("~"), ".sqlagent", "uploads", workspace_id,
+            "query_patterns.json"
+        )
+        try:
+            if os.path.exists(patterns_path):
+                with open(patterns_path) as f:
+                    patterns = json.load(f)
+                # Only inject patterns seen 3+ times (confirmed by repeated success)
+                frequent = [p for p in patterns if p.get("count", 0) >= 3]
+                if frequent:
+                    patterns_context = "\nKnown default filters (apply these unless the user explicitly asks otherwise):\n"
+                    for p in frequent[:10]:
+                        patterns_context += (
+                            f"  {p['table']}.{p['column']} = '{p['value']}' "
+                            f"(confirmed {p['count']} times)\n"
+                        )
+        except Exception:
+            pass
+
+    # ── Load column enrichments (usage context from past queries) ────────
+    enrichments_context = ""
+    if workspace_id:
+        enrichments_path = os.path.join(
+            os.path.expanduser("~"), ".sqlagent", "uploads", workspace_id,
+            "column_enrichments.json"
+        )
+        try:
+            if os.path.exists(enrichments_path):
+                with open(enrichments_path) as f:
+                    enrichments = json.load(f)
+                if enrichments:
+                    enrichments_context = "\nColumn usage insights (from past successful queries):\n"
+                    for key_col, info in list(enrichments.items())[:10]:
+                        used_for = info.get("used_for", [])
+                        if used_for:
+                            enrichments_context += (
+                                f"  {key_col}: used for queries like '{used_for[0]}' "
+                                f"({info.get('query_count', 0)} times)\n"
+                            )
+        except Exception:
+            pass
+
+    # ── Load failure log (avoid repeating past mistakes) ─────────────────
+    failure_context = ""
+    if workspace_id:
+        resolution_log_path = os.path.join(
+            os.path.expanduser("~"), ".sqlagent", "uploads", workspace_id,
+            "resolution_log.json"
+        )
+        try:
+            if os.path.exists(resolution_log_path):
+                with open(resolution_log_path) as f:
+                    res_log = json.load(f)
+                # Show recent failures so the agent avoids them
+                failures = [r for r in res_log if not r.get("succeeded", True)][-5:]
+                if failures:
+                    failure_context = "\nPAST FAILURES (avoid these exact resolutions — they were wrong):\n"
+                    for f_entry in failures:
+                        failure_context += (
+                            f"  '{f_entry.get('term','')}' resolved as "
+                            f"'{f_entry.get('resolved_as','')}' → FAILED "
+                            f"(correct: {f_entry.get('correct_value','unknown')})\n"
+                        )
+        except Exception:
+            pass
+
     # ── Build semantic analysis context ──────────────────────────────────
     domain_context = ""
     if semantic_contexts:
@@ -1273,6 +1718,9 @@ DATABASE SCHEMA:
 {schema_text}
 {domain_context}
 {learned_context}
+{patterns_context}
+{enrichments_context}
+{failure_context}
 
 INSTRUCTIONS:
 1. Identify EVERY entity the user mentions. For each, determine:
@@ -1348,6 +1796,32 @@ Rules:
             tables=result.tables,
             confidence=result.confidence,
         )
+
+        # ── Inject pre-resolved aliases as filters ────────────────────
+        # High-confidence aliases resolved deterministically before the
+        # LLM call are now merged into the filter set. If the LLM already
+        # produced a matching filter, skip the duplicate.
+        if pre_resolved:
+            existing_values = {
+                (f.get("value", "").lower(), f.get("column", "").lower())
+                for f in result.filters
+            }
+            for pr in pre_resolved:
+                val_lower = pr["canonical"].lower()
+                # Don't duplicate if LLM already got it right
+                if not any(val_lower == ev[0] for ev in existing_values):
+                    result.new_aliases[pr["term"]] = pr["canonical"]
+                    result.reasoning += (
+                        f"\n  Pre-resolved: '{pr['term']}' → '{pr['canonical']}' "
+                        f"(confidence {pr['confidence']:.2f})"
+                    )
+
+            # Remove pre-resolved terms from unresolved list
+            pre_terms = {pr["term"].lower() for pr in pre_resolved}
+            unresolved = [
+                u for u in unresolved
+                if u.get("term", "").lower() not in pre_terms
+            ]
 
         # ── Pass 2: Resolve unresolved entities via Schema Agent ─────────
         if unresolved:
@@ -1497,5 +1971,16 @@ Return ONLY valid JSON.
         logger.warning("semantic.reasoning.failed", error=str(exc))
         result.reasoning = f"Reasoning failed: {exc}"
         result.confidence = 0.3
+
+    # ── Save resolution log entry ────────────────────────────────────────
+    # Track every resolution attempt for reflection and debugging.
+    if workspace_id and result.filters:
+        try:
+            _save_resolution_log(
+                workspace_id, question, result.filters,
+                result.confidence, result.new_aliases,
+            )
+        except Exception:
+            pass  # Never fail a query over logging
 
     return result

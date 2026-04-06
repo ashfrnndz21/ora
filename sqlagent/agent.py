@@ -13,6 +13,7 @@ Or the one-liner:
 from __future__ import annotations
 
 import asyncio
+import os
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -131,7 +132,11 @@ class SQLAgent:
         # Vector store + example store
         from sqlagent.retrieval import QdrantVectorStore, ExampleStore
 
-        vector_store = QdrantVectorStore()
+        # Persistent vector store — per-workspace to avoid lock conflicts
+        _ws_id = getattr(self, '_workspace_id', '') or self._source_id or 'default'
+        _vs_path = os.path.join(os.path.expanduser("~"), ".sqlagent", "vectorstore", _ws_id)
+        os.makedirs(_vs_path, exist_ok=True)
+        vector_store = QdrantVectorStore(path=_vs_path)
         await vector_store.ensure_collection(dimensions=self._config.embedding_dimensions)
         services.example_store = ExampleStore(vector_store=vector_store, embedder=services.embedder)
 

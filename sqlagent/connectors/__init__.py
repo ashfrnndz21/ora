@@ -99,4 +99,78 @@ class ConnectorRegistry:
             path = url.replace("duckdb:///", "").replace("duckdb://", "")
             return DuckDBConnector(source_id=source_id, db_path=path)
 
+        # ── SaaS / REST API connectors ─────────────────────────────
+        if url_lower.startswith("shopify://"):
+            from sqlagent.connectors.catalog.shopify import ShopifyConnector
+            # shopify://{store}?api_key={key}
+            from urllib.parse import urlparse, parse_qs
+            parsed = urlparse(url)
+            params = parse_qs(parsed.query)
+            return ShopifyConnector(
+                source_id=source_id,
+                store_name=parsed.hostname or "",
+                api_key=params.get("api_key", [""])[0],
+            )
+
+        if url_lower.startswith("salesforce://"):
+            from sqlagent.connectors.catalog.salesforce import SalesforceConnector
+            from urllib.parse import urlparse, parse_qs
+            parsed = urlparse(url)
+            params = parse_qs(parsed.query)
+            instance_url = f"https://{parsed.hostname}"
+            return SalesforceConnector(
+                source_id=source_id,
+                instance_url=instance_url,
+                access_token=params.get("access_token", [""])[0],
+                refresh_token=params.get("refresh_token", [""])[0],
+                client_id=params.get("client_id", [""])[0],
+                client_secret=params.get("client_secret", [""])[0],
+            )
+
+        if url_lower.startswith("stripe://"):
+            from sqlagent.connectors.catalog.stripe import StripeConnector
+            from urllib.parse import urlparse, parse_qs
+            parsed = urlparse(url)
+            params = parse_qs(parsed.query)
+            return StripeConnector(
+                source_id=source_id,
+                api_key=params.get("api_key", [""])[0],
+            )
+
+        if url_lower.startswith("hubspot://"):
+            from sqlagent.connectors.catalog.hubspot import HubSpotConnector
+            from urllib.parse import urlparse, parse_qs
+            parsed = urlparse(url)
+            params = parse_qs(parsed.query)
+            return HubSpotConnector(
+                source_id=source_id,
+                api_key=params.get("api_key", [""])[0],
+            )
+
+        if url_lower.startswith("google_analytics://") or url_lower.startswith("ga4://"):
+            from sqlagent.connectors.catalog.google_analytics import GoogleAnalyticsConnector
+            from urllib.parse import urlparse, parse_qs
+            parsed = urlparse(url)
+            params = parse_qs(parsed.query)
+            property_id = parsed.hostname or parsed.path.strip("/")
+            return GoogleAnalyticsConnector(
+                source_id=source_id,
+                property_id=property_id,
+                access_token=params.get("access_token", [""])[0],
+            )
+
+        if url_lower.startswith("airbyte://"):
+            from sqlagent.connectors.airbyte_connector import AirbyteConnector
+            from urllib.parse import urlparse, parse_qs
+            parsed = urlparse(url)
+            params = parse_qs(parsed.query)
+            return AirbyteConnector(
+                source_id=source_id,
+                mode=params.get("mode", ["embedded"])[0],
+                source_name=params.get("source", [""])[0],
+                airbyte_url=f"http://{parsed.hostname}:{parsed.port or 8000}",
+                connection_id=params.get("connection_id", [""])[0],
+                destination_db=params.get("destination_db", [""])[0],
+            )
+
         raise ValueError(f"Unknown connection URL scheme: {url}")

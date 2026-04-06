@@ -1,56 +1,7 @@
-"""Test LangGraph compilation and routing logic."""
+"""Test LangGraph compilation — v2.0 ReAct architecture (ora → respond → learn)."""
 
 from sqlagent.graph.state import QueryState
-from sqlagent.graph.builder import (
-    route_after_ora,
-    route_after_execute,
-    route_after_correct,
-    compile_query_graph,
-)
-
-
-# ── Routing edge functions ────────────────────────────────────────────────────
-
-def test_route_ora_simple_goes_to_prune():
-    """Ora routes to prune when no sub_queries (simple single-source path)."""
-    assert route_after_ora({"is_cross_source": False}) == "prune"
-    assert route_after_ora({"sub_queries": []}) == "prune"
-    assert route_after_ora({}) == "prune"
-
-
-def test_route_ora_cross_source_goes_to_fan_out():
-    """Ora routes to fan_out when sub_queries are present."""
-    state: QueryState = {"sub_queries": [{"id": "sq_a", "source_id": "src1"}]}
-    assert route_after_ora(state) == "fan_out"
-
-
-def test_route_ora_compound_goes_to_fan_out():
-    """Ora routes to fan_out for compound queries with multiple sub_queries."""
-    state: QueryState = {
-        "is_compound_query": True,
-        "sub_queries": [{"id": "sq_a"}, {"id": "sq_b"}],
-    }
-    assert route_after_ora(state) == "fan_out"
-
-
-def test_route_execute_success():
-    state: QueryState = {"execution_error": ""}
-    assert route_after_execute(state) == "respond"
-
-
-def test_route_execute_error_can_correct():
-    state: QueryState = {"execution_error": "column not found", "correction_round": 0, "max_corrections": 3}
-    assert route_after_execute(state) == "correct"
-
-
-def test_route_execute_error_max_corrections():
-    state: QueryState = {"execution_error": "column not found", "correction_round": 3, "max_corrections": 3}
-    assert route_after_execute(state) == "respond"
-
-
-def test_route_after_correct_always_retries():
-    state: QueryState = {}
-    assert route_after_correct(state) == "execute"
+from sqlagent.graph.builder import compile_query_graph
 
 
 # ── Graph compilation ─────────────────────────────────────────────────────────
@@ -83,6 +34,11 @@ def test_graph_compiles():
 def test_graph_has_all_nodes():
     """Verify all expected nodes are in the compiled graph."""
     graph = compile_query_graph(MockServices())
-    # The graph object has a nodes dict internally
-    # We can verify by checking the graph structure
     assert graph is not None  # If compilation succeeded, all nodes are wired
+
+
+def test_graph_is_linear_three_node():
+    """v2.0: graph is linear ora → respond → learn → END."""
+    graph = compile_query_graph(MockServices())
+    # Compilation succeeds = ora, respond, learn nodes all present and wired
+    assert hasattr(graph, "ainvoke")

@@ -64,6 +64,9 @@ class AgentConfig:
     episodic_backend: str = "sqlite"  # sqlite | dynamodb
     soul_evolution_interval: int = 20  # queries between SOUL evolution
 
+    # Semantic layer
+    bootstrap_aliases: bool = False  # opt-in: exhaustive alias inference at connect time
+
     # Policy
     select_only: bool = True
     no_ddl: bool = True

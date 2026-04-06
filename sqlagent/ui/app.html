@@ -6,9 +6,7 @@
 <title>Ora — Speak to your database.</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"
-  integrity="sha384-DGyLxAyjq0f9SPpVevD6IgztCFlnMF6oW/XQGmfe+IsZ8TqEiDrcHkMLKI6fiB/Z"
-  crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"
   integrity="sha384-gTGxhz21lVGYNMcdJOyq01Edg0jhn/c22nsx0kyqP0TxaV5WVdsSH1fSDUf5YJj1"
   crossorigin="anonymous"></script>
@@ -790,13 +788,13 @@ function OraLogo({ className = 'sidebar-logo-text' }) {
    ═══════════════════════════════════════════════════════════════════════════ */
 function OraTypeWriter() {
   const PHRASES = [
-    'anaphora resolution',
-    'intent classification',
-    'entity alias mapping',
-    'data coverage analysis',
-    'semantic resolution',
-    'query decomposition',
-    'cross-source planning',
+    'alias pre-check',
+    'pattern auto-injection',
+    'iterative reasoning',
+    'failure reflection',
+    'schema search',
+    'semantic layer evolution',
+    'cross-source synthesis',
   ];
   const [phraseIdx, setPhraseIdx] = useState(0);
   const [chars, setChars] = useState(0);
@@ -943,48 +941,48 @@ function PipelineView({ workspace }) {
   // Pipeline section data
   const SECTIONS = [
     {
-      id: '01', name: 'Ora', sub: 'orchestrator · single entry point for every query',
+      id: '01', name: 'Ora', sub: 'orchestrator · ReAct loop · decompose → resolve → execute → learn',
       badge: 'orchestrator', isOra: true,
       stages: [
-        { num: 'Phase 1', title: 'Intent & Entities',  sub: 'classify · extract · ISO aliases' },
-        { num: 'Phase 2', title: 'Group Expansion',    sub: 'ASEAN → 10 members · G7 · EU' },
-        { num: 'Phase 3', title: 'Data Coverage',      sub: 'SemanticMemory · live SQL scan' },
-        { num: 'Phase 4', title: 'Semantic Resolve',   sub: 'entity map · synonyms · SQL hints' },
-        { num: 'Phase 5', title: 'Plan',               sub: 'decompose · route · fan-out', green: true },
+        { num: 'Phase 1', title: 'Decompose',         sub: 'intent · entities · query structure' },
+        { num: 'Phase 2', title: 'Semantic Resolve',   sub: 'alias pre-check · patterns · failure reflection' },
+        { num: 'Phase 3', title: 'Schema Context',     sub: 'CHESS LSH pruning · M-Schema · topology' },
+        { num: 'Phase 4', title: 'SQL Generation',     sub: '3 candidates · parallel · self-correct' },
+        { num: 'Phase 5', title: 'Validate & Learn',   sub: 'result check · evolve semantic layer', green: true },
       ],
       pills: [
         { label:'LangGraph', color:'#e85d04' }, { label:'LiteLLM', color:'#a855f7' },
-        { label:'SemanticMemory', color:'#4f7df9' }, { label:'SQLite', color:'#06b6d4' },
+        { label:'SemanticLayer', color:'#4f7df9' }, { label:'SQLite', color:'#06b6d4' },
         { label:'OTel', color:'#22c55e' },
       ],
     },
     {
-      id: '02', name: 'Schema Agent', sub: 'knowledge graph · FK topology · vector index · M-Schema',
+      id: '02', name: 'Semantic Agent', sub: 'iterative reasoning · alias learning · pattern memory · failure reflection',
       badge: 'active',
       stages: [
-        { num: 'Stage 1', title: 'DB Introspect',    sub: 'DDL · FK · cardinality' },
-        { num: 'Stage 2', title: 'Knowledge Graph',  sub: 'nodes · edges · layers' },
-        { num: 'Stage 3', title: 'FK Topology',      sub: 'Merkle · 3-pass detect' },
-        { num: 'Stage 4', title: 'Vector Index',     sub: 'M-Schema · NL→SQL' },
+        { num: 'Pass 1', title: 'Pre-Check',        sub: 'high-confidence aliases · known patterns · past failures' },
+        { num: 'Pass 2', title: 'LLM Reasoning',    sub: 'entity mapping · column meanings · enrichments' },
+        { num: 'Pass 3', title: 'Schema Search',    sub: 'targeted DB lookup for unresolved entities' },
+        { num: 'Pass 4', title: 'Refinement',       sub: 'merge findings · confidence · log resolution' },
       ],
       pills: [
-        { label:'LangGraph', color:'#e85d04' }, { label:'SQLAlchemy 2.0', color:'#3b82f6' },
-        { label:'SQLGlot', color:'#22c55e' },   { label:'Qdrant', color:'#a855f7' },
-        { label:'fastembed', color:'#f59e0b' }, { label:'DuckDB', color:'#06b6d4' },
+        { label:'LiteLLM', color:'#a855f7' }, { label:'aliases.json', color:'#3b82f6' },
+        { label:'patterns.json', color:'#22c55e' }, { label:'enrichments.json', color:'#f59e0b' },
+        { label:'resolution_log', color:'#06b6d4' },
       ],
     },
     {
-      id: '03', name: 'Query Pipeline', sub: 'LangGraph StateGraph · self-correcting · CHESS + ReFoRCE',
+      id: '03', name: 'Schema Agent', sub: 'knowledge graph · FK topology · vector index · M-Schema',
       stages: [
-        { num: 'Stage 1', title: 'Schema Linker',   sub: 'CHESS LSH · RAG' },
-        { num: 'Stage 2', title: 'SQL Generator',   sub: '3 candidates · parallel' },
-        { num: 'Stage 3', title: 'Self-Corrector',  sub: 'ReFoRCE · 3-stage loop' },
-        { num: 'Output',  title: 'Result',          sub: 'DataFrame · NL · Chart', green: true },
+        { num: 'Stage 1', title: 'DB Introspect',    sub: 'DDL · FK · cardinality' },
+        { num: 'Stage 2', title: 'Knowledge Graph',  sub: 'nodes · edges · layers' },
+        { num: 'Stage 3', title: 'CHESS LSH Pruning', sub: '500 cols → ~8 relevant' },
+        { num: 'Stage 4', title: 'M-Schema',          sub: 'XiYan format · 3-5× token savings' },
       ],
       pills: [
-        { label:'LangGraph', color:'#e85d04' }, { label:'LangChain', color:'#3b82f6' },
-        { label:'LiteLLM', color:'#a855f7' },   { label:'OpenTelemetry', color:'#22c55e' },
-        { label:'FastAPI', color:'#f59e0b' },
+        { label:'SQLAlchemy 2.0', color:'#3b82f6' }, { label:'SQLGlot', color:'#22c55e' },
+        { label:'Qdrant', color:'#a855f7' }, { label:'fastembed', color:'#f59e0b' },
+        { label:'DuckDB', color:'#06b6d4' },
       ],
     },
     {
@@ -993,7 +991,7 @@ function PipelineView({ workspace }) {
         { num: 'Agent', title: 'DecomposeAgent',    sub: 'cross-source · DAG planner' },
         { num: 'Agent', title: 'SynthesisAgent',    sub: 'DuckDB JOIN · in-memory' },
         { num: 'Agent', title: 'ResponseGenerator', sub: 'NL · chart · follow-ups' },
-        { num: 'Agent', title: 'LearningLoop',      sub: 'feedback → training pairs' },
+        { num: 'Agent', title: 'LearnAgent',         sub: 'evolve aliases · patterns · enrichments · failure log' },
       ],
       pills: [
         { label:'DuckDB', color:'#06b6d4' }, { label:'LangGraph', color:'#e85d04' },
@@ -1002,7 +1000,7 @@ function PipelineView({ workspace }) {
     },
   ];
 
-  const CONNECTORS = ['Schema Analysis', 'Semantic Resolution', 'Query Orchestration'];
+  const CONNECTORS = ['Semantic Resolution', 'Schema Context', 'Agent Handoff'];
 
   return e('div', { className:'pipeline-view' },
     /* ── LEFT: Stages ── */
@@ -1749,11 +1747,11 @@ function Sidebar({view, setView, workspace, user, onBack}) {
   ];
 
   const agents = [
-    {name:'Ora', status:'active', desc:'Orchestrates the full pipeline end-to-end', color:'#4f7df9', icon:'◈'},
-    {name:'SQL Agent', status:'active', desc:'Writes + executes SQL'},
-    {name:'Schema Agent', status:'active', desc:'Analyzes tables + detects relationships'},
-    {name:'Semantic Agent', status:'active', desc:'Maps entities + synonyms from real data'},
-    {name:'Planner', status:'active', desc:'Plans strategy + decomposes'},
+    {name:'Ora', status:'active', desc:'ReAct orchestrator · decompose → resolve → execute → learn', color:'#4f7df9', icon:'◈'},
+    {name:'Semantic Agent', status:'active', desc:'Iterative reasoning · alias pre-check · pattern memory'},
+    {name:'Schema Agent', status:'active', desc:'Introspect · CHESS LSH · M-Schema · topology'},
+    {name:'SQL Agent', status:'active', desc:'Writes + executes + self-corrects SQL'},
+    {name:'Planner', status:'active', desc:'Decompose · cross-source · DuckDB synthesis'},
     {
       name:'Learn Agent',
       status: learnStatus?.status === 'active' ? 'active' : 'idle',
@@ -2341,10 +2339,10 @@ function ConversationLineage({ workspace }) {
           // Map each LangGraph node key to a pipeline stage group
           const STAGE_GROUPS = [
             { num: '01', label: 'Ora — Orchestrator', keys: ['ora'], accent: '#4f7df9' },
-            { num: '02', label: 'Schema Agent',    keys: ['understand','prune','retrieve'] },
-            { num: '03', label: 'Semantic Agent',  keys: ['semantic_resolve'] },
-            { num: '04', label: 'Query Pipeline',  keys: ['plan','generate','execute','correct','decompose','fan_out','synthesize'] },
-            { num: '05', label: 'Response',        keys: ['respond','learn'] },
+            { num: '02', label: 'Semantic Agent',  keys: ['semantic_resolve','semantic','pre_check','reasoning'] },
+            { num: '03', label: 'Schema Agent',    keys: ['understand','prune','retrieve','schema'] },
+            { num: '04', label: 'SQL & Execution', keys: ['plan','generate','execute','correct','decompose','fan_out','synthesize'] },
+            { num: '05', label: 'Response & Learn', keys: ['respond','learn'] },
           ];
           function nodeKey(n) { return (n.detail && n.detail.node) || n.node || ''; }
           // Bucket nodes into groups
@@ -2588,9 +2586,9 @@ function HomeView({workspace, onNavigate}) {
                 ),
                 e('td', {style:{padding:'5px 6px',fontFamily:'var(--font-mono)',color:'var(--text-secondary)'}}, m.queries||0),
                 e('td', {style:{padding:'5px 6px',fontFamily:'var(--font-mono)',fontSize:11}},
-                  e('span', {style:{color:'rgba(79,125,249,0.85)'}}, '↑'+(m.tokens_input||0).toLocaleString()),
+                  e('span', {style:{color:'rgba(79,125,249,0.85)',cursor:'help'},title:'Input tokens — prompt tokens sent to the LLM'}, '↑'+(m.tokens_input||0).toLocaleString()),
                   ' ',
-                  e('span', {style:{color:'rgba(34,197,94,0.85)'}}, '↓'+(m.tokens_output||0).toLocaleString()),
+                  e('span', {style:{color:'rgba(34,197,94,0.85)',cursor:'help'},title:'Output tokens — completion tokens received from the LLM'}, '↓'+(m.tokens_output||0).toLocaleString()),
                 ),
                 e('td', {style:{padding:'5px 6px',fontFamily:'var(--font-mono)',color:'var(--text-secondary)'}}, m.avg_latency_ms ? (m.avg_latency_ms/1000).toFixed(1)+'s' : '—'),
                 e('td', {style:{padding:'5px 6px'}},
@@ -2714,6 +2712,7 @@ function ResultBlock({data: d, addToast, setQuery, workspace}) {
   const [regenExecError, setRegenExecError] = useState('');
   const [regenLesson, setRegenLesson] = useState('');
   const [regenTokensUsed, setRegenTokensUsed] = useState(0);
+  const [reExecLoading, setReExecLoading] = useState(false);
 
   // Was this already auto-learned by the Learn Agent?
   const autoLearned = d.learn_event?.action === 'auto_learned';
@@ -3077,6 +3076,37 @@ function ResultBlock({data: d, addToast, setQuery, workspace}) {
           ),
         ),
 
+        // ── Re-execute button (after editing SQL) ───────────────────────────
+        e('div', {style:{display:'flex',gap:8,marginBottom:10,marginTop:4}},
+          e('button', {
+            disabled: !regenEdited.trim() || reExecLoading,
+            onClick: async () => {
+              setReExecLoading(true);
+              try {
+                const r = await api.post('/learn/re-execute', {
+                  workspace_id: workspace?.workspace_id || '',
+                  sql: regenEdited,
+                  source_id: '',
+                });
+                setRegenRows(r.rows || []);
+                setRegenColumns(r.columns || []);
+                setRegenRowCount(r.row_count || 0);
+                setRegenExecError(r.exec_error || '');
+              } catch(err) {
+                setRegenExecError('Request failed: ' + (err.message || err));
+              }
+              setReExecLoading(false);
+            },
+            style:{
+              background:'rgba(79,125,249,0.08)', border:'1px solid rgba(79,125,249,0.25)',
+              borderRadius:6, padding:'5px 14px', fontSize:12, color:'var(--blue-text)',
+              cursor: (!regenEdited.trim() || reExecLoading) ? 'not-allowed' : 'pointer',
+              fontFamily:'var(--font-ui)', fontWeight:500,
+              opacity: (!regenEdited.trim() || reExecLoading) ? 0.5 : 1,
+            },
+          }, reExecLoading ? 'Executing...' : '▶ Re-execute SQL'),
+        ),
+
         // ── Extracted lesson banner ─────────────────────────────────────────
         regenLesson && e('div', {style:{
           padding:'10px 12px', borderRadius:8, marginBottom:10,
@@ -3355,7 +3385,10 @@ function AskView({workspace, addToast, messages: parentMessages, setMessages: se
         });
       }
     } catch(err) {
-      setMessages(m => [...m, {role:'assistant', data:{succeeded:false, error:err.message}}]);
+      const errMsg = (err.name === 'AbortError' || (err.message || '').includes('abort'))
+        ? 'Query took too long or was interrupted. Try simplifying the question or breaking it into smaller parts.'
+        : err.message;
+      setMessages(m => [...m, {role:'assistant', data:{succeeded:false, error:errMsg}}]);
     }
     window.dispatchEvent(new CustomEvent('ora_query_done', {detail:{query:q}}));
     setLoading(false);
@@ -3623,7 +3656,10 @@ function DataView({workspace, addToast}) {
       };
       setAnalysisInsights(insights);
       if (addToast) addToast('Schema analysis complete — ' + (g?.edges?.length || 0) + ' relationships found', 'success');
-    }).catch(() => { setAnalyzing(false); });
+    }).catch(err => {
+      setAnalyzing(false);
+      if (addToast) addToast('Schema analysis failed: ' + (err?.message || err), 'error');
+    });
   }
 
   // Mouse handlers for dragging nodes
@@ -4353,21 +4389,20 @@ function AgentsView({workspace}) {
     {
       id: 'ora',
       name: 'Ora',
-      version: 'v1.0.0',
+      version: 'v2.0.0',
       status: 'active',
       maturity: 'production',
-      description: 'The unified orchestrator. Runs every query end-to-end: anaphora resolution, intent classification, data coverage analysis, semantic resolution, and decomposition — all in one node before the pipeline starts.',
+      description: 'The ReAct orchestrator. Runs every query end-to-end in a single node: decompose, semantic resolution with iterative learning, schema context, SQL generation with self-correction, validation, and semantic layer evolution.',
       capabilities: [
-        {name: 'Anaphora Resolution', desc: 'Rewrites follow-up questions ("these 2", "the same trend") into fully self-contained queries using conversation history', maturity: 'production'},
-        {name: 'Intent Classification', desc: 'LLM detects compound/cross-source structure and analytical_intent (correlation, comparison, trend, ranking)', maturity: 'production'},
-        {name: 'Group Expansion', desc: 'Expands ASEAN → 10 countries, G7 → 7, EU → 27, etc. deterministically — no LLM call', maturity: 'production'},
-        {name: 'Data Coverage Analysis', desc: 'Checks SemanticMemory first, then runs live SQL scans to verify which entities actually exist in which source before running the pipeline', maturity: 'production'},
-        {name: 'SemanticMemory', desc: 'SQLite-backed persistent store of source facts — entity column location, known entity values, concept→column maps. Persists across sessions.', maturity: 'production'},
-        {name: 'Semantic Resolution', desc: 'Orchestrates the Semantic Agent per source — combines entity_map + synonyms + sql_fragments across all sources', maturity: 'production'},
-        {name: 'Decomposition Planning', desc: 'For cross-source or compound queries: plans sub-queries with all context pre-verified — avoids INSUFFICIENT_DATA failures', maturity: 'production'},
+        {name: 'Decomposition', desc: 'Classifies intent, extracts entities, plans query structure — single vs compound vs cross-source', maturity: 'production'},
+        {name: 'Semantic Resolution', desc: 'Orchestrates the Semantic Agent — pre-checks aliases, injects patterns, avoids past failures, resolves unknowns via Schema Agent', maturity: 'production'},
+        {name: 'Self-Correcting SQL', desc: '3-stage correction loop: empty results → adjust filters, SQL error → schema-aware rewrite, validation → re-reason', maturity: 'production'},
+        {name: 'Semantic Layer Evolution', desc: 'After every success: learns aliases, patterns, column enrichments. After failure: records negative signals for reflection.', maturity: 'production'},
+        {name: 'Failure Reflection', desc: 'Loads past resolution failures and injects them as anti-patterns — avoids repeating the same mistakes', maturity: 'production'},
+        {name: 'Cross-Source Synthesis', desc: 'Decomposes across databases, fans out sub-queries, synthesizes via DuckDB in-memory JOIN', maturity: 'production'},
       ],
-      spec: 'agent_id: ora\nversion: 1.0.0\nrole: entry-point orchestrator\nreplaces: understand → semantic_resolve → decompose chain\nphases: [anaphora, intent, group_expand, coverage, semantic, decompose]\nsemanticmemory: SQLite ~/.sqlagent/semantic_memory.db\ncache: SemanticCache (Qdrant) + SemanticMemory (SQLite)\noutput: nl_query, entity_filters, analytical_intent, sub_queries, data_warnings',
-      stats: {phases: '6', llmCalls: '1–2', coverage: 'pre-verified'},
+      spec: 'agent_id: ora\nversion: 2.0.0\nrole: ReAct orchestrator\narchitecture: ora → respond → learn (3-node LangGraph)\nphases: [decompose, semantic_resolve, schema_context, sql_gen, validate_learn]\nsemantic_layer: aliases.json + patterns.json + enrichments.json + resolution_log.json\noutput: nl_query, sql, rows, semantic_reasoning, trace',
+      stats: {phases: '5', llmCalls: '2–4', learning: 'every query'},
     },
     {
       id: 'sql_agent',
@@ -4425,16 +4460,17 @@ function AgentsView({workspace}) {
       version: 'v2.0.0',
       status: 'active',
       maturity: 'production',
-      description: 'Bridges the gap between how users phrase questions and how data is actually stored. Maps entities, synonyms, and codes dynamically from real schema samples.',
+      description: 'Multi-pass iterative reasoning engine. Pre-checks high-confidence aliases, loads known patterns and column enrichments, avoids past failures, and only calls the LLM for truly unknown entities.',
       capabilities: [
-        {name: 'Entity Mapping', desc: 'Resolves user terms to actual stored values — e.g. "MY" → "MYS", "Malaysia" → "MYS"', maturity: 'production'},
-        {name: 'Synonym Resolution', desc: 'Maps natural language field names to actual column names — e.g. "unemployment" → "obs_value"', maturity: 'production'},
-        {name: 'SQL Fragment Hints', desc: 'Generates ready-to-use SQL fragments like iso_code IN (\'MYS\',\'VNM\')', maturity: 'production'},
-        {name: 'Semantic Cache', desc: 'Qdrant-backed cosine cache (≥0.85 threshold) — reuses known mappings without LLM calls', maturity: 'production'},
-        {name: 'Zero Hardcoded Rules', desc: 'Reasons dynamically from actual sample values — no static lookup dicts', maturity: 'production'},
+        {name: 'Alias Pre-Check', desc: 'Aliases with confidence ≥0.93 are resolved deterministically before the LLM call — zero token cost for known entities', maturity: 'production'},
+        {name: 'Pattern Auto-Injection', desc: 'Frequently-confirmed filters (3+ uses) are injected as default context — e.g. sex=Total, age=15+', maturity: 'production'},
+        {name: 'Column Enrichments', desc: 'Past usage context (obs_value used for "employment rate") fed into reasoning prompt for better column selection', maturity: 'production'},
+        {name: 'Failure Reflection', desc: 'Past resolution failures loaded as anti-patterns — "Vietnam → wrong, use Viet Nam"', maturity: 'production'},
+        {name: 'Schema Agent Search', desc: 'For unresolved entities: targeted DB lookup across all text columns to find exact values', maturity: 'production'},
+        {name: 'Resolution Logging', desc: 'Every resolution tracked with confidence + outcome for continuous learning', maturity: 'production'},
       ],
-      spec: 'agent_id: semantic-agent\nversion: 2.0.0\ntrigger: every query — between understand and prune nodes\ncache: Qdrant collection "semantic_cache"\ncache_threshold: cosine ≥ 0.85\nllm_calls: 1 on cache miss, 0 on hit\noutput: entity_map, synonyms, filter_hints, sql_fragments',
-      stats: {trigger: 'every query', cache: 'Qdrant cosine', threshold: '≥ 0.85'},
+      spec: 'agent_id: semantic-agent\nversion: 2.0.0\ntrigger: every query — Phase 2 of Ora\npasses: [pre_check, llm_reasoning, schema_search, refinement]\npersistence: aliases.json, patterns.json, enrichments.json, resolution_log.json\nalias_pre_check_threshold: confidence ≥ 0.93\npattern_threshold: count ≥ 3',
+      stats: {trigger: 'every query', passes: '1–4', learning: 'continuous'},
     },
     {
       id: 'learn_agent',
@@ -4442,15 +4478,16 @@ function AgentsView({workspace}) {
       version: 'v2.0.0',
       status: learnStatus?.status === 'active' ? 'active' : 'idle',
       maturity: learnStatus?.auto_learn_enabled !== false ? 'production' : 'beta',
-      description: 'Silently trains after every successful query. Evolves your SOUL mental model every 20 queries. Gets smarter without asking.',
+      description: 'Evolves the semantic layer after every query. Strengthens aliases, saves patterns, enriches column meanings, and records resolution failures for reflection.',
       capabilities: [
-        {name: 'Auto-Learn', desc: 'Every successful query is automatically saved as a training pair — no thumbs-up needed', maturity: 'production'},
-        {name: 'SOUL Evolution', desc: 'Every 20 queries, LLM infers your vocabulary, preferences, and decision patterns', maturity: 'production'},
-        {name: 'Thumbs-Up Training', desc: 'Verified positive feedback boosts training pair quality score', maturity: 'production'},
-        {name: 'Correction Training', desc: 'User-corrected SQL saved as highest-quality training pair', maturity: 'production'},
+        {name: 'Alias Evolution', desc: 'Strengthens confirmed aliases (+3% confidence per success, cap 0.99). High-confidence aliases become deterministic pre-checks.', maturity: 'production'},
+        {name: 'Pattern Learning', desc: 'Saves common filter combinations (table.column=value) — injected as defaults after 3+ confirmations', maturity: 'production'},
+        {name: 'Column Enrichment', desc: 'Tracks what each column was used for and how often — enriches future reasoning with usage context', maturity: 'production'},
+        {name: 'Relationship Confirmation', desc: 'Records confirmed table joins with increasing confidence — helps cross-source query planning', maturity: 'production'},
+        {name: 'Failure Recording', desc: 'On query failure: records the semantic resolution that went wrong so the agent avoids it next time', maturity: 'production'},
         {name: 'QueryHub Packs', desc: 'Community training packs for retail, ecommerce, finance domains', maturity: 'production'},
       ],
-      spec: 'agent_id: learn-agent\nversion: 2.0.0\ntrigger: automatic — fires after every successful query\nmemory_tiers: [working, episodic, semantic]\nsoul_evolution_interval: 20 queries\nvector_store: Qdrant (in-process)\ntraining_sources: [auto_learn, user_feedback, queryhub, corrections]',
+      spec: 'agent_id: learn-agent\nversion: 2.0.0\ntrigger: automatic — fires after every query (success + failure)\npersistence: aliases.json, patterns.json, enrichments.json, relationships.json, resolution_log.json\nalias_confidence: +3% per success, cap 0.99\npattern_threshold: 3+ uses → auto-inject',
       stats: (() => {
         if (!learnStatus) return {memoryTiers: '3', soulInterval: '20 queries', packs: '3 bundled'};
         return {
@@ -4615,16 +4652,113 @@ function KnowledgeView({workspace, addToast}) {
   const [selected, setSelected] = useState(null);
   const [tab, setTab] = useState('overview');
   const [termSearch, setTermSearch] = useState('');
+  const [semHistory, setSemHistory] = useState(null);
+  const [semGraph, setSemGraph] = useState(null);
+  const [graphPositions, setGraphPositions] = useState(null);
+  const [selectedNode, setSelectedNode] = useState(null);
+  const [gDragging, setGDragging] = useState(null);
+  const gCanvasRef = useRef(null);
+  const [expandedIter, setExpandedIter] = useState(null);
+  const [showGraph, setShowGraph] = useState(false);
+  const [expandedSections, setExpandedSections] = useState({foundation:true, inferred:true, confirmed:true, corrected:true});
+  const [kChatMessages, setKChatMessages] = useState([]);
+  const [kChatInput, setKChatInput] = useState('');
+  const [kChatLoading, setKChatLoading] = useState(false);
+
+  // Drag: same pattern as DataView schema graph (lines 3667-3695)
+  function gGetSvgScale() {
+    const svg = gCanvasRef.current;
+    if (!svg) return 1;
+    const bb = svg.getBoundingClientRect();
+    const vb = svg.viewBox?.baseVal;
+    if (!vb || !bb.width || !vb.width) return 1;
+    return bb.width / vb.width;
+  }
+  function gOnMouseDown(nodeId, ev) {
+    ev.preventDefault();
+    setGDragging({nodeId, startX: ev.clientX, startY: ev.clientY,
+      origX: graphPositions?.[nodeId]?.x || 0, origY: graphPositions?.[nodeId]?.y || 0,
+      scale: gGetSvgScale()});
+  }
+  useEffect(() => {
+    if (!gDragging) return;
+    function onMove(ev) {
+      const s = gDragging.scale || 1;
+      const dx = (ev.clientX - gDragging.startX) / s;
+      const dy = (ev.clientY - gDragging.startY) / s;
+      setGraphPositions(p => ({...p, [gDragging.nodeId]: {x: gDragging.origX + dx, y: gDragging.origY + dy}}));
+    }
+    function onUp() { setGDragging(null); }
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+  }, [gDragging]);
 
   useEffect(() => {
     if (!workspace?.workspace_id) return;
     setLoading(true);
-    api.get('/api/semantic?workspace_id='+workspace.workspace_id)
-      .then(d => { setSpec(d); setLoading(false); })
-      .catch(() => setLoading(false));
+    Promise.all([
+      api.get('/api/semantic?workspace_id='+workspace.workspace_id),
+      api.get('/api/semantic/history?workspace_id='+workspace.workspace_id).catch(()=>null),
+      api.get('/api/semantic/graph?workspace_id='+workspace.workspace_id).catch(()=>null),
+    ]).then(([d, h, g]) => {
+      setSpec(d); setSemHistory(h); setSemGraph(g);
+      // Run force layout on graph nodes
+      if (g && g.nodes && g.nodes.length > 0) {
+        const positions = {};
+        const CX = 500, CY = 350;
+        const nodes = g.nodes;
+        // Seed positions in a circle
+        nodes.forEach((n, i) => {
+          const angle = (i / nodes.length) * Math.PI * 2;
+          const r = 150 + Math.random() * 80;
+          positions[n.id] = { x: CX + Math.cos(angle) * r, y: CY + Math.sin(angle) * r };
+        });
+        // Simple force iterations
+        for (let iter = 0; iter < 150; iter++) {
+          const cooling = 1 - iter / 150;
+          // Repulsion
+          for (let i = 0; i < nodes.length; i++) {
+            for (let j = i + 1; j < nodes.length; j++) {
+              const pi = positions[nodes[i].id], pj = positions[nodes[j].id];
+              const dx = pi.x - pj.x, dy = pi.y - pj.y;
+              const dist = Math.max(Math.sqrt(dx*dx + dy*dy), 1);
+              const force = 25000 / (dist * dist);
+              const fx = dx / dist * force * cooling;
+              const fy = dy / dist * force * cooling;
+              pi.x += fx; pi.y += fy;
+              pj.x -= fx; pj.y -= fy;
+            }
+          }
+          // Attraction along edges
+          (g.edges || []).forEach(edge => {
+            const src = positions[edge.source], tgt = positions[edge.target];
+            if (!src || !tgt) return;
+            const dx = tgt.x - src.x, dy = tgt.y - src.y;
+            const dist = Math.max(Math.sqrt(dx*dx + dy*dy), 1);
+            const force = (dist - 280) * 0.03 * cooling;
+            const fx = dx / dist * force, fy = dy / dist * force;
+            src.x += fx; src.y += fy;
+            tgt.x -= fx; tgt.y -= fy;
+          });
+          // Gravity
+          nodes.forEach(n => {
+            const p = positions[n.id];
+            p.x += (CX - p.x) * 0.01 * cooling;
+            p.y += (CY - p.y) * 0.01 * cooling;
+          });
+        }
+        // Normalize
+        let minX = Infinity, minY = Infinity;
+        nodes.forEach(n => { minX = Math.min(minX, positions[n.id].x); minY = Math.min(minY, positions[n.id].y); });
+        nodes.forEach(n => { positions[n.id].x -= minX - 60; positions[n.id].y -= minY - 60; });
+        setGraphPositions(positions);
+      }
+      setLoading(false);
+    }).catch(() => setLoading(false));
   }, [workspace?.workspace_id]);
 
-  if (loading) return e('div', {style:{display:'flex',alignItems:'center',justifyContent:'center',height:'100%',color:'var(--text-muted)'}}, 'Loading...');
+  if (loading && !spec) return e('div', {style:{display:'flex',alignItems:'center',justifyContent:'center',height:'100%',color:'var(--text-muted)'}}, 'Loading...');
   if (!spec || !spec.tables || spec.tables.length === 0) {
     return e('div', {style:{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'100%',gap:16}},
       e('div', {style:{fontSize:22,opacity:0.2,fontWeight:700,color:'var(--text)'}}, 'KNOWLEDGE'),
@@ -4651,225 +4785,655 @@ function KnowledgeView({workspace, addToast}) {
     ? allSynonyms.filter(s => s.term.includes(termSearch.toLowerCase()) || s.canonical.toLowerCase().includes(termSearch.toLowerCase()))
     : allSynonyms;
 
-  // ── OVERVIEW TAB (intelligence dashboard) ─────────────────────────────
-  const overviewContent = e('div', {style:{flex:1,overflow:'auto',padding:24}},
+  // ── Build knowledge ledger from semantic agent data ────────────────────
+  const gNodes = semGraph?.nodes || [];
+  const gEdges = semGraph?.edges || [];
+  const gPatterns = semGraph?.patterns || [];
+  const gRules = semGraph?.rules || [];
+  const gSynonyms = semGraph?.synonyms || [];
+  const iterCount = semHistory?.iteration_id || 0;
 
-    // Domain summary card
-    intel.domain && e('div', {style:{background:'var(--glass)',border:'1px solid var(--glass-border)',borderRadius:12,padding:16,marginBottom:20}},
-      e('div', {style:{fontSize:10,fontWeight:600,color:'var(--text-muted)',letterSpacing:'0.1em',marginBottom:6}}, 'DOMAIN'),
-      e('div', {style:{fontSize:14,color:'var(--text)',lineHeight:1.5}}, intel.domain),
-    ),
+  // Collect ALL column meanings across all tables
+  const allMeanings = [];
+  gNodes.forEach(n => {
+    if (n.meanings) {
+      Object.entries(n.meanings).forEach(([col, meaning]) => {
+        if (meaning) allMeanings.push({table:n.name, col, meaning});
+      });
+    }
+  });
 
-    // KPI row
-    e('div', {style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(120px,1fr))',gap:10,marginBottom:20}},
-      [{l:'Tables',v:stats.tables},{l:'Dimensions',v:stats.dimensions},{l:'Measures',v:stats.measures},
-       {l:'Relationships',v:stats.relationships},{l:'Terms',v:stats.synonyms||0},
-       {l:'Confidence',v:confPct(stats.avg_confidence),color:confColor(stats.avg_confidence)}].map(k =>
-        e('div', {key:k.l, style:{background:'var(--glass)',border:'1px solid var(--glass-border)',borderRadius:8,padding:'10px 14px',textAlign:'center'}},
-          e('div', {style:{fontSize:18,fontWeight:700,color:k.color||'var(--text)',fontFamily:'var(--font-mono)'}}, k.v),
-          e('div', {style:{fontSize:10,color:'var(--text-muted)',marginTop:2}}, k.l),
-        )
-      ),
-    ),
+  // Collect ALL confirmed relationships
+  const confirmedEdges = gEdges.filter(e => e.type === 'query_confirmed');
+  const fkEdges = gEdges.filter(e => e.type === 'declared_fk');
+  const crossEdges = gEdges.filter(e => e.type === 'cross_source');
 
-    // Entity groups + Key metrics side by side
-    e('div', {style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:20}},
+  // Helper for section rendering
+  const sectionStyle = {background:'var(--glass)',border:'1px solid var(--glass-border)',borderRadius:10,padding:14,marginBottom:12};
+  const sectionTitle = (icon, title, count, color) => e('div', {style:{display:'flex',alignItems:'center',gap:6,marginBottom:8}},
+    e('span', {style:{fontSize:12}}, icon),
+    e('span', {style:{fontSize:12,fontWeight:600,color:color||'var(--text)'}}, title),
+    count !== undefined && e('span', {style:{fontSize:10,color:'var(--text-muted)',fontFamily:'var(--font-mono)'}}, count),
+  );
+  const itemRow = (left, right, mono) => e('div', {style:{display:'flex',gap:8,padding:'2px 0',fontSize:10,lineHeight:1.5}},
+    e('span', {style:{color:'var(--text)',fontFamily:mono?'var(--font-mono)':'inherit',fontWeight:mono?500:400,minWidth:mono?160:100,flexShrink:0}}, left),
+    e('span', {style:{color:'var(--text-muted)',flex:1}}, right),
+  );
 
-      // Entity groups
-      e('div', {style:{background:'var(--glass)',border:'1px solid var(--glass-border)',borderRadius:12,padding:16}},
-        e('div', {style:{fontSize:10,fontWeight:600,color:'var(--blue)',letterSpacing:'0.1em',marginBottom:10}}, 'KEY ENTITIES'),
-        (intel.entity_groups||[]).length === 0
-          ? e('div', {style:{fontSize:11,color:'var(--text-muted)'}}, 'No categorical entities detected')
-          : (intel.entity_groups||[]).slice(0,6).map((eg,i) =>
-              e('div', {key:i, style:{marginBottom:10}},
-                e('div', {style:{fontSize:11,fontWeight:600,color:'var(--text)',marginBottom:3}},
-                  eg.display_name, e('span', {style:{fontWeight:400,color:'var(--text-muted)',marginLeft:4}}, '('+eg.count+')')),
-                e('div', {style:{display:'flex',flexWrap:'wrap',gap:4}},
-                  eg.values.slice(0,8).map((v,j) =>
-                    e('span', {key:j, style:{fontSize:9,padding:'2px 6px',borderRadius:4,background:'rgba(79,125,249,.06)',color:'var(--text-secondary)',fontFamily:'var(--font-mono)'}}, v)
-                  ),
-                  eg.count > 8 && e('span', {style:{fontSize:9,color:'var(--text-muted)'}}, '+'+(eg.count-8)+' more'),
+
+  // ── GRAPH TAB (semantic intelligence graph) ───────────────────────────
+  const CARD_W = 200, CARD_H_BASE = 70;
+  const edgeColor = {declared_fk:'#22c55e',inferred:'#a78bfa',cross_source:'#4f7df9',query_confirmed:'#f59e0b',semantic:'#818cf8'};
+
+  // Build synonym lookup: which terms belong to which table
+  // Terms like "italy→ITA" are entity VALUE mappings — associate with tables
+  // that have dimension columns (where these values would live)
+  const termsByTable = {};
+  if (semGraph && semGraph.synonyms) {
+    // Distribute terms across tables that have dimension columns
+    const tablesWithDims = (semGraph.nodes || []).filter(n => n.dimensions && n.dimensions.length > 0);
+    semGraph.synonyms.forEach(s => {
+      // Try to match by source_id first
+      const matchBySource = tablesWithDims.find(n => s.source_id && n.source_id === s.source_id);
+      const target = matchBySource || tablesWithDims[0];
+      if (target) {
+        if (!termsByTable[target.id]) termsByTable[target.id] = [];
+        if (termsByTable[target.id].length < 6) termsByTable[target.id].push(s);
+      }
+    });
+  }
+
+  const graphContent = e('div', {style:{display:'flex',flex:1,overflow:'hidden'}},
+    // ── SVG Canvas ──────────────────────────────────────────────
+    e('div', {style:{flex:1,overflow:'auto',background:'var(--canvas)',position:'relative'}},
+      (!semGraph || !semGraph.nodes || semGraph.nodes.length === 0)
+        ? e('div', {style:{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'100%',gap:12,color:'var(--text-muted)'}},
+            e('div', {style:{fontSize:40,opacity:0.15}}, '◎'),
+            e('div', {style:{fontSize:14}}, 'No semantic graph yet'),
+            e('div', {style:{fontSize:12}}, 'Connect data sources and run queries to build the knowledge graph.'),
+          )
+        : e('svg', {
+            ref: gCanvasRef,
+            viewBox: (() => {
+              let minX = Infinity, minY = Infinity, maxX = 0, maxY = 0;
+              Object.values(graphPositions).forEach(p => {
+                minX = Math.min(minX, p.x); minY = Math.min(minY, p.y);
+                maxX = Math.max(maxX, p.x + CARD_W + 60); maxY = Math.max(maxY, p.y + 160);
+              });
+              if (minX === Infinity) return '0 0 900 600';
+              const pad = 40;
+              return `${minX-pad} ${minY-pad} ${maxX-minX+pad*2} ${maxY-minY+pad*2}`;
+            })(),
+            style:{width:'100%',height:'100%',minHeight:500},
+            preserveAspectRatio:'xMidYMid meet',
+          },
+            // Dot grid background
+            e('defs', null,
+              e('pattern', {id:'semGrid',width:24,height:24,patternUnits:'userSpaceOnUse'},
+                e('circle', {cx:12,cy:12,r:0.8,fill:'rgba(0,0,0,0.06)'}),
+              ),
+            ),
+            e('rect', {width:'100%',height:'100%',fill:'url(#semGrid)'}),
+
+            // Edges
+            (semGraph.edges || []).map((edge, i) => {
+              const src = graphPositions[edge.source];
+              const tgt = graphPositions[edge.target];
+              if (!src || !tgt) return null;
+              const sx = src.x + CARD_W/2, sy = src.y + CARD_H_BASE/2;
+              const tx = tgt.x + CARD_W/2, ty = tgt.y + CARD_H_BASE/2;
+              const mx = (sx+tx)/2, my = (sy+ty)/2 - 20 * (i%2===0?1:-1);
+              const color = edgeColor[edge.type] || '#8b92a8';
+              const isDashed = edge.type === 'inferred' || edge.type === 'cross_source';
+              return e('g', {key:'e'+i},
+                e('path', {
+                  d:`M${sx},${sy} Q${mx},${my} ${tx},${ty}`,
+                  fill:'none', stroke:color, strokeWidth: 1.5 + (edge.confidence||0.5),
+                  strokeDasharray: isDashed ? '6,3' : 'none',
+                  opacity: 0.6 + (edge.confidence||0.5) * 0.4,
+                }),
+                // Edge label
+                e('text', {x:mx,y:my-6,textAnchor:'middle',fontSize:8,fill:color,fontFamily:'var(--font-mono)'},
+                  edge.join_columns ? `${edge.join_columns.from} → ${edge.join_columns.to}` :
+                  edge.type === 'query_confirmed' ? `confirmed (${edge.query_count||0}×)` : edge.type,
                 ),
-              )
-            ),
-      ),
+              );
+            }),
 
-      // Key metrics
-      e('div', {style:{background:'var(--glass)',border:'1px solid var(--glass-border)',borderRadius:12,padding:16}},
-        e('div', {style:{fontSize:10,fontWeight:600,color:'var(--green)',letterSpacing:'0.1em',marginBottom:10}}, 'KEY METRICS'),
-        (intel.key_metrics||[]).length === 0
-          ? e('div', {style:{fontSize:11,color:'var(--text-muted)'}}, 'No metrics detected')
-          : (intel.key_metrics||[]).slice(0,10).map((m,i) =>
-              e('div', {key:i, style:{display:'flex',alignItems:'center',gap:8,padding:'4px 0',borderBottom:i<(intel.key_metrics||[]).length-1?'1px solid var(--glass-border)':'none'}},
-                e('span', {style:{fontSize:11,fontWeight:500,fontFamily:'var(--font-mono)',color:'var(--text)',minWidth:140}}, m.name),
-                m.description && e('span', {style:{fontSize:10,color:'var(--text-muted)',flex:1}}, m.description),
-              )
-            ),
-      ),
+            // Table nodes
+            (semGraph.nodes || []).map(node => {
+              const pos = graphPositions[node.id];
+              if (!pos) return null;
+              const isSelected = selectedNode === node.id;
+              const dims = node.dimensions || [];
+              const measures = node.measures || [];
+              const timeDims = node.time_dimensions || [];
+              const cardH = CARD_H_BASE + Math.min(dims.length + measures.length + timeDims.length, 6) * 14;
+
+              // Term annotations for this table
+              const nodeTerms = termsByTable[node.id] || [];
+
+              return e('g', {key:node.id,
+                onClick:()=>{ if (!gDragging) setSelectedNode(isSelected?null:node.id); },
+                onMouseDown:(evt)=>gOnMouseDown(node.id, evt),
+                style:{cursor:gDragging?.nodeId===node.id?'grabbing':'grab'},
+              },
+                // Shadow
+                e('rect', {x:pos.x+2,y:pos.y+2,width:CARD_W,height:cardH,rx:10,fill:'rgba(0,0,0,0.06)'}),
+                // Card background
+                e('rect', {x:pos.x,y:pos.y,width:CARD_W,height:cardH,rx:10,
+                  fill:isSelected?'rgba(79,125,249,0.06)':'#ffffff',
+                  stroke:isSelected?'#4f7df9':'#d4d4d4',strokeWidth:isSelected?2:1,
+                }),
+                // Confidence bar at top
+                e('rect', {x:pos.x+1,y:pos.y+1,width:CARD_W-2,height:4,rx:2,
+                  fill: (node.confidence||0.5) >= 0.8 ? '#22c55e' : (node.confidence||0.5) >= 0.6 ? '#f59e0b' : '#ef4444',
+                }),
+                // Table name (shortened for readability)
+                e('text', {x:pos.x+12,y:pos.y+24,fontSize:12,fontWeight:600,fill:'#1a1a1a',fontFamily:'var(--font-ui)'},
+                  node.name.replace(/genai_spend_anomaly_analysis_?/g,'').replace(/_/g,' ').slice(0,22)),
+                // Row count + column summary
+                e('text', {x:pos.x+12,y:pos.y+40,fontSize:9,fill:'#8b92a8',fontFamily:'var(--font-mono)'},
+                  `${(node.rows||0).toLocaleString()} rows · ${dims.length} dim · ${measures.length} msr · ${timeDims.length} time`),
+                // Column badges (up to 6)
+                ...[...dims.slice(0,3).map((d,i) => (
+                  e('text', {key:'d'+i, x:pos.x+16,y:pos.y+58+i*14,fontSize:9,fill:'#4f7df9',fontFamily:'var(--font-mono)'}, '◆ '+d)
+                )), ...measures.slice(0,2).map((m,i) => (
+                  e('text', {key:'m'+i, x:pos.x+16,y:pos.y+58+(Math.min(dims.length,3)+i)*14,fontSize:9,fill:'#22c55e',fontFamily:'var(--font-mono)'}, '▸ '+m)
+                )), ...timeDims.slice(0,1).map((t,i) => (
+                  e('text', {key:'t'+i, x:pos.x+16,y:pos.y+58+(Math.min(dims.length,3)+Math.min(measures.length,2)+i)*14,fontSize:9,fill:'#f59e0b',fontFamily:'var(--font-mono)'}, '◷ '+t)
+                ))],
+                // ── Learned term annotations below the card ──
+                ...nodeTerms.map((term, ti) => {
+                  const col = ti % 3;
+                  const row = Math.floor(ti / 3);
+                  const pillW = 62;
+                  return e('g', {key:'term'+ti},
+                    e('rect', {
+                      x:pos.x + col * (pillW + 4), y:pos.y + cardH + 6 + row * 20,
+                      width:pillW, height:16, rx:4,
+                      fill:'rgba(79,125,249,0.06)', stroke:'rgba(79,125,249,0.18)', strokeWidth:0.5,
+                    }),
+                    e('text', {
+                      x:pos.x + col * (pillW + 4) + pillW/2, y:pos.y + cardH + 17 + row * 20,
+                      textAnchor:'middle', fontSize:7, fill:'#4f7df9', fontFamily:'var(--font-mono)',
+                    }, term.term.slice(0,6) + '→' + (term.canonical||'').slice(0,4)),
+                  );
+                }),
+              );
+            }),
+          ),
     ),
 
-    // Relationships
-    relationships.length > 0 && e('div', {style:{background:'var(--glass)',border:'1px solid var(--glass-border)',borderRadius:12,padding:16,marginBottom:20}},
-      e('div', {style:{fontSize:10,fontWeight:600,color:'var(--indigo)',letterSpacing:'0.1em',marginBottom:10}}, 'RELATIONSHIPS'),
-      e('div', {style:{display:'flex',flexDirection:'column',gap:4}},
-        relationships.slice(0,10).map((r,i) =>
-          e('div', {key:i, style:{display:'flex',alignItems:'center',gap:8,fontSize:11,color:'var(--text-secondary)'}},
-            e('span', {style:{fontFamily:'var(--font-mono)',fontWeight:500,color:'var(--text)'}}, r.from_table.split('_').slice(-2).join('_')),
-            e('span', {style:{fontFamily:'var(--font-mono)',fontSize:9}}, '.'+r.from_column),
-            e('span', {style:{color:r.confirmed?'var(--green)':'var(--amber)',margin:'0 4px'}}, r.confirmed?'→':'⇢'),
-            e('span', {style:{fontFamily:'var(--font-mono)',fontWeight:500,color:'var(--text)'}}, r.to_table.split('_').slice(-2).join('_')),
-            e('span', {style:{fontFamily:'var(--font-mono)',fontSize:9}}, '.'+r.to_column),
-            e('span', {style:{fontSize:8,color:confColor(r.confidence),fontFamily:'var(--font-mono)'}}, confPct(r.confidence)),
-            e('span', {style:{fontSize:8,padding:'1px 4px',borderRadius:3,
-              background:r.source==='fk'?'rgba(34,197,94,.08)':'rgba(245,158,11,.08)',
-              color:r.source==='fk'?'var(--green)':'var(--amber)'}}, r.source),
+    // ── Intelligence Panel (right sidebar) ──────────────────────
+    e('div', {style:{width:280,borderLeft:'1px solid var(--glass-border)',overflow:'auto',padding:16,background:'var(--canvas-deep)',flexShrink:0}},
+      // Stats row
+      semGraph && e('div', {style:{display:'flex',gap:6,marginBottom:16,flexWrap:'wrap'}},
+        [{l:'Tables',v:semGraph.stats?.tables||0},{l:'Edges',v:semGraph.stats?.edges||0},
+         {l:'Terms',v:semGraph.stats?.synonyms||0},{l:'v',v:semGraph.iteration_id||0}].map(s =>
+          e('div', {key:s.l, style:{padding:'6px 10px',borderRadius:6,background:'var(--glass)',border:'1px solid var(--glass-border)',textAlign:'center',flex:1}},
+            e('div', {style:{fontSize:14,fontWeight:700,color:'var(--text)'}}, s.v),
+            e('div', {style:{fontSize:8,color:'var(--text-muted)'}}, s.l),
           )
         ),
       ),
-    ),
 
-    // Tips
-    (intel.tips||[]).length > 0 && e('div', {style:{background:'var(--glass)',border:'1px solid var(--glass-border)',borderRadius:12,padding:16,marginBottom:20}},
-      e('div', {style:{fontSize:10,fontWeight:600,color:'var(--amber)',letterSpacing:'0.1em',marginBottom:8}}, 'QUERY TIPS'),
-      (intel.tips||[]).map((tip,i) =>
-        e('div', {key:i, style:{fontSize:11,color:'var(--text-secondary)',padding:'3px 0',lineHeight:1.4}}, '• '+tip)
-      ),
-    ),
-
-    // Schema compact list
-    e('div', {style:{background:'var(--glass)',border:'1px solid var(--glass-border)',borderRadius:12,padding:16}},
-      e('div', {style:{fontSize:10,fontWeight:600,color:'var(--text-muted)',letterSpacing:'0.1em',marginBottom:10}}, 'SCHEMA ('+tables.length+' tables)'),
-      tables.map((t,i) =>
-        e('div', {key:i, onClick:()=>{setSelected(t.name===selected?null:t.name);setTab('schema');},
-          style:{display:'flex',alignItems:'center',gap:10,padding:'6px 8px',borderRadius:6,cursor:'pointer',
-            background:selected===t.name?'rgba(79,125,249,.08)':'transparent',
-            borderBottom:i<tables.length-1?'1px solid var(--glass-border)':'none'}},
-          e('span', {style:{fontSize:11,fontWeight:500,color:'var(--text)',flex:1,fontFamily:'var(--font-mono)'}},
-            t.name.replace(/genai_spend_anomaly_analysis_/g,'').replace(/_/g,' ')),
-          e('span', {style:{fontSize:9,color:'var(--text-muted)'}}, (t.dimensions||[]).length+'d '+(t.measures||[]).length+'m'),
-          t.description && e('span', {style:{fontSize:9,color:'var(--text-muted)',maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}, t.description),
-        )
-      ),
-    ),
-  );
-
-  // ── TERMS TAB ─────────────────────────────────────────────────────────
-  const termsContent = e('div', {style:{flex:1,overflow:'auto',padding:24}},
-    e('div', {style:{display:'flex',alignItems:'center',gap:12,marginBottom:16}},
-      e('input', {type:'text', placeholder:'Search terms...', value:termSearch,
-        onChange:ev=>setTermSearch(ev.target.value),
-        style:{flex:1,padding:'6px 12px',borderRadius:6,border:'1px solid var(--glass-border)',
-          background:'var(--glass)',fontSize:12,color:'var(--text)',outline:'none',fontFamily:'var(--font-mono)'}}),
-      e('span', {style:{fontSize:11,color:'var(--text-muted)'}}, filteredTerms.length+' of '+allSynonyms.length),
-    ),
-    e('div', {style:{display:'flex',flexDirection:'column',gap:1}},
-      filteredTerms.slice(0,200).map((s,i) =>
-        e('div', {key:i, style:{display:'flex',alignItems:'center',gap:8,padding:'5px 10px',borderRadius:4,background:i%2===0?'var(--glass)':'transparent',fontSize:12}},
-          e('span', {style:{fontWeight:500,color:'var(--blue)',minWidth:130,fontFamily:'var(--font-mono)',fontSize:11}}, s.term),
-          e('span', {style:{color:'var(--text-muted)',fontSize:10}}, '→'),
-          e('span', {style:{fontFamily:'var(--font-mono)',color:'var(--text)',fontSize:11,flex:1}}, s.canonical),
-          s.confidence && e('span', {style:{fontSize:8,color:confColor(s.confidence),fontFamily:'var(--font-mono)'}}, Math.round(s.confidence*100)+'%'),
-          e('span', {style:{fontSize:8,padding:'1px 4px',borderRadius:3,
-            background:s.type==='inferred'?'rgba(139,92,246,.08)':s.type==='confirmed'||s.type==='confirmed by query'?'rgba(34,197,94,.08)':'rgba(79,125,249,.08)',
-            color:s.type==='inferred'?'var(--indigo)':s.type==='confirmed'||s.type==='confirmed by query'?'var(--green)':'var(--blue)'}}, s.type),
-        )
-      ),
-    ),
-  );
-
-  // ── SCHEMA TAB (table inspector) ──────────────────────────────────────
-  const schemaContent = e('div', {style:{flex:1,overflow:'auto',padding:24}},
-    !selectedTable
-      ? e('div', {style:{textAlign:'center',color:'var(--text-muted)',marginTop:40,fontSize:13}}, 'Select a table from the Overview to inspect its columns')
-      : e('div', null,
-          e('div', {style:{display:'flex',alignItems:'center',gap:8,marginBottom:16}},
-            e('div', {style:{fontSize:16,fontWeight:600,color:'var(--text)'}}, selectedTable.display_name||selectedTable.name),
-            e('span', {style:{fontSize:10,color:'var(--text-muted)',fontFamily:'var(--font-mono)'}}, selectedTable.backend||'duckdb'),
-            e('span', {style:{fontSize:9,color:confColor(selectedTable.confidence),fontFamily:'var(--font-mono)'}}, confPct(selectedTable.confidence)),
-          ),
-          selectedTable.description && e('div', {style:{fontSize:12,color:'var(--text-secondary)',marginBottom:16,lineHeight:1.5}}, selectedTable.description),
-
+      // Selected node details
+      selectedNode && semGraph ? (() => {
+        const node = semGraph.nodes.find(n => n.id === selectedNode);
+        if (!node) return null;
+        return e('div', null,
+          e('div', {style:{fontSize:14,fontWeight:600,color:'var(--text)',marginBottom:4}}, node.name),
+          e('div', {style:{fontSize:10,color:'var(--text-muted)',marginBottom:12}},
+            `${(node.rows||0).toLocaleString()} rows · confidence: ${confPct(node.confidence)}`),
           // Dimensions
-          (selectedTable.dimensions||[]).length > 0 && e('div', {style:{marginBottom:20}},
-            e('div', {style:{fontSize:10,fontWeight:600,color:'var(--blue)',letterSpacing:'0.08em',marginBottom:8}}, 'DIMENSIONS ('+selectedTable.dimensions.length+')'),
-            selectedTable.dimensions.map((d,i) =>
-              e('div', {key:i, style:{padding:'8px 10px',background:'var(--glass)',borderRadius:8,marginBottom:4,border:'1px solid var(--glass-border)'}},
-                e('div', {style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
-                  e('span', {style:{fontWeight:500,fontSize:12,fontFamily:'var(--font-mono)',color:'var(--text)'}}, d.name),
-                  e('span', {style:{fontSize:9,color:confColor(d.confidence||0.5),fontFamily:'var(--font-mono)'}}, confPct(d.confidence)),
-                ),
-                d.description && e('div', {style:{fontSize:10,color:'var(--text-muted)',marginTop:2}}, d.description),
-                (d.sample_values||[]).length > 0 && e('div', {style:{fontSize:9,color:'var(--text-muted)',marginTop:3,fontFamily:'var(--font-mono)'}}, d.sample_values.slice(0,6).join(' · ')),
-              )
-            ),
+          node.dimensions.length > 0 && e('div', {style:{marginBottom:12}},
+            e('div', {style:{fontSize:9,fontWeight:600,color:'var(--blue)',letterSpacing:'0.08em',marginBottom:4}}, 'DIMENSIONS'),
+            node.dimensions.map((d,i) => e('div', {key:i, style:{fontSize:11,color:'var(--text)',padding:'2px 0',fontFamily:'var(--font-mono)'}},
+              '◆ '+d, node.meanings[d] && e('span', {style:{color:'var(--text-muted)',fontSize:9,marginLeft:6}}, node.meanings[d].slice(0,40)),
+            )),
           ),
-
           // Measures
-          (selectedTable.measures||[]).length > 0 && e('div', {style:{marginBottom:20}},
-            e('div', {style:{fontSize:10,fontWeight:600,color:'var(--green)',letterSpacing:'0.08em',marginBottom:8}}, 'MEASURES ('+selectedTable.measures.length+')'),
-            selectedTable.measures.map((m,i) =>
-              e('div', {key:i, style:{padding:'8px 10px',background:'var(--glass)',borderRadius:8,marginBottom:4,border:'1px solid var(--glass-border)'}},
-                e('div', {style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
-                  e('span', {style:{fontWeight:500,fontSize:12,fontFamily:'var(--font-mono)',color:'var(--text)'}}, m.name),
-                  e('span', {style:{fontSize:9,color:confColor(m.confidence||0.5),fontFamily:'var(--font-mono)'}}, confPct(m.confidence)),
-                ),
-                m.description && e('div', {style:{fontSize:10,color:'var(--text-muted)',marginTop:2}}, m.description),
-                m.expr && e('div', {style:{fontSize:9,color:'var(--green)',marginTop:2,fontFamily:'var(--font-mono)'}}, '= '+m.expr),
-              )
+          node.measures.length > 0 && e('div', {style:{marginBottom:12}},
+            e('div', {style:{fontSize:9,fontWeight:600,color:'var(--green)',letterSpacing:'0.08em',marginBottom:4}}, 'MEASURES'),
+            node.measures.map((m,i) => e('div', {key:i, style:{fontSize:11,color:'var(--text)',padding:'2px 0',fontFamily:'var(--font-mono)'}},
+              '▸ '+m, node.meanings[m] && e('span', {style:{color:'var(--text-muted)',fontSize:9,marginLeft:6}}, node.meanings[m].slice(0,40)),
+            )),
+          ),
+          // Time
+          node.time_dimensions.length > 0 && e('div', {style:{marginBottom:12}},
+            e('div', {style:{fontSize:9,fontWeight:600,color:'var(--amber)',letterSpacing:'0.08em',marginBottom:4}}, 'TIME DIMENSIONS'),
+            node.time_dimensions.map((t,i) => e('div', {key:i, style:{fontSize:11,color:'var(--text)',padding:'2px 0',fontFamily:'var(--font-mono)'}}, '◷ '+t)),
+          ),
+          // Connected edges
+          e('div', {style:{fontSize:9,fontWeight:600,color:'var(--indigo)',letterSpacing:'0.08em',marginBottom:4,marginTop:8}}, 'RELATIONSHIPS'),
+          (semGraph.edges||[]).filter(ed => ed.source === selectedNode || ed.target === selectedNode).map((ed,i) => {
+            const other = ed.source === selectedNode ? ed.target : ed.source;
+            return e('div', {key:i, style:{fontSize:10,color:'var(--text-secondary)',padding:'2px 0'}},
+              other.replace('tbl:',''), ' · ',
+              e('span', {style:{color:edgeColor[ed.type]||'#8b92a8',fontSize:9}}, ed.type),
+              e('span', {style:{color:'var(--text-muted)',fontSize:8,marginLeft:4}}, confPct(ed.confidence)),
+            );
+          }),
+        );
+      })() : e('div', {style:{color:'var(--text-muted)',fontSize:12,textAlign:'center',marginTop:40}},
+        'Click a table node to inspect its semantic profile'),
+
+      // Synonyms summary
+      semGraph && semGraph.synonyms && semGraph.synonyms.length > 0 && e('div', {style:{marginTop:20}},
+        e('div', {style:{fontSize:9,fontWeight:600,color:'var(--text-muted)',letterSpacing:'0.08em',marginBottom:6}},
+          'LEARNED TERMS ('+semGraph.synonyms.length+')'),
+        e('div', {style:{display:'flex',flexDirection:'column',gap:2}},
+          semGraph.synonyms.slice(0,15).map((s,i) =>
+            e('div', {key:i, style:{fontSize:10,fontFamily:'var(--font-mono)',color:'var(--text-secondary)'}},
+              e('span', {style:{color:'var(--blue)'}}, s.term), ' → ', s.canonical,
             ),
           ),
+          semGraph.synonyms.length > 15 && e('div', {style:{fontSize:9,color:'var(--text-muted)'}}, '+'+(semGraph.synonyms.length-15)+' more'),
+        ),
+      ),
 
-          // Time dimensions
-          (selectedTable.time_dimensions||[]).length > 0 && e('div', null,
-            e('div', {style:{fontSize:10,fontWeight:600,color:'var(--amber)',letterSpacing:'0.08em',marginBottom:8}}, 'TIME ('+selectedTable.time_dimensions.length+')'),
-            selectedTable.time_dimensions.map((td,i) =>
-              e('div', {key:i, style:{padding:'8px 10px',background:'var(--glass)',borderRadius:8,marginBottom:4,border:'1px solid var(--glass-border)'}},
-                e('span', {style:{fontWeight:500,fontSize:12,fontFamily:'var(--font-mono)',color:'var(--text)'}}, td.name),
-                td.description && e('div', {style:{fontSize:10,color:'var(--text-muted)',marginTop:2}}, td.description),
-              )
-            ),
+      // Patterns
+      semGraph && semGraph.patterns && semGraph.patterns.length > 0 && e('div', {style:{marginTop:16}},
+        e('div', {style:{fontSize:9,fontWeight:600,color:'var(--amber)',letterSpacing:'0.08em',marginBottom:6}},
+          'LEARNED PATTERNS ('+semGraph.patterns.length+')'),
+        semGraph.patterns.slice(0,8).map((p,i) =>
+          e('div', {key:i, style:{fontSize:9,fontFamily:'var(--font-mono)',color:'var(--text-muted)',padding:'2px 0'}},
+            p.key||`${p.table}.${p.column}=${p.value}`, e('span', {style:{color:'var(--green)',marginLeft:4}}, p.count+'×'),
           ),
         ),
+      ),
+
+      // Rules
+      semGraph && semGraph.rules && semGraph.rules.length > 0 && e('div', {style:{marginTop:16}},
+        e('div', {style:{fontSize:9,fontWeight:600,color:'var(--red)',letterSpacing:'0.08em',marginBottom:6}},
+          'ACTIVE RULES ('+semGraph.rules.length+')'),
+        semGraph.rules.slice(0,5).map((r,i) =>
+          e('div', {key:i, style:{fontSize:9,color:'var(--text-secondary)',padding:'3px 0',borderBottom:'1px solid var(--glass-border)'}},
+            r.text?.slice(0,60), e('span', {style:{color:'var(--green)',fontSize:8,marginLeft:4}}, Math.round((r.confidence||0)*100)+'%'),
+          ),
+        ),
+      ),
+    ),
   );
 
-  // Old graph/terms/inspector code removed — see git history.
-  // (old graph/terms/inspector code deleted)
+  // ═══════════════════════════════════════════════════════════════════════
+  // UNIFIED SEMANTIC TAXONOMY VIEW
+  // One continuous scrollable view showing the agent's full working memory
+  // ═══════════════════════════════════════════════════════════════════════
 
+  const toggleSection = (s) => setExpandedSections(prev => ({...prev, [s]:!prev[s]}));
 
-  const tabConfig = [
-    {id:'overview', label:'Overview'},
-    {id:'terms', label:'Terms ('+allSynonyms.length+')'},
-    {id:'schema', label:'Schema'},
+  // Section card builder
+  const layerCard = (id, label, version, color, badge, children) => {
+    const isOpen = expandedSections[id] !== false;
+    return e('div', {style:{marginBottom:12,border:'1px solid var(--glass-border)',borderRadius:10,overflow:'hidden',background:'var(--glass)'}},
+      e('div', {
+        onClick:()=>toggleSection(id),
+        style:{padding:'10px 14px',display:'flex',alignItems:'center',justifyContent:'space-between',cursor:'pointer',
+          borderBottom:isOpen?'1px solid var(--glass-border)':'none',
+          background:isOpen?'rgba('+color+',.04)':'transparent'},
+      },
+        e('div', {style:{display:'flex',alignItems:'center',gap:8}},
+          e('div', {style:{width:8,height:8,borderRadius:'50%',background:'rgb('+color+')',flexShrink:0}}),
+          e('span', {style:{fontSize:12,fontWeight:600,color:'var(--text)'}}, label),
+          version && e('span', {style:{fontSize:9,color:'var(--text-muted)',fontFamily:'var(--font-mono)'}}, version),
+          badge && e('span', {style:{fontSize:8,padding:'1px 6px',borderRadius:3,background:'rgba('+color+',.1)',color:'rgb('+color+')'}}, badge),
+        ),
+        e('span', {style:{fontSize:10,color:'var(--text-muted)'}}, isOpen ? '▲' : '▼'),
+      ),
+      isOpen && e('div', {style:{padding:14}}, children),
+    );
+  };
+
+  // Item renderer for taxonomy entries
+  const taxItem = (left, right, conf, provenance) => e('div', {style:{
+    display:'flex',alignItems:'center',gap:8,padding:'3px 0',fontSize:10,borderBottom:'1px solid rgba(0,0,0,.03)',
+  }},
+    e('span', {style:{fontFamily:'var(--font-mono)',fontWeight:500,color:'var(--text)',minWidth:180,flexShrink:0}}, left),
+    e('span', {style:{color:'var(--text-muted)',flex:1}}, right),
+    conf !== undefined && e('span', {style:{fontSize:8,color:confColor(conf),fontFamily:'var(--font-mono)',width:28,textAlign:'right',flexShrink:0}},
+      Math.round(conf*100)+'%'),
+    provenance && e('span', {style:{fontSize:7,padding:'1px 4px',borderRadius:3,flexShrink:0,
+      background:provenance==='schema'?'rgba(79,125,249,.08)':provenance==='query'?'rgba(34,197,94,.08)':'rgba(245,158,11,.08)',
+      color:provenance==='schema'?'var(--blue)':provenance==='query'?'var(--green)':'var(--amber)'}}, provenance),
+  );
+
+  // Group history by layer
+  const historyItems = semHistory?.history || [];
+  const foundationHistory = historyItems.filter(h => h.trigger === 'connect');
+  const queryHistory = historyItems.filter(h => h.trigger === 'query_success');
+
+  // Taxonomy content
+  const taxonomyContent = e('div', {style:{flex:1,overflow:'auto',padding:20}},
+
+    // ── FOUNDATION LAYER ────────────────────────────────────────────
+    layerCard('foundation', 'Foundation', 'initial', '79,125,249',
+      `${allMeanings.length} column meanings · ${gNodes.length} tables`,
+      e('div', null,
+        e('div', {style:{fontSize:9,color:'var(--text-muted)',marginBottom:10,fontStyle:'italic'}},
+          'Self-discovered at connect time by the Semantic Analysis Agent'),
+
+        // Domain
+        intel.domain && e('div', {style:{marginBottom:12}},
+          e('div', {style:{fontSize:9,fontWeight:600,color:'var(--blue)',letterSpacing:'0.06em',marginBottom:4}}, 'DOMAIN'),
+          e('div', {style:{fontSize:11,color:'var(--text)',lineHeight:1.5}}, intel.domain),
+        ),
+
+        // Tables discovered
+        e('div', {style:{fontSize:9,fontWeight:600,color:'var(--blue)',letterSpacing:'0.06em',marginBottom:4}}, 'TABLES DISCOVERED'),
+        ...gNodes.map((n,i) => taxItem(
+          n.name,
+          `${(n.rows||0).toLocaleString()} rows · ${(n.dimensions||[]).length} dimensions · ${(n.measures||[]).length} measures · ${(n.time_dimensions||[]).length} time cols`,
+          n.confidence, 'schema'
+        )),
+
+        // Column meanings (grouped by table)
+        allMeanings.length > 0 && e('div', {style:{marginTop:12}},
+          e('div', {style:{fontSize:9,fontWeight:600,color:'var(--blue)',letterSpacing:'0.06em',marginBottom:4}}, 'COLUMN UNDERSTANDING'),
+          ...(() => {
+            const byTable = {};
+            allMeanings.forEach(m => { if (!byTable[m.table]) byTable[m.table]=[]; byTable[m.table].push(m); });
+            return Object.entries(byTable).map(([tbl, cols]) =>
+              e('div', {key:tbl, style:{marginBottom:8}},
+                e('div', {style:{fontSize:10,fontWeight:600,color:'var(--text)',marginBottom:2,fontFamily:'var(--font-mono)'}}, tbl),
+                ...cols.map((c,ci) => taxItem(c.col, c.meaning, undefined, 'schema')),
+              )
+            );
+          })(),
+        ),
+      ),
+    ),
+
+    // ── INFERRED LAYER ──────────────────────────────────────────────
+    layerCard('inferred', 'Inferred Knowledge', '', '168,85,247',
+      `${allSynonyms.length} aliases · ${crossEdges.length + fkEdges.length} joins detected`,
+      e('div', null,
+        e('div', {style:{fontSize:9,color:'var(--text-muted)',marginBottom:10,fontStyle:'italic'}},
+          'Detected from data patterns and taxonomy analysis'),
+
+        // Entity aliases
+        allSynonyms.length > 0 && e('div', {style:{marginBottom:12}},
+          e('div', {style:{fontSize:9,fontWeight:600,color:'#a855f7',letterSpacing:'0.06em',marginBottom:4}},
+            'VALUE MAPPINGS ('+allSynonyms.length+')'),
+          e('div', {style:{fontSize:8,color:'var(--text-muted)',marginBottom:6}},
+            'When confidence reaches 93%, resolved deterministically without LLM call'),
+          ...allSynonyms.map((s,i) => taxItem(
+            '"'+s.term+'"',
+            '→ '+s.canonical,
+            s.confidence, s.type||'inferred'
+          )),
+        ),
+
+        // Detected joins (FK + cross-source)
+        (crossEdges.length > 0 || fkEdges.length > 0) && e('div', null,
+          e('div', {style:{fontSize:9,fontWeight:600,color:'#a855f7',letterSpacing:'0.06em',marginBottom:4}}, 'DETECTED JOINS'),
+          ...[...fkEdges, ...crossEdges].map((ed,i) => taxItem(
+            ed.source.replace('tbl:','') + ' ↔ ' + ed.target.replace('tbl:',''),
+            ed.join_columns ? 'ON '+ed.join_columns.from+' = '+ed.join_columns.to : ed.type.replace('_',' '),
+            ed.confidence, ed.type === 'declared_fk' ? 'schema' : 'inferred'
+          )),
+        ),
+
+        allSynonyms.length === 0 && crossEdges.length === 0 && e('div', {style:{fontSize:10,color:'var(--text-muted)',padding:'8px 0'}},
+          'No inferred knowledge yet. Run queries to build vocabulary.'),
+      ),
+    ),
+
+    // ── CONFIRMED LAYER ─────────────────────────────────────────────
+    layerCard('confirmed', 'Confirmed by Queries', '', '34,197,94',
+      `${confirmedEdges.length} joins confirmed · ${gPatterns.length} patterns learned`,
+      e('div', null,
+        e('div', {style:{fontSize:9,color:'var(--text-muted)',marginBottom:10,fontStyle:'italic'}},
+          'Knowledge verified through successful query execution'),
+
+        // Show each query iteration that taught something
+        queryHistory.length > 0 ? e('div', {style:{display:'flex',flexDirection:'column',gap:8}},
+          ...queryHistory.slice().reverse().map((h,i) => {
+            const learned = h.learned || {};
+            const details = h.details || {};
+            const hasContent = Object.values(learned).some(v => v > 0);
+            if (!hasContent) return null;
+            const isOpen = expandedIter === h.iteration_id;
+            const summary = [
+              learned.relationships && `+${learned.relationships} relationships`,
+              learned.patterns && `+${learned.patterns} patterns`,
+              learned.enrichments && `+${learned.enrichments} enrichments`,
+              learned.aliases && `+${learned.aliases} aliases`,
+            ].filter(Boolean).join(' · ');
+
+            return e('div', {key:i, style:{borderRadius:6,border:'1px solid rgba(34,197,94,.12)',background:'rgba(34,197,94,.02)',overflow:'hidden'}},
+              // Header (always visible, clickable)
+              e('div', {
+                onClick:()=>setExpandedIter(isOpen?null:h.iteration_id),
+                style:{padding:'8px 10px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'space-between'}},
+                e('div', {style:{display:'flex',alignItems:'center',gap:6,flex:1,minWidth:0}},
+                  e('span', {style:{fontSize:9,fontWeight:700,color:'var(--green)',fontFamily:'var(--font-mono)',flexShrink:0}}, 'v'+h.iteration_id),
+                  e('span', {style:{fontSize:10,color:'var(--text)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},
+                    h.nl_query ? '"'+h.nl_query+'"' : 'Query'),
+                ),
+                e('div', {style:{display:'flex',alignItems:'center',gap:8,flexShrink:0}},
+                  e('span', {style:{fontSize:8,color:'var(--text-muted)'}}, summary),
+                  e('span', {style:{fontSize:8,color:'var(--text-muted)'}},
+                    h.timestamp ? new Date(h.timestamp).toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : ''),
+                  e('span', {style:{fontSize:9,color:'var(--text-muted)'}}, isOpen?'▲':'▼'),
+                ),
+              ),
+              // Expanded detail
+              isOpen && e('div', {style:{padding:'6px 10px 10px',borderTop:'1px solid rgba(34,197,94,.08)'}},
+                (details.relationships||[]).length > 0 && e('div', {style:{marginBottom:4}},
+                  e('div', {style:{fontSize:8,fontWeight:600,color:'var(--green)',marginBottom:2}}, 'RELATIONSHIPS CONFIRMED'),
+                  ...details.relationships.map((r,ri) => taxItem('+ join', r, undefined, 'query')),
+                ),
+                (details.patterns||[]).length > 0 && e('div', {style:{marginBottom:4}},
+                  e('div', {style:{fontSize:8,fontWeight:600,color:'var(--amber)',marginBottom:2}}, 'PATTERNS LEARNED'),
+                  ...details.patterns.map((p,pi) => taxItem('+ pattern', p, undefined, 'query')),
+                ),
+                (details.enrichments||[]).length > 0 && e('div', {style:{marginBottom:4}},
+                  e('div', {style:{fontSize:8,fontWeight:600,color:'var(--blue)',marginBottom:2}}, 'COLUMNS ENRICHED'),
+                  ...details.enrichments.map((en,ei) => taxItem('+ enriched', en, undefined, 'query')),
+                ),
+                (details.aliases||[]).length > 0 && e('div', {style:{marginBottom:4}},
+                  e('div', {style:{fontSize:8,fontWeight:600,color:'#a855f7',marginBottom:2}}, 'ALIASES LEARNED'),
+                  ...details.aliases.map((a,ai) => taxItem('+ alias', a, undefined, 'query')),
+                ),
+                // No details available (old iterations)
+                !details.relationships && !details.patterns && !details.enrichments && !details.aliases &&
+                  e('div', {style:{fontSize:9,color:'var(--text-muted)'}}, summary + ' (details not recorded for this iteration)'),
+              ),
+            );
+          }).filter(Boolean),
+        ) : e('div', {style:{fontSize:10,color:'var(--text-muted)',padding:'8px 0'}},
+          'No queries run yet. Ask questions to confirm relationships and learn patterns.'),
+
+        // Confirmed relationships with details
+        confirmedEdges.length > 0 && e('div', {style:{marginTop:12}},
+          e('div', {style:{fontSize:9,fontWeight:600,color:'var(--green)',letterSpacing:'0.06em',marginBottom:4}},
+            'CONFIRMED JOINS'),
+          ...confirmedEdges.map((ed,i) => taxItem(
+            ed.source.replace('tbl:','') + ' ↔ ' + ed.target.replace('tbl:',''),
+            `${ed.query_count||1}x used · ${Math.round((ed.confidence||0.85)*100)}% confidence`,
+            ed.confidence, 'query'
+          )),
+        ),
+
+        // Active patterns summary
+        gPatterns.length > 0 && e('div', {style:{marginTop:12}},
+          e('div', {style:{fontSize:9,fontWeight:600,color:'var(--green)',letterSpacing:'0.06em',marginBottom:4}},
+            'ACTIVE PATTERNS (auto-injected into queries)'),
+          ...gPatterns.map((p,i) => taxItem(
+            p.key || `${p.table}.${p.column}='${p.value}'`,
+            `used ${p.count}x ${p.count>=3?'— auto-injected':'— learning (needs '+(3-p.count)+' more)'}`,
+            undefined, 'query'
+          )),
+        ),
+      ),
+    ),
+
+    // ── CORRECTED LAYER ─────────────────────────────────────────────
+    layerCard('corrected', 'Learned from Corrections', '', '239,68,68',
+      gRules.length > 0 ? `${gRules.length} active rules` : 'none yet',
+      e('div', null,
+        e('div', {style:{fontSize:9,color:'var(--text-muted)',marginBottom:10,fontStyle:'italic'}},
+          'Rules created from user corrections. Confidence decays if not re-confirmed.'),
+
+        gRules.length > 0 ? e('div', {style:{display:'flex',flexDirection:'column',gap:6}},
+          ...gRules.map((r,i) => e('div', {key:i, style:{padding:'6px 8px',borderRadius:6,border:'1px solid rgba(239,68,68,.12)',background:'rgba(239,68,68,.02)'}},
+            e('div', {style:{fontSize:10,color:'var(--text)'}}, r.text),
+            e('div', {style:{fontSize:9,color:'var(--text-muted)',marginTop:2,display:'flex',gap:12}},
+              e('span', null, Math.round((r.confidence||0)*100)+'% confidence'),
+              e('span', null, (r.hit_count||0)+'x applied'),
+              e('span', null, Math.round((r.success_rate||0)*100)+'% success rate'),
+              r.query_example && e('span', {style:{fontStyle:'italic'}}, 'from: "'+r.query_example.slice(0,40)+'"'),
+            ),
+          )),
+        ) : e('div', {style:{fontSize:10,color:'var(--text-muted)',padding:'8px 0'}},
+          'No corrections yet. When you mark a query result as wrong, the Learn Agent creates rules here.'),
+      ),
+    ),
+
+    // ── DATA GAPS ───────────────────────────────────────────────────
+    (() => {
+      const gaps = [];
+      gNodes.forEach(n => {
+        if ((n.measures||[]).length > 0 && !(n.time_dimensions||[]).length)
+          gaps.push(`${n.name}: has measures but no time column — can't trend over time`);
+        if (!(n.measures||[]).length && (n.dimensions||[]).length > 0 && !(n.time_dimensions||[]).length)
+          gaps.push(`${n.name}: dimension/reference table only`);
+      });
+      if (!gaps.length) return null;
+      return e('div', {style:{padding:'10px 14px',borderRadius:10,border:'1px solid rgba(245,158,11,.2)',background:'rgba(245,158,11,.03)',marginBottom:12}},
+        e('div', {style:{fontSize:9,fontWeight:600,color:'var(--amber)',letterSpacing:'0.06em',marginBottom:6}}, 'DATA STRUCTURE NOTES'),
+        ...gaps.map((g,i) => e('div', {key:i, style:{fontSize:10,color:'var(--text-secondary)',padding:'2px 0',fontFamily:'var(--font-mono)'}}, g)),
+      );
+    })(),
+  );
+
+  // ── Smart summary: how well does the agent understand the data? ──
+  const totalCols = gNodes.reduce((sum, n) => sum + (n.columns||[]).length, 0);
+  const mappedCols = allMeanings.length;
+  const understandingPct = totalCols > 0 ? Math.round(mappedCols / totalCols * 100) : 0;
+  const lastUpdate = (semHistory?.history || []).slice(-1)[0];
+  const lastUpdateAge = lastUpdate?.timestamp ?
+    Math.round((Date.now() - new Date(lastUpdate.timestamp).getTime()) / 60000) : null;
+  const ageText = lastUpdateAge !== null ?
+    (lastUpdateAge < 60 ? lastUpdateAge+'m ago' : Math.round(lastUpdateAge/60)+'h ago') : '';
+
+  async function sendKChat() {
+    if (!kChatInput.trim() || kChatLoading) return;
+    const msg = kChatInput.trim();
+    setKChatInput('');
+    const updatedMessages = [...kChatMessages, {role:'user', text:msg}];
+    setKChatMessages(updatedMessages);
+    setKChatLoading(true);
+    try {
+      // Send conversation history so the agent has context
+      const resp = await api.post('/schema/chat', {
+        workspace_id: workspace?.workspace_id || '',
+        message: msg,
+        history: updatedMessages.slice(-8).map(m => ({role:m.role==='user'?'user':'assistant', content:m.text})),
+      });
+      const fullText = (resp.answer || resp.error || 'No response').replace(/\*\*/g,'').replace(/^#+\s*/gm,'');
+      // Typewriter effect
+      let i = 0;
+      setKChatMessages(prev => [...prev, {role:'agent', text:'', _streaming:true}]);
+      setKChatLoading(false);
+      const timer = setInterval(() => {
+        i += 2 + Math.floor(Math.random() * 3);
+        if (i >= fullText.length) {
+          clearInterval(timer);
+          setKChatMessages(prev => {
+            const copy = [...prev];
+            copy[copy.length-1] = {role:'agent', text:fullText};
+            return copy;
+          });
+          return;
+        }
+        setKChatMessages(prev => {
+          const copy = [...prev];
+          copy[copy.length-1] = {role:'agent', text:fullText.slice(0,i), _streaming:true};
+          return copy;
+        });
+      }, 12);
+    } catch(err) {
+      setKChatMessages(prev => [...prev, {role:'agent', text:'Error: '+(err.message||err)}]);
+      setKChatLoading(false);
+    }
+  }
+
+  // ── Tab config ───────────────────────────────────────────────────
+  const kTabs = [
+    {id:'graph', label:'Graph'},
+    {id:'taxonomy', label:'Taxonomy'},
+    {id:'chat', label:'Agent'},
   ];
 
-  return e('div', {style:{display:'flex',flexDirection:'column',height:'100%'}},
-    // Header
-    e('div', {style:{padding:'14px 24px',borderBottom:'1px solid var(--glass-border)',display:'flex',alignItems:'center',justifyContent:'space-between'}},
-      e('div', {style:{display:'flex',alignItems:'center',gap:10}},
-        e('div', {style:{width:26,height:26,borderRadius:7,background:'linear-gradient(135deg,#4f7df9,#6366f1)',display:'flex',alignItems:'center',justifyContent:'center'}},
-          e('span', {style:{color:'#fff',fontSize:12,fontWeight:700}}, 'K')),
-        e('div', null,
-          e('div', {style:{fontWeight:600,fontSize:14,color:'var(--text)'}}, 'Semantic Intelligence'),
-          e('div', {style:{fontSize:10,color:'var(--text-muted)'}},
-            tables.length+' tables · '+(stats.synonyms||0)+' terms · '+confPct(stats.avg_confidence)+' confidence'),
-        ),
-      ),
-      e('div', {style:{display:'flex',gap:3}},
-        tabConfig.map(t =>
-          e('button', {key:t.id, onClick:()=>setTab(t.id), style:{
-            padding:'4px 10px', borderRadius:5, border:'1px solid '+(tab===t.id?'var(--blue)':'var(--glass-border)'),
-            background:tab===t.id?'rgba(79,125,249,.1)':'transparent', color:tab===t.id?'var(--blue)':'var(--text-muted)',
-            fontSize:10, cursor:'pointer', fontWeight:tab===t.id?600:400, fontFamily:'var(--font-ui)'}},
-            t.label)
-        ),
+  // ── Chat content ───────────────────────────────────────────────
+  const chatContent = e('div', {style:{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}},
+    // Suggested questions
+    e('div', {style:{padding:'12px 20px',borderBottom:'1px solid var(--glass-border)'}},
+      e('div', {style:{fontSize:10,color:'var(--text-muted)',marginBottom:8}}, 'Ask the Semantic Agent about your data'),
+      e('div', {style:{display:'flex',flexWrap:'wrap',gap:4}},
+        ['What do you know about the sales table?',
+         'How are stores and customers related?',
+         'What patterns have you learned?',
+         'What columns does the products table have?',
+        ].map((q,i) => e('button', {key:i, onClick:()=>{setKChatInput(q); sendKChat();},
+          style:{fontSize:10,color:'var(--blue)',cursor:'pointer',padding:'4px 8px',borderRadius:5,
+            background:'rgba(79,125,249,.05)',border:'1px solid rgba(79,125,249,.12)',fontFamily:'var(--font-ui)'}}, q)),
       ),
     ),
-    // Body
+    // Messages
+    e('div', {style:{flex:1,overflow:'auto',padding:16,display:'flex',flexDirection:'column',gap:8}},
+      ...kChatMessages.map((m,i) => e('div', {key:i, style:{
+        padding:'10px 14px',borderRadius:10,fontSize:12,lineHeight:1.6,maxWidth:'85%',
+        alignSelf:m.role==='user'?'flex-end':'flex-start',
+        background:m.role==='user'?'rgba(79,125,249,.08)':'var(--glass)',
+        color:'var(--text)',border:'1px solid '+(m.role==='user'?'rgba(79,125,249,.15)':'var(--glass-border)'),
+        whiteSpace:'pre-wrap',
+      }},
+        // Strip markdown bold markers for clean display
+        m.text.replace(/\*\*/g, '').replace(/^#+\s*/gm, ''),
+      )),
+      kChatLoading && e('div', {style:{fontSize:11,color:'var(--text-muted)',padding:'8px 12px',
+        background:'var(--glass)',borderRadius:10,border:'1px solid var(--glass-border)',alignSelf:'flex-start'}},
+        'Semantic Agent is thinking...'),
+    ),
+    // Input
+    e('div', {style:{padding:'10px 16px',borderTop:'1px solid var(--glass-border)',display:'flex',gap:8}},
+      e('input', {
+        value:kChatInput, onChange:ev=>setKChatInput(ev.target.value),
+        onKeyDown:ev=>{if(ev.key==='Enter')sendKChat();},
+        placeholder:'Ask about your data...',
+        style:{flex:1,padding:'8px 12px',borderRadius:8,border:'1px solid var(--glass-border)',
+          background:'var(--glass)',fontSize:12,color:'var(--text)',outline:'none',fontFamily:'var(--font-ui)'},
+      }),
+      e('button', {onClick:sendKChat, disabled:kChatLoading||!kChatInput.trim(),
+        style:{padding:'8px 14px',borderRadius:8,border:'none',background:'var(--blue)',color:'#fff',
+          fontSize:11,cursor:'pointer',opacity:kChatLoading||!kChatInput.trim()?0.4:1,fontWeight:500}}, 'Ask'),
+    ),
+  );
+
+  return e('div', {style:{display:'flex',flexDirection:'column',height:'100%'}},
+    // ── Header: clean, just title + tabs ──────────────────────────────
+    e('div', {style:{padding:'12px 20px',borderBottom:'1px solid var(--glass-border)',display:'flex',alignItems:'center',justifyContent:'space-between'}},
+      e('div', {style:{fontSize:15,fontWeight:600,color:'var(--text)'}}, 'Knowledge'),
+      e('div', {style:{display:'flex',gap:3}},
+        kTabs.map(t => e('button', {key:t.id, onClick:()=>setTab(t.id), style:{
+          padding:'5px 14px',borderRadius:6,
+          border:'1px solid '+(tab===t.id?'var(--blue)':'var(--glass-border)'),
+          background:tab===t.id?'rgba(79,125,249,.1)':'transparent',
+          color:tab===t.id?'var(--blue)':'var(--text-muted)',
+          fontSize:11,cursor:'pointer',fontWeight:tab===t.id?600:400,fontFamily:'var(--font-ui)'}},
+          t.label)),
+      ),
+    ),
+    // ── Body ──────────────────────────────────────────────────────────
     e('div', {style:{flex:1,overflow:'hidden',display:'flex'}},
-      tab === 'overview' ? overviewContent :
-      tab === 'terms' ? termsContent :
-      tab === 'schema' ? schemaContent :
-      overviewContent,
+      tab === 'graph' ? graphContent :
+      tab === 'taxonomy' ? taxonomyContent :
+      tab === 'chat' ? chatContent :
+      graphContent,
     ),
   );
 }
@@ -4972,9 +5536,9 @@ function TasksView({workspace, onRestoreQuery}) {
                 e('div', {style:{marginTop:4,display:'flex',gap:16,flexWrap:'wrap'}},
                   e('span', {style:{color:'var(--text-muted)',fontSize:11}},
                     'tokens ',
-                    e('span', {style:{color:'rgba(79,125,249,0.9)'}}, '↑'+(traceDetail.tokens_input||0).toLocaleString()),
+                    e('span', {style:{color:'rgba(79,125,249,0.9)',cursor:'help'},title:'Input tokens — prompt tokens sent to the LLM'}, '↑'+(traceDetail.tokens_input||0).toLocaleString()),
                     ' ',
-                    e('span', {style:{color:'rgba(34,197,94,0.9)'}}, '↓'+(traceDetail.tokens_output||0).toLocaleString()),
+                    e('span', {style:{color:'rgba(34,197,94,0.9)',cursor:'help'},title:'Output tokens — completion tokens received from the LLM'}, '↓'+(traceDetail.tokens_output||0).toLocaleString()),
                     ' total:'+(traceDetail.total_tokens||0).toLocaleString(),
                   ),
                   traceDetail.model_id && e('span', {style:{color:'var(--text-muted)',fontSize:11}},
@@ -5221,6 +5785,7 @@ function LearnView({addToast, workspace, setView}) {
   const [trainSaving, setTrainSaving] = useState(false);
   const [trainSaved, setTrainSaved] = useState(false);
   const [expandedLesson, setExpandedLesson] = useState(null);  // lesson_id
+  const [impact, setImpact] = useState(null);
 
   const wsId = workspace?.workspace_id || '';
 
@@ -5230,7 +5795,10 @@ function LearnView({addToast, workspace, setView}) {
 
   useEffect(() => {
     api.get('/hub/packs').then(d=>setPacks(d.packs||[]));
-    if(workspace?.workspace_id) api.get('/workspaces/'+workspace.workspace_id+'/tasks?limit=20').then(d=>setTasks(d.tasks||[]));
+    if(workspace?.workspace_id) {
+      api.get('/workspaces/'+workspace.workspace_id+'/tasks?limit=20').then(d=>setTasks(d.tasks||[]));
+      api.get('/api/learn/impact?workspace_id='+workspace.workspace_id).then(setImpact).catch(()=>{});
+    }
     refreshLearnStatus();
     const t = setInterval(refreshLearnStatus, 6000);
     return () => clearInterval(t);
@@ -5325,6 +5893,51 @@ function LearnView({addToast, workspace, setView}) {
               background:'linear-gradient(90deg,#c084fc,#818cf8)',
               transition:'width 0.5s ease',
             }}),
+          ),
+        ),
+      ),
+    ),
+
+    // ── SECTION 1b: Learning Impact ────────────────────────────────────────────
+    impact && e('div', {className:'card card-static', style:{padding:16,marginBottom:16}},
+      e('div', {style:{display:'flex',alignItems:'center',gap:8,marginBottom:12}},
+        e('h3', {style:{fontSize:14,fontWeight:600,margin:0}}, 'Learning Impact'),
+        impact.trend !== 0 && e('span', {style:{
+          fontSize:10,fontWeight:600,padding:'2px 8px',borderRadius:100,
+          background: impact.trend > 0 ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)',
+          color: impact.trend > 0 ? 'var(--green)' : 'var(--red)',
+        }}, (impact.trend > 0 ? '+' : '') + impact.trend + '%'),
+      ),
+      e('div', {style:{display:'flex',gap:12,marginBottom:14,flexWrap:'wrap'}},
+        [{label:'Queries', value:impact.total_queries, color:'var(--text)'},
+         {label:'Accuracy', value:impact.accuracy_pct+'%', color:impact.accuracy_pct>=80?'var(--green)':impact.accuracy_pct>=50?'var(--amber)':'var(--red)'},
+         {label:'Early Accuracy', value:impact.first_half_accuracy+'%', color:'var(--text-muted)'},
+         {label:'Recent Accuracy', value:impact.second_half_accuracy+'%', color:'var(--blue)'},
+        ].map(s => e('div', {key:s.label, style:{
+          padding:'10px 14px',borderRadius:8,background:'var(--glass)',border:'1px solid var(--glass-border)',textAlign:'center',minWidth:75,
+        }},
+          e('div', {style:{fontSize:18,fontWeight:700,color:s.color}}, s.value),
+          e('div', {style:{fontSize:9,color:'var(--text-muted)',marginTop:2}}, s.label),
+        )),
+      ),
+
+      // Active rules
+      impact.active_rules && impact.active_rules.length > 0 && e('div', null,
+        e('div', {style:{fontSize:11,fontWeight:600,color:'var(--text-muted)',marginBottom:6,letterSpacing:'0.05em'}}, 'ACTIVE RULES'),
+        e('div', {style:{display:'flex',flexDirection:'column',gap:4}},
+          impact.active_rules.map((r, i) =>
+            e('div', {key:i, style:{
+              display:'flex',alignItems:'center',gap:8,padding:'6px 10px',
+              background:'rgba(34,197,94,0.04)',border:'1px solid rgba(34,197,94,0.12)',borderRadius:6,fontSize:11,
+            }},
+              e('span', {style:{
+                width:20,height:20,borderRadius:4,display:'flex',alignItems:'center',justifyContent:'center',
+                background:'rgba(34,197,94,0.15)',color:'var(--green)',fontSize:9,fontWeight:700,flexShrink:0,
+              }}, Math.round(r.confidence*100)+'%'),
+              e('span', {style:{flex:1,color:'var(--text)',minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}, r.text),
+              e('span', {style:{fontSize:9,color:'var(--text-muted)',flexShrink:0}},
+                r.hit_count+'× applied · '+Math.round(r.success_rate*100)+'% success'),
+            ),
           ),
         ),
       ),
@@ -6130,7 +6743,7 @@ function SourcesView({workspace, addToast}) {
         e('div', null,
           e('div', {style:{fontSize:14, fontWeight:600, color:'#e8eaf0'}}, 'Add Database Connection'),
           e('div', {style:{fontSize:12, color:'#4a5068', marginTop:2}},
-            'PostgreSQL · MySQL · SQLite · Snowflake · BigQuery · Redshift'),
+            'PostgreSQL · MySQL · SQLite · Snowflake · BigQuery · Redshift · Shopify · Stripe · HubSpot · Salesforce · GA4'),
         ),
         e('button', {
           onClick:()=>{ setAdding(a=>!a); setUrl(''); setSrcId(''); setTestResult(null); },
@@ -6163,6 +6776,55 @@ function SourcesView({workspace, addToast}) {
           testResult==='ok' && e('span', {style:{fontSize:12, color:'#22c55e'}}, '✓ Connected'),
           testResult && testResult!=='ok' && e('span', {style:{fontSize:12, color:'#ef4444', maxWidth:340}}, '✕ '+testResult),
         ),
+      ),
+    ),
+
+    // ── SaaS & API connectors ──────────────────────────────────────────
+    e('div', {style:{...card, marginTop:16}},
+      e('div', {style:{fontSize:14, fontWeight:600, color:'#e8eaf0', marginBottom:4}}, 'SaaS & API Integrations'),
+      e('div', {style:{fontSize:12, color:'#4a5068', marginBottom:14}},
+        'Connect to business platforms. Data syncs into DuckDB for SQL querying.'),
+      e('div', {style:{display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(150px,1fr))', gap:8}},
+        [
+          {id:'shopify', letter:'S', name:'Shopify', color:'#96bf48', scheme:'shopify://', placeholder:'shopify://store.myshopify.com?api_key=shpat_xxx'},
+          {id:'salesforce', letter:'SF', name:'Salesforce', color:'#00A1E0', scheme:'salesforce://', placeholder:'salesforce://instance.salesforce.com?access_token=xxx'},
+          {id:'stripe', letter:'St', name:'Stripe', color:'#635BFF', scheme:'stripe://', placeholder:'stripe://?api_key=sk_live_xxx'},
+          {id:'hubspot', letter:'HS', name:'HubSpot', color:'#FF7A59', scheme:'hubspot://', placeholder:'hubspot://?api_key=pat-xxx'},
+          {id:'ga4', letter:'GA', name:'Google Analytics', color:'#F9AB00', scheme:'ga4://', placeholder:'ga4://property_id?access_token=xxx'},
+          {id:'airbyte', letter:'Ab', name:'Airbyte', color:'#615EFF', scheme:'airbyte://', placeholder:'airbyte://localhost:8000?source=source-name'},
+          {id:'bigquery', letter:'BQ', name:'BigQuery', color:'#4285F4', scheme:'bigquery://', placeholder:'bigquery://project-id/dataset'},
+          {id:'snowflake', letter:'SF', name:'Snowflake', color:'#29B5E8', scheme:'snowflake://', placeholder:'snowflake://user:pass@account/db/schema?warehouse=WH'},
+          {id:'square', letter:'Sq', name:'Square', color:'#3E4348', scheme:'square://', placeholder:'square://?access_token=xxx', soon:true},
+          {id:'xero', letter:'Xo', name:'Xero', color:'#13B5EA', scheme:'xero://', placeholder:'xero://?client_id=xxx', soon:true},
+        ].map(s => e('button', {
+          key:s.id,
+          disabled: s.soon,
+          onClick:()=>{
+            if (!s.soon) {
+              setAdding(true);
+              setUrl(s.placeholder);
+              setSrcId(s.id + '_' + (wsId?.slice(-4) || 'src'));
+            }
+          },
+          style:{
+            display:'flex', flexDirection:'column', alignItems:'center', gap:6,
+            padding:'14px 8px', borderRadius:10, cursor: s.soon ? 'default' : 'pointer',
+            background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.08)',
+            color: s.soon ? '#4a5068' : '#e8eaf0', fontSize:12, fontWeight:500,
+            opacity: s.soon ? 0.5 : 1, transition:'border-color 150ms, background 150ms',
+          },
+          onMouseOver: ev => { if(!s.soon) { ev.currentTarget.style.borderColor=s.color+'60'; ev.currentTarget.style.background=s.color+'10'; }},
+          onMouseOut: ev => { ev.currentTarget.style.borderColor='rgba(255,255,255,0.08)'; ev.currentTarget.style.background='rgba(255,255,255,0.03)'; },
+        },
+          e('div', {style:{
+            width:36, height:36, borderRadius:8, display:'flex', alignItems:'center', justifyContent:'center',
+            background:s.color+'20', border:'1px solid '+s.color+'40',
+            fontSize:13, fontWeight:700, color:s.color, letterSpacing:'-0.02em',
+            fontFamily:'var(--font-ui)',
+          }}, s.letter),
+          e('span', {style:{fontSize:11, marginTop:2}}, s.name),
+          s.soon && e('span', {style:{fontSize:9, color:'#f59e0b', marginTop:-2}}, 'soon'),
+        )),
       ),
     ),
 
@@ -6202,7 +6864,17 @@ function SourcesView({workspace, addToast}) {
    SETUP CHAT — conversational workspace creation via Setup Agent
    ═══════════════════════════════════════════════════════════════════════════ */
 function SetupChat({workspace, onReady, onBack, user, hasLlmKey, onLlmKeyAdded}) {
-  const [messages, setMessages] = useState([]);
+  const _setupKey = 'ora_setup_chat_' + (workspace?.workspace_id || 'default');
+  const [messages, _setMessages] = useState(() => {
+    try { const s = localStorage.getItem(_setupKey); return s ? JSON.parse(s) : []; } catch(e) { return []; }
+  });
+  const setMessages = (updater) => {
+    _setMessages(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      try { localStorage.setItem(_setupKey, JSON.stringify(next.slice(-30))); } catch(e) {}
+      return next;
+    });
+  };
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [sources, setSources] = useState([]);
@@ -6225,6 +6897,23 @@ function SetupChat({workspace, onReady, onBack, user, hasLlmKey, onLlmKeyAdded})
     () => localStorage.getItem(_keyFlagKey) === '1'
   );
 
+  // Simulate text streaming for any static message (typewriter effect)
+  function simulateStream(text) {
+    let i = 0;
+    setMessages([{role:'agent', text:'', streaming: true}]);
+    setLoading(true);
+    const timer = setInterval(() => {
+      i += 1 + Math.floor(Math.random() * 2); // 1-2 chars per tick
+      if (i >= text.length) {
+        clearInterval(timer);
+        setMessages([{role:'agent', text, streaming: false}]);
+        setLoading(false);
+        return;
+      }
+      setMessages([{role:'agent', text: text.slice(0, i), streaming: true}]);
+    }, 18);
+  }
+
   // Stream the LLM greeting — called on mount (if key exists) or after key saved
   function streamGreeting() {
     const firstName = (user?.display_name || user?.email?.split('@')[0] || 'there').split(' ')[0];
@@ -6240,8 +6929,7 @@ function SetupChat({workspace, onReady, onBack, user, hasLlmKey, onLlmKeyAdded})
       body: JSON.stringify({user_name: firstName}),
     }).then(resp => {
       if (!resp.ok) {
-        setLoading(false);
-        setMessages([{role:'agent', text: firstName + ' — what data are we working with today?'}]);
+        simulateStream(firstName + ' — what data are we working with today?');
         return;
       }
       const reader = resp.body.getReader();
@@ -6290,9 +6978,9 @@ function SetupChat({workspace, onReady, onBack, user, hasLlmKey, onLlmKeyAdded})
       setGreetingTriggered(true);
       streamGreeting();
     } else if (hasLlmKey !== null && !keySetupDone && !greetingTriggered) {
-      // Key setup required (either no server key, or user hasn't gone through setup yet)
+      // Key setup required — stream the greeting with typewriter effect
       const firstName = (user?.display_name || user?.email?.split('@')[0] || 'there').split(' ')[0];
-      setMessages([{role:'agent', text: 'Hi ' + firstName + '! To get started, add your API key below and I\'ll help you connect your data.', streaming: false}]);
+      simulateStream('Hi ' + firstName + '! To get started, add your API key below and I\'ll help you connect your data.');
     }
   }, [hasLlmKey, keySetupDone]);
 
@@ -7917,7 +8605,7 @@ function App() {
     );
   }
 
-  // No workspace selected → picker
+  // No workspace selected → show picker (handles ?ws= auto-select and ?create=1)
   if (!workspace) {
     return e('div', null,
       e(WorkspacePicker, {

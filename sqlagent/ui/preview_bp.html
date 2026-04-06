@@ -582,7 +582,7 @@ result = db.<span class="code-fn">query</span>(<span class="code-str">"Show me t
 
   <div class="flow-connector" id="fc-ora" onclick="toggleFlowPop('fc-ora')">
     <div class="flow-pop">
-      <div class="flow-pop-title">Query Received</div>User's natural language query arrives — Ora orchestrates the full pipeline: anaphora resolution, intent classification, entity alias mapping, data coverage analysis, and cross-source planning before routing to agents.</div>
+      <div class="flow-pop-title">Query Received</div>User's natural language query arrives — Ora runs the full ReAct loop: decompose, semantic resolution with alias pre-check and pattern memory, schema context, SQL generation with self-correction, validation, and semantic layer evolution.</div>
     <div class="flow-line"></div>
     <div class="flow-node" id="fn-ora"></div>
     <div class="flow-label">query received</div>
@@ -596,26 +596,26 @@ result = db.<span class="code-fn">query</span>(<span class="code-str">"Show me t
       <div class="card-icon" style="color:#4f7df9">◈</div>
       <div class="card-title">
         <div class="card-title-main" style="color:#4f7df9">Ora</div>
-        <div class="card-title-sub" id="ora-typewriter-sub">query orchestrator &amp; reasoning agent</div>
+        <div class="card-title-sub" id="ora-typewriter-sub">ReAct orchestrator · decompose → resolve → execute → learn</div>
       </div>
       <div class="card-header-line"></div>
     </div>
     <div class="click-hint">↑ click any node to see live output</div>
     <div class="pipeline">
-      <div class="stage" id="st-oi" onclick="toggleStage('st-oi')"><div class="stage-num">STAGE 1</div><div class="stage-name">Intent Analysis</div><div class="stage-sub">anaphora · scope · ambiguity</div><div class="stream-out"><div class="stream-body" id="so-oi"></div></div></div>
+      <div class="stage" id="st-oi" onclick="toggleStage('st-oi')"><div class="stage-num">PHASE 1</div><div class="stage-name">Decompose</div><div class="stage-sub">intent · entities · query structure</div><div class="stream-out"><div class="stream-body" id="so-oi"></div></div></div>
       <div class="pipe-arrow"></div>
-      <div class="stage" id="st-oe" onclick="toggleStage('st-oe')"><div class="stage-num">STAGE 2</div><div class="stage-name">Entity Resolution</div><div class="stage-sub">alias mapping · ISO codes</div><div class="stream-out"><div class="stream-body" id="so-oe"></div></div></div>
+      <div class="stage" id="st-oe" onclick="toggleStage('st-oe')"><div class="stage-num">PHASE 2</div><div class="stage-name">Semantic Resolve</div><div class="stage-sub">alias pre-check · patterns · failure reflection</div><div class="stream-out"><div class="stream-body" id="so-oe"></div></div></div>
       <div class="pipe-arrow"></div>
-      <div class="stage" id="st-oc" onclick="toggleStage('st-oc')"><div class="stage-num">STAGE 3</div><div class="stage-name">Data Coverage</div><div class="stage-sub">source scan · gap detection</div><div class="stream-out"><div class="stream-body" id="so-oc"></div></div></div>
+      <div class="stage" id="st-oc" onclick="toggleStage('st-oc')"><div class="stage-num">PHASE 3</div><div class="stage-name">Schema + SQL</div><div class="stage-sub">CHESS LSH · 3 generators · self-correct</div><div class="stream-out"><div class="stream-body" id="so-oc"></div></div></div>
       <div class="pipe-arrow"></div>
-      <div class="stage result" id="st-op" onclick="toggleStage('st-op')"><div class="stage-num">OUTPUT</div><div class="stage-name">Execution Plan</div><div class="stage-sub">route · decompose · schedule</div><div class="stream-out"><div class="stream-body" id="so-op"></div></div></div>
+      <div class="stage result" id="st-op" onclick="toggleStage('st-op')"><div class="stage-num">PHASE 4</div><div class="stage-name">Validate &amp; Learn</div><div class="stage-sub">result check · evolve semantic layer</div><div class="stream-out"><div class="stream-body" id="so-op"></div></div></div>
     </div>
     <div class="badges">
-      <span class="badge" style="background:rgba(79,125,249,.10);border-color:rgba(79,125,249,.30)"><span class="bdot" style="background:#4f7df9"></span>orchestrator<span class="btip">routes queries across agents<br>owns the full pipeline</span></span>
-      <span class="badge b-lg"><span class="bdot"></span>LangGraph<span class="btip">StateGraph orchestration<br>conditional routing edges</span></span>
+      <span class="badge" style="background:rgba(79,125,249,.10);border-color:rgba(79,125,249,.30)"><span class="bdot" style="background:#4f7df9"></span>orchestrator<span class="btip">ReAct loop — one node does all thinking<br>ora → respond → learn</span></span>
+      <span class="badge b-lg"><span class="bdot"></span>LangGraph<span class="btip">3-node StateGraph<br>ora → respond → learn</span></span>
       <span class="badge b-lt"><span class="bdot"></span>LiteLLM<span class="btip">all LLM providers via one adapter<br>GPT-4o · Claude · Ollama</span></span>
-      <span class="badge b-qd"><span class="bdot"></span>Qdrant<span class="btip">semantic cache cosine ≥ 0.85<br>skips LLM on repeat queries</span></span>
-      <span class="badge" style="background:rgba(79,125,249,.07);border-color:rgba(79,125,249,.20)"><span class="bdot" style="background:#4f7df9"></span>SemanticMemory<span class="btip">SQLite entity alias store<br>learns from every query</span></span>
+      <span class="badge" style="background:rgba(79,125,249,.07);border-color:rgba(79,125,249,.20)"><span class="bdot" style="background:#4f7df9"></span>SemanticLayer<span class="btip">aliases · patterns · enrichments<br>resolution log · failure reflection</span></span>
+      <span class="badge b-ot"><span class="bdot"></span>OTel<span class="btip">per-phase tracing<br>Prometheus metrics</span></span>
     </div>
   </div>
 
@@ -661,7 +661,7 @@ result = db.<span class="code-fn">query</span>(<span class="code-str">"Show me t
 
   <div class="flow-connector" id="fc-sem" onclick="toggleFlowPop('fc-sem')">
     <div class="flow-pop">
-      <div class="flow-pop-title">Semantic Resolution</div>SemanticReasoningAgent fires once per query — reads schema + sample values → maps user abbreviations/codes to actual stored values → injects SQL fragments. Qdrant-backed cosine cache (≥0.85) skips the LLM on repeat queries.</div>
+      <div class="flow-pop-title">Semantic Resolution</div>Multi-pass iterative reasoning: pre-checks high-confidence aliases (≥0.93), loads known patterns and column enrichments, avoids past failures, then calls LLM only for truly unknown entities. Schema Agent searches DB for unresolved terms.</div>
     <div class="flow-line"></div>
     <div class="flow-node" id="fn-sem"></div>
     <div class="flow-label">semantic resolution</div>
@@ -675,30 +675,31 @@ result = db.<span class="code-fn">query</span>(<span class="code-str">"Show me t
       <div class="card-icon">◎</div>
       <div class="card-title">
         <div class="card-title-main">Semantic Agent</div>
-        <div class="card-title-sub">entity resolution · abbreviation mapping · SQL fragment injection</div>
+        <div class="card-title-sub">iterative reasoning · alias learning · pattern memory · failure reflection</div>
       </div>
       <div class="card-header-line"></div>
     </div>
     <div class="pipeline">
-      <div class="stage" id="st-sc1" onclick="toggleStage('st-sc1')"><div class="stage-num">STAGE 1</div><div class="stage-name">Cache Lookup</div><div class="stage-sub">Qdrant cosine ≥ 0.85</div><div class="stream-out"><div class="stream-body" id="so-sc1"></div></div></div>
+      <div class="stage" id="st-sc1" onclick="toggleStage('st-sc1')"><div class="stage-num">PASS 1</div><div class="stage-name">Pre-Check</div><div class="stage-sub">high-confidence aliases · known patterns · past failures</div><div class="stream-out"><div class="stream-body" id="so-sc1"></div></div></div>
       <div class="pipe-arrow"></div>
-      <div class="stage" id="st-em" onclick="toggleStage('st-em')"><div class="stage-num">STAGE 2</div><div class="stage-name">Entity Mapping</div><div class="stage-sub">abbrev → stored code</div><div class="stream-out"><div class="stream-body" id="so-em"></div></div></div>
+      <div class="stage" id="st-em" onclick="toggleStage('st-em')"><div class="stage-num">PASS 2</div><div class="stage-name">LLM Reasoning</div><div class="stage-sub">entity mapping · column meanings · enrichments</div><div class="stream-out"><div class="stream-body" id="so-em"></div></div></div>
       <div class="pipe-arrow"></div>
-      <div class="stage" id="st-syn" onclick="toggleStage('st-syn')"><div class="stage-num">STAGE 3</div><div class="stage-name">Synonym Resolution</div><div class="stage-sub">concept → column name</div><div class="stream-out"><div class="stream-body" id="so-syn"></div></div></div>
+      <div class="stage" id="st-syn" onclick="toggleStage('st-syn')"><div class="stage-num">PASS 3</div><div class="stage-name">Schema Search</div><div class="stage-sub">targeted DB lookup for unresolved entities</div><div class="stream-out"><div class="stream-body" id="so-syn"></div></div></div>
       <div class="pipe-arrow"></div>
-      <div class="stage result" id="st-sf" onclick="toggleStage('st-sf')"><div class="stage-num">OUTPUT</div><div class="stage-name">SQL Hints</div><div class="stage-sub">WHERE fragments · filters</div><div class="stream-out"><div class="stream-body" id="so-sf"></div></div></div>
+      <div class="stage result" id="st-sf" onclick="toggleStage('st-sf')"><div class="stage-num">OUTPUT</div><div class="stage-name">Resolution</div><div class="stage-sub">filters · confidence · log entry</div><div class="stream-out"><div class="stream-body" id="so-sf"></div></div></div>
     </div>
     <div class="badges">
-      <span class="badge b-qd"><span class="bdot"></span>Qdrant<span class="btip">cosine vector cache<br>SemanticResolution objects</span></span>
-      <span class="badge b-fe"><span class="bdot"></span>fastembed<span class="btip">BAAI/bge-small-en-v1.5<br>query + source_id embedding</span></span>
-      <span class="badge b-lg"><span class="bdot"></span>LangGraph<span class="btip">semantic_resolve node<br>wired between understand → prune</span></span>
-      <span class="badge b-llm"><span class="bdot"></span>LiteLLM<span class="btip">one LLM call on cache miss<br>reads schema + sample values</span></span>
+      <span class="badge b-llm"><span class="bdot"></span>LiteLLM<span class="btip">multi-pass reasoning<br>only calls LLM for unknowns</span></span>
+      <span class="badge b-sa"><span class="bdot"></span>aliases.json<span class="btip">learned term→value mappings<br>confidence ≥ 0.93 = deterministic</span></span>
+      <span class="badge b-sg"><span class="bdot"></span>patterns.json<span class="btip">common filter combos<br>auto-injected after 3+ uses</span></span>
+      <span class="badge b-fe"><span class="bdot"></span>enrichments<span class="btip">column usage context<br>from past successful queries</span></span>
+      <span class="badge b-dk"><span class="bdot"></span>resolution_log<span class="btip">tracks every resolution<br>failures become anti-patterns</span></span>
     </div>
   </div>
 
   <div class="flow-connector" id="fc-orch" onclick="toggleFlowPop('fc-orch')">
     <div class="flow-pop">
-      <div class="flow-pop-title">Query Orchestration</div>LangGraph StateGraph routes NL query → CHESS schema pruning → parallel SQL generation → ReFoRCE 3-stage self-correction → result.</div>
+      <div class="flow-pop-title">SQL Execution</div>Ora builds the query spec and dispatches to SQL Agent: CHESS schema pruning → parallel SQL generation (3 candidates) → pairwise selection → ReFoRCE 3-stage self-correction → validated result.</div>
     <div class="flow-line"></div>
     <div class="flow-node" id="fn-orch"></div>
     <div class="flow-label">query orchestration</div>
@@ -711,8 +712,8 @@ result = db.<span class="code-fn">query</span>(<span class="code-str">"Show me t
     <div class="card-header">
       <div class="card-icon">⬡</div>
       <div class="card-title">
-        <div class="card-title-main">AgentSQL Orchestration</div>
-        <div class="card-title-sub">LangGraph pipeline · self-correcting · CHESS + ReFoRCE</div>
+        <div class="card-title-main">SQL Agent</div>
+        <div class="card-title-sub">3 generators · pairwise selection · ReFoRCE self-correction</div>
       </div>
       <div class="card-header-line"></div>
     </div>
@@ -736,7 +737,7 @@ result = db.<span class="code-fn">query</span>(<span class="code-str">"Show me t
 
   <div class="flow-connector" id="fc-agents" onclick="toggleFlowPop('fc-agents')">
     <div class="flow-pop">
-      <div class="flow-pop-title">Specialist Agents</div>Decompose cross-source queries → fan out to each DB → DuckDB in-memory synthesis → NL response generation → LearningLoop trains on feedback.</div>
+      <div class="flow-pop-title">Specialist Agents</div>Decompose cross-source queries → fan out to each DB → DuckDB in-memory synthesis → NL response generation → LearnAgent evolves aliases, patterns, enrichments, and records failures for reflection.</div>
     <div class="flow-line"></div>
     <div class="flow-node" id="fn-agents"></div>
     <div class="flow-label">specialist agents</div>
@@ -758,7 +759,7 @@ result = db.<span class="code-fn">query</span>(<span class="code-str">"Show me t
       <div class="agent-card" id="ag-da" onclick="toggleAgent('ag-da')"><div class="stage-num">AGENT</div><div class="agent-name">DecomposeAgent</div><div class="agent-sub">cross-source split · DAG planner</div><div class="stream-out"><div class="stream-body" id="so-da"></div></div></div>
       <div class="agent-card" id="ag-sa" onclick="toggleAgent('ag-sa')"><div class="stage-num">AGENT</div><div class="agent-name">SynthesisAgent</div><div class="agent-sub">DuckDB JOIN · in-memory merge</div><div class="stream-out"><div class="stream-body" id="so-sa"></div></div></div>
       <div class="agent-card" id="ag-rg" onclick="toggleAgent('ag-rg')"><div class="stage-num">AGENT</div><div class="agent-name">ResponseGenerator</div><div class="agent-sub">NL summary · chart · follow-ups</div><div class="stream-out"><div class="stream-body" id="so-rg"></div></div></div>
-      <div class="agent-card" id="ag-ll" onclick="toggleAgent('ag-ll')"><div class="stage-num">AGENT</div><div class="agent-name">LearningLoop</div><div class="agent-sub">feedback → training pairs</div><div class="stream-out"><div class="stream-body" id="so-ll"></div></div></div>
+      <div class="agent-card" id="ag-ll" onclick="toggleAgent('ag-ll')"><div class="stage-num">AGENT</div><div class="agent-name">LearnAgent</div><div class="agent-sub">evolve aliases · patterns · enrichments · failure log</div><div class="stream-out"><div class="stream-body" id="so-ll"></div></div></div>
     </div>
     <div class="badges">
       <span class="badge b-dk"><span class="bdot"></span>DuckDB<span class="btip">in-memory cross-source JOIN<br>data never leaves environment</span></span>
@@ -884,18 +885,18 @@ window.addEventListener('resize',()=>{ fp=null; });
 
 /* ── Streaming text ─────────────────────────────────────── */
 const STREAM_TEXT={
-  'so-oi':['↳ parsing: "how do MY, VNT & PHP perform"','↳ anaphora: none detected','↳ scope: multi-entity comparison · temporal','↳ ambiguity: "perform" → GDP/HDI/CPI?','↳ intent classified: comparative time-series ✓'],
-  'so-oe':['↳ entities extracted: [MY, VNT, PHP]','↳ MY → Malaysia  (ISO2 exact match)','↳ VNT → Vietnam  (_COUNTRY_CANONICAL)','↳ PHP → Philippines  (_COUNTRY_CANONICAL)','↳ aliases saved to SemanticMemory ✓'],
-  'so-oc':['↳ target sources: [asean_wb, world_data]','↳ scanning asean_wb for Malaysia...','↳ Malaysia: 284 rows ✓','↳ Vietnam: 247 rows ✓','↳ Philippines: 193 rows ✓  coverage: 3/3 ✓'],
-  'so-op':['↳ routing: single-source (asean_wb)','↳ time decomposition: 5-year intervals','↳ generators: fewshot + plan (parallel)','↳ budget: 4096 tokens · $0.008 ceiling','↳ ExecutionPlan dispatched to pipeline ✓'],
+  'so-oi':['↳ decomposing: "how do MY, VNT & PHP perform"','↳ intent: comparative time-series','↳ entities: [MY, VNT, PHP]','↳ structure: single-source, 3 entities','↳ DecompositionPlan built ✓'],
+  'so-oe':['↳ alias pre-check (≥0.93 confidence):','↳   MY → MYS  (conf: 0.96) ✓ deterministic','↳   VNT → VNM  (conf: 0.94) ✓ deterministic','↳ pattern auto-inject: sex=Total (47× confirmed)','↳ LLM call skipped for 2/3 entities ✓'],
+  'so-oc':['↳ CHESS LSH: 87 cols → 8 relevant (91% pruned)','↳ 3 generators running in parallel...','↳ fewshot: SELECT iso_code, obs_value...','↳ self-correction: 0 rounds needed','↳ 10 rows returned · 1.2s ✓'],
+  'so-op':['↳ result validated: 10 rows, non-empty ✓','↳ evolving semantic layer...','↳ aliases strengthened: MY→MYS +3% (0.99)','↳ pattern saved: sex=Total (48× now)','↳ resolution logged to resolution_log.json ✓'],
   'so-di':['↳ connecting to postgresql://...','↳ reflecting 12 tables, 87 columns','↳ 8 FK relationships detected','↳ cardinality sampled (row counts)','↳ SchemaSnapshot serialized ✓'],
   'so-kg':['↳ building knowledge graph...','↳ 12 table nodes · 87 col nodes','↳ 8 FK edges + 6 semantic edges','↳ 3 entity-group layers formed','↳ KnowledgeGraph ready ✓'],
   'so-tp':['↳ pass 1 exact name match: 5 links','↳ pass 2 semantic (embed): 2 links','↳ pass 3 statistical (corr): 1 link','↳ Merkle hash: a3f7b2c9e1d4...','↳ topology finalized ✓'],
   'so-vi':['↳ serializing to M-Schema format','↳ 87 cols → 1,240 tokens (3.8× saving)','↳ embedding 247 NL→SQL pairs...','↳ indexed to Qdrant in-process','↳ VectorIndex ready ✓'],
-  'so-sc1':['↳ embed: "top countries by GDP" [src:asean]','↳ searching Qdrant semantic_cache...','↳ top match cosine: 0.71 < 0.85','↳ cache MISS → calling LLM','↳ SemanticReasoningAgent starting ✓'],
-  'so-em':['↳ user terms: ["MYY", "PHN", "VNT"]','↳ sample values: MYS, PHL, VNM, SGP...','↳ MYY → MYS  (closest match)','↳ PHN → PHL  (closest match)','↳ VNT → VNM  (closest match) ✓'],
-  'so-syn':['↳ concept "unemployment" in query','↳ scanning columns: obs_value, rate,','   indicator_code, value...','↳ obs_value matches indicator=UE','↳ synonym mapped: unemployment → obs_value ✓'],
-  'so-sf':['↳ entity_map: {MYY:MYS, PHN:PHL, VNT:VNM}','↳ filter: sex=\'Total\' (avoid double-count)','↳ fragment: iso_code IN (\'MYS\',\'PHL\',\'VNM\')','↳ resolution saved to Qdrant cache','↳ SemanticResolution injected ✓'],
+  'so-sc1':['↳ loading aliases (256 learned mappings)...','↳ pre-check: "MY" conf 0.96 → MYS ✓ skip LLM','↳ loading patterns.json (14 confirmed)...','↳ auto-inject: sex=Total (47×), age=15+ (42×)','↳ checking resolution_log for past failures...'],
+  'so-em':['↳ Pass 2: LLM reasoning for unknowns only','↳ schema context: 8 tables, column meanings','↳ enrichments: obs_value used 47× for rates','↳ "PHP" not in pre-resolved → LLM resolves','↳ PHP → PHL  (from sample values) ✓'],
+  'so-syn':['↳ Pass 3: Schema Agent search...','↳ unresolved: "VNT" (conf 0.71 < 0.93)','↳ _schema_search: scanning text columns...','↳ found: VNM in iso_code (exact LIKE match)','↳ VNT → VNM  (Schema Agent confirmed) ✓'],
+  'so-sf':['↳ Pass 4: merge all findings','↳ filters: iso_code IN (MYS, PHL, VNM)','↳ auto-filters: sex=Total, age=15+','↳ confidence: 0.92 → saving to aliases','↳ resolution_log entry saved ✓'],
   'so-sl':['↳ query: "revenue per employee"','↳ LSH candidates: 87 columns','↳ top-8: stores.name, sales.total,','   staff.emp_id, sales.store_id...','↳ schema context: 91% pruned ✓'],
   'so-sg':['↳ [fewshot]   SELECT s.store_name,','   SUM(sl.total)/COUNT(e.id) AS rpe','↳ [plan]      decompose → join → agg','↳ [decompose] 2 sub-queries + JOIN','↳ pairwise rank → fewshot wins ✓'],
   'so-sc':['↳ layer 1 syntax: sqlglot parse OK','↳ layer 2 schema: all cols verified','↳ layer 3 execute: 10 rows returned','↳ layer 4 semantic: coherent ✓','↳ 0 corrections needed ✓'],
@@ -903,7 +904,7 @@ const STREAM_TEXT={
   'so-da':['↳ cross-source query detected','↳ plan: sales (postgres) + staff (csv)','↳ sub-A: SELECT store_id, SUM(total)','↳ sub-B: SELECT store_id, headcount','↳ DecompositionPlan DAG built ✓'],
   'so-sa':['↳ sub-A result: 284 rows loaded','↳ sub-B result: 284 rows loaded','↳ DuckDB: CREATE TABLE tmp_a...','↳ JOIN on store_id → 284 rows','↳ synthesis complete in 40ms ✓'],
   'so-rg':['↳ result validated (non-empty, sane)','↳ generating NL summary via LLM...','↳ "Lotus Korat leads with $2,284','   revenue per employee, followed','   by Lotus Chiang Mai ($2,207)" ✓'],
-  'so-ll':['↳ thumbs-up received for QRY-48','↳ NL+SQL pair extracted','↳ embedding via fastembed...','↳ stored in Qdrant collection','↳ training pairs: 247 → 248 ✓'],
+  'so-ll':['↳ evolve_semantic_layer triggered','↳ aliases: MY→MYS strengthened (0.96→0.99)','↳ patterns: sex=Total count 47→48','↳ enrichments: obs_value used for rates (48×)','↳ resolution_log: 3 filters logged ✓'],
 };
 /* ── Flow connector popover toggle ──────────────────────── */
 function toggleFlowPop(id) {
@@ -967,16 +968,16 @@ function toggleAgent(id){
   const el = document.getElementById('ora-typewriter-sub');
   if (!el) return;
   const PHRASES = [
-    'anaphora resolution',
-    'intent classification',
-    'entity alias mapping',
-    'data coverage analysis',
-    'semantic resolution',
-    'query decomposition',
-    'cross-source planning',
+    'alias pre-check',
+    'pattern auto-injection',
+    'iterative reasoning',
+    'failure reflection',
+    'schema search',
+    'semantic layer evolution',
+    'cross-source synthesis',
   ];
   let pi = 0, ci = 0, phase = 'typing';
-  const PREFIX = 'query orchestrator · ';
+  const PREFIX = 'ReAct orchestrator · ';
   function tick() {
     const word = PHRASES[pi];
     if (phase === 'typing') {

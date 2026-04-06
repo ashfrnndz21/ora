@@ -209,6 +209,13 @@ def make_rewrite_sql_node(services: Any):
             f"FAILURE STAGE: {state.get('failed_stage', 'generation')}\n"
             f"USER'S NOTE: {state.get('correction_note', '(none provided)')}\n\n"
             f"DATABASE SCHEMA:\n{state.get('schema_context', '(none)')}\n\n"
+            "CRITICAL SQL RULES:\n"
+            "- CTEs (WITH ... AS) are scoped to their enclosing WITH block. You CANNOT "
+            "reference a CTE name as a standalone table in a separate SELECT or UNION ALL.\n"
+            "- If the original SQL uses CTEs, your rewritten SQL MUST include the full "
+            "WITH block. Do NOT split CTEs across UNION ALL branches.\n"
+            "- If you need data from a CTE in multiple places, either include it in a "
+            "single WITH block or inline the subquery.\n\n"
             "Return JSON with these exact keys:\n"
             '{"rewritten_sql": "...", '
             '"what_changed": "One sentence: exactly what SQL change fixes the problem.", '
