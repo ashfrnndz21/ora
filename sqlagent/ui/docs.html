@@ -3,1003 +3,303 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Ora — Documentation</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<title>Ora v2.0 — Agentic Intelligence Release</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-:root {
-  --bg:          #fafaf8;
-  --bg-sidebar:  #f4f2ef;
-  --border:      #e0dbd2;
-  --border-light:#ede9e2;
-  --text:        #1a1a18;
-  --text-muted:  #6b6660;
-  --text-faint:  #a09890;
-  --blue:        #4a7fc0;
-  --blue-bg:     rgba(74,127,192,0.07);
-  --blue-border: rgba(74,127,192,0.22);
-  --amber:       #c47a1a;
-  --amber-bg:    rgba(196,122,26,0.08);
-  --amber-border:rgba(196,122,26,0.22);
-  --green:       #2d7d52;
-  --green-bg:    rgba(45,125,82,0.07);
-  --green-border:rgba(45,125,82,0.22);
-  --purple:      #6d4faa;
-  --purple-bg:   rgba(109,79,170,0.07);
-  --purple-border:rgba(109,79,170,0.22);
-  --red:         #c04a4a;
-  --red-bg:      rgba(192,74,74,0.07);
-  --code-bg:     #f0ece4;
-  --code-border: #d6cfc5;
-
-  --sidebar-w: 260px;
-  --header-h:  54px;
-  --content-max: 760px;
-  --font-ui:   'Inter', -apple-system, sans-serif;
-  --font-mono: 'JetBrains Mono', 'SF Mono', monospace;
-  --radius:    6px;
-}
-
-html { scroll-behavior: smooth; }
-
 body {
-  font-family: var(--font-ui);
-  font-size: 15px;
-  line-height: 1.7;
-  color: var(--text);
-  background: var(--bg);
+  background: #fafaf8;
+  font-family: 'Inter', -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
+  color: #1a1a2e;
+  line-height: 1.7;
 }
-
-/* ── TOP HEADER ─────────────────────────────────────────────────────────── */
-header {
-  position: fixed; top: 0; left: 0; right: 0; height: var(--header-h);
-  background: rgba(250,250,248,.94);
-  border-bottom: 1px solid var(--border);
-  backdrop-filter: blur(8px);
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 0 24px;
-  z-index: 100;
-}
-
-.header-left {
-  display: flex; align-items: center; gap: 20px;
-}
-
-.logo-link {
-  display: flex; align-items: center; gap: 10px;
-  text-decoration: none; color: inherit;
-}
-
-.logo-wordmark {
-  font-size: 13px; font-weight: 100; letter-spacing: 0.45em;
-  color: #0e0e0e; text-transform: uppercase;
-  font-family: var(--font-ui);
-}
-
-.logo-sep { color: var(--border); font-size: 18px; }
-
-.header-label {
-  font-size: 13px; color: var(--text-muted); font-weight: 400;
-}
-
-.header-right { display: flex; align-items: center; gap: 8px; }
-
-.header-badge {
-  font-size: 10px; font-weight: 500; padding: 2px 9px; border-radius: 100px;
-  border: 1px solid var(--border); color: var(--text-muted);
-  font-family: var(--font-ui); letter-spacing: 0.01em;
-  text-decoration: none;
-}
-
-.header-badge:hover { background: var(--border-light); color: var(--text); }
-
-.header-btn {
-  font-size: 11px; font-weight: 500; padding: 5px 14px;
-  background: #1a1a18; color: #fafaf8; border: none;
-  border-radius: var(--radius); cursor: pointer; font-family: var(--font-ui);
-  text-decoration: none;
-}
-
-.search-box {
-  display: flex; align-items: center; gap: 8px;
-  background: #fff; border: 1px solid var(--border);
-  border-radius: var(--radius); padding: 5px 12px;
-  font-size: 12px; color: var(--text-faint); cursor: pointer;
-  width: 180px;
-}
-
-/* ── LAYOUT ─────────────────────────────────────────────────────────────── */
-.layout {
-  display: flex;
-  margin-top: var(--header-h);
-  min-height: calc(100vh - var(--header-h));
-}
-
-/* ── SIDEBAR ─────────────────────────────────────────────────────────────── */
-.sidebar {
-  width: var(--sidebar-w);
-  flex-shrink: 0;
-  position: fixed;
-  top: var(--header-h);
-  bottom: 0;
-  overflow-y: auto;
-  background: var(--bg-sidebar);
-  border-right: 1px solid var(--border);
-  padding: 24px 0 48px;
-}
-
-.sidebar::-webkit-scrollbar { width: 4px; }
-.sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
-
-.sidebar-section { margin-bottom: 24px; }
-
-.sidebar-section-label {
-  font-size: 9.5px; font-weight: 600; letter-spacing: 0.13em;
-  text-transform: uppercase; color: var(--text-faint);
-  padding: 0 20px; margin-bottom: 6px;
-}
-
-.sidebar-link {
-  display: block; padding: 5px 20px;
-  font-size: 13.5px; color: var(--text-muted);
-  text-decoration: none;
-  border-left: 2px solid transparent;
-  transition: color 120ms, border-color 120ms, background 120ms;
-  line-height: 1.5;
-}
-
-.sidebar-link:hover {
-  color: var(--text);
-  background: rgba(0,0,0,0.03);
-}
-
-.sidebar-link.active {
-  color: var(--blue);
-  border-left-color: var(--blue);
-  background: var(--blue-bg);
-  font-weight: 500;
-}
-
-.sidebar-link .badge {
-  display: inline-block; margin-left: 6px; font-size: 9px; font-weight: 600;
-  padding: 1px 5px; border-radius: 3px;
-  background: var(--amber-bg); color: var(--amber); border: 1px solid var(--amber-border);
-  font-family: var(--font-mono); vertical-align: middle; letter-spacing: 0.04em;
-}
-
-/* ── CONTENT ─────────────────────────────────────────────────────────────── */
-.content {
-  flex: 1;
-  margin-left: var(--sidebar-w);
-  padding: 48px 40px 80px;
-  max-width: calc(var(--sidebar-w) + var(--content-max) + 80px);
-}
-
-.content-inner { max-width: var(--content-max); }
-
-/* ── TYPOGRAPHY ──────────────────────────────────────────────────────────── */
-.page-title {
-  font-size: 30px; font-weight: 700; color: var(--text);
-  letter-spacing: -0.02em; margin-bottom: 10px; line-height: 1.2;
-}
-
-.page-subtitle {
-  font-size: 16px; color: var(--text-muted); font-weight: 400;
-  margin-bottom: 32px; line-height: 1.6;
-}
-
-.section-anchor { display: block; position: relative; top: -80px; visibility: hidden; }
-
-h2 {
-  font-size: 20px; font-weight: 600; color: var(--text);
-  margin-top: 52px; margin-bottom: 14px; letter-spacing: -0.01em;
-  padding-bottom: 10px; border-bottom: 1px solid var(--border-light);
-}
-
-h3 {
-  font-size: 15px; font-weight: 600; color: var(--text);
-  margin-top: 28px; margin-bottom: 10px;
-}
-
-p { margin-bottom: 14px; color: var(--text-muted); }
-
-strong { color: var(--text); font-weight: 600; }
-
-a { color: var(--blue); text-decoration: none; }
-a:hover { text-decoration: underline; }
-
-ul, ol { padding-left: 22px; margin-bottom: 14px; }
-li { color: var(--text-muted); margin-bottom: 4px; }
-
-hr { border: none; border-top: 1px solid var(--border-light); margin: 36px 0; }
-
-/* ── CODE ────────────────────────────────────────────────────────────────── */
-code {
-  font-family: var(--font-mono); font-size: 12.5px;
-  background: var(--code-bg); border: 1px solid var(--code-border);
-  border-radius: 4px; padding: 1px 6px;
-  color: #6d4faa;
-}
-
-.code-block {
-  background: #f2ede5; border: 1px solid var(--code-border);
-  border-radius: 8px; overflow: hidden; margin: 18px 0;
-  font-family: var(--font-mono); font-size: 13px;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
-}
-
-.code-block-header {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 8px 14px; background: #ede8df;
-  border-bottom: 1px solid var(--code-border);
-  font-size: 10px; color: var(--text-faint); font-family: var(--font-ui);
-  letter-spacing: 0.04em;
-}
-
-.code-block-lang { font-weight: 500; }
-
-.copy-btn {
-  font-size: 10px; padding: 2px 8px; border-radius: 4px;
-  background: rgba(74,127,192,0.1); border: 1px solid rgba(74,127,192,0.2);
-  color: var(--blue); cursor: pointer; font-family: var(--font-ui);
-  transition: background 100ms;
-}
-.copy-btn:hover { background: rgba(74,127,192,0.18); }
-
-.code-block pre {
-  padding: 16px 18px; line-height: 1.75; overflow-x: auto;
-  background: #f5f0e8; color: #44403c;
-}
-
-/* Syntax color tokens */
-.tk-kw { color: #7c3aed; }          /* keyword: import, from, with, as */
-.tk-fn { color: #047857; font-weight:500; } /* function: connect, query, ask */
-.tk-str { color: #92400e; }         /* string */
-.tk-id { color: #1e40af; }          /* identifier: ora, db, result */
-.tk-cm { color: #a09070; font-style:italic; } /* comment */
-.tk-op { color: #78716c; }          /* operator, punctuation */
-.tk-var { color: #9d174d; }         /* variable names in kwargs */
-.tk-ok { color: #047857; }          /* success output */
-.tk-num { color: #c47a1a; }         /* numbers */
-
-/* ── CARDS ────────────────────────────────────────────────────────────────── */
-.card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px,1fr)); gap: 12px; margin: 20px 0; }
-
-.card {
-  background: #fff; border: 1.5px solid var(--border);
-  border-radius: var(--radius); padding: 16px 18px;
-  transition: box-shadow 150ms, transform 150ms;
-}
-.card:hover { box-shadow: 0 2px 12px rgba(0,0,0,0.07); transform: translateY(-1px); }
-
-.card-icon { font-size: 22px; margin-bottom: 10px; }
-.card-title { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 5px; }
-.card-desc { font-size: 12.5px; color: var(--text-muted); line-height: 1.5; margin: 0; }
-
-/* ── CALLOUT ─────────────────────────────────────────────────────────────── */
-.callout {
-  border-radius: var(--radius); padding: 14px 18px; margin: 18px 0;
-  border-left: 3px solid;
-  font-size: 13.5px;
-}
-.callout.info  { background: var(--blue-bg);   border-color: var(--blue);   color: #1a3060; }
-.callout.tip   { background: var(--green-bg);  border-color: var(--green);  color: #143d27; }
-.callout.warn  { background: var(--amber-bg);  border-color: var(--amber);  color: #5a3500; }
-.callout.note  { background: var(--purple-bg); border-color: var(--purple); color: #2e1d56; }
-
-.callout strong { color: inherit; font-weight: 600; }
-
-/* ── TABLE ────────────────────────────────────────────────────────────────── */
-.doc-table {
-  width: 100%; border-collapse: collapse; margin: 18px 0;
-  font-size: 13.5px;
-}
-
-.doc-table th {
-  text-align: left; padding: 8px 12px;
-  background: #f0ece4; border: 1px solid var(--code-border);
-  font-weight: 600; color: var(--text); font-size: 12px;
-  letter-spacing: 0.02em;
-}
-
-.doc-table td {
-  padding: 8px 12px; border: 1px solid var(--border-light);
-  color: var(--text-muted); vertical-align: top;
-}
-
-.doc-table tr:hover td { background: rgba(0,0,0,0.015); }
-
-.pill {
-  display: inline-block; font-size: 10px; font-weight: 500; padding: 1px 7px;
-  border-radius: 100px; font-family: var(--font-ui);
-}
-.pill.blue   { background: var(--blue-bg);   color: var(--blue);   border: 1px solid var(--blue-border); }
-.pill.green  { background: var(--green-bg);  color: var(--green);  border: 1px solid var(--green-border); }
-.pill.amber  { background: var(--amber-bg);  color: var(--amber);  border: 1px solid var(--amber-border); }
-.pill.purple { background: var(--purple-bg); color: var(--purple); border: 1px solid var(--purple-border); }
-
-/* ── STEPS ────────────────────────────────────────────────────────────────── */
-.steps { margin: 20px 0; }
-.step {
-  display: flex; gap: 16px; margin-bottom: 24px;
-  padding-bottom: 24px; border-bottom: 1px dashed var(--border-light);
-}
-.step:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
-.step-num {
-  width: 26px; height: 26px; border-radius: 50%;
-  background: var(--blue-bg); border: 1.5px solid var(--blue-border);
-  display: flex; align-items: center; justify-content: center;
-  font-size: 12px; font-weight: 700; color: var(--blue);
-  flex-shrink: 0; margin-top: 2px;
-}
-.step-body {}
-.step-title { font-weight: 600; color: var(--text); margin-bottom: 6px; font-size: 14.5px; }
-.step-desc { font-size: 13.5px; color: var(--text-muted); }
-
-/* ── BENCHMARK ─────────────────────────────────────────────────────────────── */
-.benchmark-row {
-  display: flex; align-items: center; gap: 12px;
-  padding: 10px 0; border-bottom: 1px solid var(--border-light);
-}
-.benchmark-name { font-size: 13px; font-weight: 500; width: 180px; flex-shrink:0; }
-.benchmark-bar-wrap { flex: 1; background: #ede8df; border-radius: 100px; height: 7px; }
-.benchmark-bar { height: 7px; border-radius: 100px; background: var(--blue); }
-.benchmark-score { font-size: 12px; font-weight: 600; color: var(--text); width: 56px; text-align:right; flex-shrink:0; }
-.benchmark-target { font-size: 11px; color: var(--text-faint); width: 100px; text-align:right; flex-shrink:0; }
-
-/* ── RESPONSIVE ─────────────────────────────────────────────────────────────── */
-@media (max-width: 700px) {
-  .sidebar { display: none; }
-  .content { margin-left: 0; padding: 24px 20px 60px; }
-}
+.page { max-width: 820px; margin: 0 auto; padding: 40px 24px 80px; }
+nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 48px; padding-bottom: 16px; border-bottom: 1px solid #e5e5e0; }
+nav a { color: #4f7df9; text-decoration: none; font-size: 13px; font-weight: 500; }
+nav a:hover { text-decoration: underline; }
+.logo { font-size: 18px; font-weight: 700; color: #1a1a2e; letter-spacing: -0.02em; }
+.logo span { color: #4f7df9; }
+h1 { font-size: 32px; font-weight: 700; letter-spacing: -0.03em; margin-bottom: 8px; color: #1a1a2e; }
+h1 small { font-size: 14px; font-weight: 500; color: #4f7df9; margin-left: 8px; }
+.subtitle { font-size: 16px; color: #666; margin-bottom: 40px; line-height: 1.6; }
+h2 { font-size: 22px; font-weight: 700; margin: 48px 0 16px; padding-top: 24px; border-top: 1px solid #e5e5e0; color: #1a1a2e; letter-spacing: -0.02em; }
+h3 { font-size: 16px; font-weight: 600; margin: 24px 0 8px; color: #1a1a2e; }
+p { margin-bottom: 12px; font-size: 14px; color: #444; }
+ul { margin: 8px 0 16px 20px; font-size: 14px; color: #444; }
+li { margin-bottom: 6px; }
+li strong { color: #1a1a2e; }
+code { font-family: 'JetBrains Mono', monospace; font-size: 12px; background: #f0ede6; padding: 1px 5px; border-radius: 3px; color: #1a1a2e; }
+pre { background: #1a1a2e; color: #e8eaf0; padding: 16px 20px; border-radius: 8px; overflow-x: auto; margin: 12px 0 20px; font-family: 'JetBrains Mono', monospace; font-size: 12px; line-height: 1.6; }
+pre code { background: none; padding: 0; color: inherit; }
+.card { background: #fff; border: 1px solid #e5e5e0; border-radius: 10px; padding: 20px; margin: 16px 0; }
+.card h4 { font-size: 14px; font-weight: 600; margin-bottom: 8px; }
+.badge { display: inline-block; font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 4px; margin-right: 4px; }
+.badge-new { background: #e8f5e9; color: #2e7d32; }
+.badge-improved { background: #e3f2fd; color: #1565c0; }
+.badge-fixed { background: #fff3e0; color: #e65100; }
+table { width: 100%; border-collapse: collapse; margin: 12px 0 20px; font-size: 13px; }
+th { text-align: left; padding: 8px 12px; background: #f5f2ec; border-bottom: 2px solid #e5e5e0; font-weight: 600; color: #1a1a2e; }
+td { padding: 8px 12px; border-bottom: 1px solid #f0ede6; color: #444; }
+.arch { background: #1a1a2e; color: #e8eaf0; padding: 24px; border-radius: 10px; margin: 16px 0 24px; font-family: 'JetBrains Mono', monospace; font-size: 12px; line-height: 1.8; white-space: pre; overflow-x: auto; }
+.toc { background: #fff; border: 1px solid #e5e5e0; border-radius: 10px; padding: 20px 24px; margin: 24px 0; }
+.toc h3 { margin-top: 0; font-size: 14px; }
+.toc ul { list-style: none; margin: 8px 0 0; padding: 0; }
+.toc li { margin: 4px 0; }
+.toc a { color: #4f7df9; text-decoration: none; font-size: 13px; }
+.toc a:hover { text-decoration: underline; }
+footer { margin-top: 60px; padding-top: 20px; border-top: 1px solid #e5e5e0; text-align: center; color: #999; font-size: 12px; }
+footer a { color: #4f7df9; text-decoration: none; }
 </style>
 </head>
 <body>
+<div class="page">
 
-<!-- ── TOP HEADER ──────────────────────────────────────────────────────────── -->
-<header>
-  <div class="header-left">
-    <a href="/" class="logo-link">
-      <span class="logo-wordmark">ORA</span>
-    </a>
-    <span class="logo-sep">/</span>
-    <span class="header-label">Documentation</span>
-  </div>
-  <div class="header-right">
-    <a href="https://github.com/ashfrnndz21/ora" target="_blank" class="header-badge">GitHub</a>
-    <a href="https://discord.gg/ora-sql" target="_blank" class="header-badge">Discord</a>
-    <a href="/" class="header-btn">Open Workspace →</a>
-  </div>
-</header>
-
-<!-- ── LAYOUT ──────────────────────────────────────────────────────────────── -->
-<div class="layout">
-
-<!-- ── SIDEBAR ─────────────────────────────────────────────────────────────── -->
-<nav class="sidebar">
-  <div class="sidebar-section">
-    <div class="sidebar-section-label">Getting Started</div>
-    <a href="#quickstart" class="sidebar-link active">Quickstart</a>
-    <a href="#installation" class="sidebar-link">Installation</a>
-    <a href="#providers" class="sidebar-link">LLM Providers</a>
-    <a href="#databases" class="sidebar-link">Database Support</a>
-  </div>
-
-  <div class="sidebar-section">
-    <div class="sidebar-section-label">Core Concepts</div>
-    <a href="#pipeline" class="sidebar-link">The Pipeline</a>
-    <a href="#schema-linking" class="sidebar-link">Schema Linking</a>
-    <a href="#self-correction" class="sidebar-link">Self-Correction</a>
-    <a href="#multi-source" class="sidebar-link">Multi-Source Queries</a>
-  </div>
-
-  <div class="sidebar-section">
-    <div class="sidebar-section-label">Features</div>
-    <a href="#schema-registry" class="sidebar-link">Schema Registry</a>
-    <a href="#training" class="sidebar-link">Training & Feedback</a>
-    <a href="#soul" class="sidebar-link">SOUL Layer <span class="badge">NEW</span></a>
-    <a href="#security" class="sidebar-link">Security</a>
-    <a href="#observability" class="sidebar-link">Observability</a>
-  </div>
-
-  <div class="sidebar-section">
-    <div class="sidebar-section-label">Integrations</div>
-    <a href="#dbt" class="sidebar-link">dbt</a>
-    <a href="#langchain" class="sidebar-link">LangChain</a>
-    <a href="#mcp" class="sidebar-link">MCP Server</a>
-    <a href="#workspace-ui" class="sidebar-link">Workspace UI</a>
-  </div>
-
-  <div class="sidebar-section">
-    <div class="sidebar-section-label">Evaluation</div>
-    <a href="#benchmarks" class="sidebar-link">Benchmarks</a>
-    <a href="#eval-harness" class="sidebar-link">Eval Harness</a>
-  </div>
-
-  <div class="sidebar-section">
-    <div class="sidebar-section-label">API Reference</div>
-    <a href="#api-connect" class="sidebar-link">connect()</a>
-    <a href="#api-query" class="sidebar-link">db.query()</a>
-    <a href="#api-ask" class="sidebar-link">ask()</a>
-    <a href="#api-train" class="sidebar-link">train_sql()</a>
-    <a href="#api-rest" class="sidebar-link">REST API</a>
+<nav>
+  <div class="logo">Ora <span>docs</span></div>
+  <div>
+    <a href="index.html">Architecture</a> &nbsp;&middot;&nbsp;
+    <a href="v2.html">v2.0 Release</a> &nbsp;&middot;&nbsp;
+    <a href="https://github.com/ashfrnndz21/ora" target="_blank">GitHub</a> &nbsp;&middot;&nbsp;
+    <a href="https://pypi.org/project/ora-sql/" target="_blank">PyPI</a>
   </div>
 </nav>
 
-<!-- ── MAIN CONTENT ─────────────────────────────────────────────────────────── -->
-<main class="content">
-<div class="content-inner">
+<h1>Ora v2.0 <small>Agentic Intelligence Release</small></h1>
+<p class="subtitle">
+  The v2.0 release transforms Ora from a pipeline-based NL2SQL system into a fully agentic runtime
+  that reasons about its own work, learns from every interaction, and gets measurably smarter over time.
+</p>
 
-<!-- ═══════════════ QUICKSTART ═══════════════ -->
-<span class="section-anchor" id="quickstart"></span>
-<h1 class="page-title">Ora Documentation</h1>
-<p class="page-subtitle">The FastAPI of NL2SQL — speak to any database with any LLM in 3 lines.</p>
-
-<div class="card-grid">
-  <a href="#quickstart" class="card" style="text-decoration:none; border-top: 3px solid var(--blue);">
-    <div class="card-icon">⚡</div>
-    <div class="card-title">Quickstart</div>
-    <p class="card-desc">Up and running in under 30 seconds with SQLite.</p>
-  </a>
-  <a href="#multi-source" class="card" style="text-decoration:none; border-top: 3px solid var(--purple);">
-    <div class="card-icon">⬡</div>
-    <div class="card-title">Multi-Source</div>
-    <p class="card-desc">Query across Postgres, Snowflake, and CSV in one call.</p>
-  </a>
-  <a href="#benchmarks" class="card" style="text-decoration:none; border-top: 3px solid var(--green);">
-    <div class="card-icon">📊</div>
-    <div class="card-title">Benchmarks</div>
-    <p class="card-desc">BIRD 65%+, Spider 85%+ with GPT-4o out of the box.</p>
-  </a>
-  <a href="#workspace-ui" class="card" style="text-decoration:none; border-top: 3px solid var(--amber);">
-    <div class="card-icon">🖥</div>
-    <div class="card-title">Workspace UI</div>
-    <p class="card-desc">Full visual workspace with execution traces and learning.</p>
-  </a>
+<div class="toc">
+  <h3>Contents</h3>
+  <ul>
+    <li><a href="#architecture">Architecture: ReAct Orchestrator</a></li>
+    <li><a href="#semantic">Semantic Layer Evolution</a></li>
+    <li><a href="#rules">Structured Rule Engine</a></li>
+    <li><a href="#fitness">Semantic Fitness Check</a></li>
+    <li><a href="#connectors">REST API Connectors</a></li>
+    <li><a href="#knowledge">Knowledge Page</a></li>
+    <li><a href="#learning">Learning System</a></li>
+    <li><a href="#ui">UI Updates</a></li>
+    <li><a href="#api">New API Endpoints</a></li>
+    <li><a href="#fixes">Bug Fixes</a></li>
+  </ul>
 </div>
 
-<h2>Quickstart</h2>
+<h2 id="architecture">Architecture: ReAct Orchestrator</h2>
 
-<p>The simplest possible Ora query — no schema setup, no vector store, no API key tricks:</p>
+<p>The v1.0 multi-node pipeline (12 nodes, conditional routing) is replaced by a <strong>single ReAct orchestrator</strong> that thinks, delegates, validates, and re-routes in one loop.</p>
 
-<div class="code-block">
-  <div class="code-block-header">
-    <span class="code-block-lang">python</span>
-    <button class="copy-btn" onclick="copyCode(this)">Copy</button>
-  </div>
-  <pre><span class="tk-kw">import</span> <span class="tk-id">ora</span>
+<div class="arch">Ora ReAct Orchestrator (single node)
+  |
+  +-- Phase 1: Decompose
+  |     intent, entities, query structure, cross-source detection
+  |
+  +-- Phase 2: Semantic Resolve
+  |     alias pre-check, pattern injection, failure reflection
+  |
+  +-- Phase 3: Schema Context
+  |     CHESS LSH pruning, column validation against actual schema
+  |
+  +-- Phase 4: SQL Generation
+  |     3 candidates, parallel, self-correct up to 3x
+  |
+  +-- Phase 5: Semantic Fitness Check
+  |     LLM reviews "does this result answer the question?"
+  |
+  +-- Phase 6: Validate &amp; Learn
+        evolve semantic layer, record rule outcomes
+  |
+  +-> respond (NL summary + chart + follow-ups)
+  +-> learn (aliases, patterns, enrichments, rules)
 
-<span class="tk-id">db</span> = <span class="tk-id">ora</span>.<span class="tk-fn">connect</span>(<span class="tk-str">"postgresql://localhost/mydb"</span>)
-<span class="tk-id">result</span> = <span class="tk-id">db</span>.<span class="tk-fn">query</span>(<span class="tk-str">"Show me top 10 customers by revenue"</span>)
+LangGraph: ora -> respond -> learn (3 nodes)</div>
 
-<span class="tk-cm"># result.dataframe → pandas DataFrame</span>
-<span class="tk-cm"># result.sql       → the generated SQL</span>
-<span class="tk-cm"># result.summary   → plain-English explanation</span></pre>
-</div>
-
-<div class="callout tip">
-  <strong>Zero-dependency demo:</strong> Works with SQLite and Ollama — no API key required. Run <code>pip install ora-sql</code> and use <code>sqlite:///path/to/db.sqlite</code>.
-</div>
-
-<!-- ═══════════════ INSTALLATION ═══════════════ -->
-<span class="section-anchor" id="installation"></span>
-<h2>Installation</h2>
-
-<div class="code-block">
-  <div class="code-block-header">
-    <span class="code-block-lang">shell</span>
-    <button class="copy-btn" onclick="copyCode(this)">Copy</button>
-  </div>
-  <pre><span class="tk-cm"># Core install</span>
-pip install ora-sql
-
-<span class="tk-cm"># With database extras</span>
-pip install ora-sql[postgres]     <span class="tk-cm"># asyncpg</span>
-pip install ora-sql[snowflake]    <span class="tk-cm"># snowflake-connector</span>
-pip install ora-sql[bigquery]     <span class="tk-cm"># google-cloud-bigquery</span>
-pip install ora-sql[all]          <span class="tk-cm"># everything</span>
-
-<span class="tk-cm"># With Langfuse tracing</span>
-pip install ora-sql[langfuse]</pre>
-</div>
-
-<p><strong>Requirements:</strong> Python 3.10+. Core dependencies: <code>litellm</code>, <code>sqlalchemy 2.0</code>, <code>sqlglot</code>, <code>chromadb</code>, <code>pydantic 2</code>.</p>
-
-<!-- ═══════════════ PROVIDERS ═══════════════ -->
-<span class="section-anchor" id="providers"></span>
-<h2>LLM Providers</h2>
-
-<p>Ora uses <a href="https://github.com/BerriAI/litellm" target="_blank">LiteLLM</a> under the hood — every provider works identically:</p>
-
-<table class="doc-table">
-  <thead><tr><th>Provider</th><th>Model</th><th>Config</th></tr></thead>
-  <tbody>
-    <tr><td><strong>OpenAI</strong></td><td>gpt-4o, gpt-4o-mini</td><td><code>ORA_LLM_PROVIDER=openai</code></td></tr>
-    <tr><td><strong>Anthropic</strong></td><td>claude-sonnet-4, claude-haiku-3</td><td><code>ORA_LLM_PROVIDER=anthropic</code></td></tr>
-    <tr><td><strong>AWS Bedrock</strong></td><td>Nova Pro, Claude on Bedrock</td><td><code>ORA_LLM_PROVIDER=bedrock</code></td></tr>
-    <tr><td><strong>Google Gemini</strong></td><td>gemini-2.5-pro, flash</td><td><code>ORA_LLM_PROVIDER=gemini</code></td></tr>
-    <tr><td><strong>Ollama</strong></td><td>llama3.3, deepseek-r1</td><td><code>ORA_LLM_PROVIDER=ollama</code></td></tr>
-    <tr><td><strong>vLLM</strong></td><td>Any HuggingFace model</td><td><code>ORA_LLM_PROVIDER=vllm</code></td></tr>
-  </tbody>
-</table>
-
-<div class="code-block">
-  <div class="code-block-header">
-    <span class="code-block-lang">python</span>
-    <button class="copy-btn" onclick="copyCode(this)">Copy</button>
-  </div>
-  <pre><span class="tk-kw">import</span> <span class="tk-id">ora</span>
-<span class="tk-kw">from</span> <span class="tk-id">ora.config</span> <span class="tk-kw">import</span> <span class="tk-id">OraConfig</span>
-
-<span class="tk-cm"># Anthropic Claude</span>
-<span class="tk-id">db</span> = <span class="tk-id">ora</span>.<span class="tk-fn">connect</span>(<span class="tk-str">"postgresql://..."</span>, <span class="tk-var">model</span>=<span class="tk-str">"claude-sonnet-4"</span>)
-
-<span class="tk-cm"># Local Ollama — no API key</span>
-<span class="tk-id">db</span> = <span class="tk-id">ora</span>.<span class="tk-fn">connect</span>(<span class="tk-str">"sqlite:///mydb.db"</span>, <span class="tk-var">model</span>=<span class="tk-str">"ollama/llama3.3"</span>)
-
-<span class="tk-cm"># Via env vars</span>
-<span class="tk-cm"># ORA_LLM_MODEL=gpt-4o-mini ORA_LLM_PROVIDER=openai</span></pre>
-</div>
-
-<!-- ═══════════════ DATABASES ═══════════════ -->
-<span class="section-anchor" id="databases"></span>
-<h2>Database Support</h2>
-
-<table class="doc-table">
-  <thead><tr><th>Database</th><th>Connection String</th><th>Status</th></tr></thead>
-  <tbody>
-    <tr><td><strong>PostgreSQL</strong></td><td><code>postgresql://user:pass@host/db</code></td><td><span class="pill green">Stable</span></td></tr>
-    <tr><td><strong>SQLite</strong></td><td><code>sqlite:///path/to/db.sqlite</code></td><td><span class="pill green">Stable</span></td></tr>
-    <tr><td><strong>MySQL</strong></td><td><code>mysql://user:pass@host/db</code></td><td><span class="pill green">Stable</span></td></tr>
-    <tr><td><strong>DuckDB</strong></td><td><code>duckdb:///path/to/db.duckdb</code></td><td><span class="pill green">Stable</span></td></tr>
-    <tr><td><strong>Snowflake</strong></td><td><code>snowflake://user@account/db</code></td><td><span class="pill blue">Beta</span></td></tr>
-    <tr><td><strong>BigQuery</strong></td><td><code>bigquery://project/dataset</code></td><td><span class="pill blue">Beta</span></td></tr>
-    <tr><td><strong>Redshift</strong></td><td><code>redshift+psycopg2://user@host/db</code></td><td><span class="pill amber">Preview</span></td></tr>
-    <tr><td><strong>CSV / XLSX / Parquet</strong></td><td><code>path/to/file.csv</code></td><td><span class="pill green">Stable</span></td></tr>
-  </tbody>
-</table>
-
-<!-- ═══════════════ PIPELINE ═══════════════ -->
-<span class="section-anchor" id="pipeline"></span>
-<h2>The Pipeline</h2>
-
-<p>Every query runs through a 6-stage pipeline. Each stage is independently configurable and testable:</p>
-
-<div class="steps">
-  <div class="step">
-    <div class="step-num">1</div>
-    <div class="step-body">
-      <div class="step-title">Intent Classification</div>
-      <div class="step-desc">Routes simple queries to the <em>fast</em> path, complex or cross-source queries to <em>accurate</em>. Uses a lightweight classifier — no LLM call.</div>
-    </div>
-  </div>
-  <div class="step">
-    <div class="step-num">2</div>
-    <div class="step-body">
-      <div class="step-title">Schema Linking — CHESS LSH</div>
-      <div class="step-desc">Prunes your schema from hundreds of columns to ~8 relevant ones using locality-sensitive hashing. Scales to 1,000+ table schemas without token overflow.</div>
-    </div>
-  </div>
-  <div class="step">
-    <div class="step-num">3</div>
-    <div class="step-body">
-      <div class="step-title">SQL Generation</div>
-      <div class="step-desc">Three generators run in parallel (<em>fewshot</em>, <em>plan-based</em>, <em>decompose</em>). A pairwise LLM selector picks the best candidate — <a href="https://arxiv.org/abs/2405.19674" target="_blank">CHASE-SQL technique</a>.</div>
-    </div>
-  </div>
-  <div class="step">
-    <div class="step-num">4</div>
-    <div class="step-body">
-      <div class="step-title">Self-Correction — ReFoRCE</div>
-      <div class="step-desc">Four correction layers: syntax → schema validation → execution errors → semantic sanity. Up to 3 attempts per layer before escalation.</div>
-    </div>
-  </div>
-  <div class="step">
-    <div class="step-num">5</div>
-    <div class="step-body">
-      <div class="step-title">Execution</div>
-      <div class="step-desc">Sandboxed, read-only, timeout-enforced. AST firewall rejects any non-SELECT statement before it reaches the database.</div>
-    </div>
-  </div>
-  <div class="step">
-    <div class="step-num">6</div>
-    <div class="step-body">
-      <div class="step-title">Result Formatting</div>
-      <div class="step-desc">Returns a <code>PipelineResult</code> with <code>.dataframe</code>, <code>.sql</code>, <code>.summary</code> (NL), <code>.chart_config</code>, and <code>.follow_ups</code>.</div>
-    </div>
-  </div>
-</div>
-
-<!-- ═══════════════ SCHEMA LINKING ═══════════════ -->
-<span class="section-anchor" id="schema-linking"></span>
-<h2>Schema Linking</h2>
-
-<p>Ora's schema linker uses the <strong>CHESS LSH</strong> algorithm (Stanford, 2024) to prune massive schemas before the LLM ever sees them. This is why Ora works at enterprise scale where other tools fail.</p>
-
-<div class="code-block">
-  <div class="code-block-header">
-    <span class="code-block-lang">python</span>
-    <button class="copy-btn" onclick="copyCode(this)">Copy</button>
-  </div>
-  <pre><span class="tk-cm"># Schema pruning happens automatically — but you can inspect it:</span>
-<span class="tk-id">result</span> = <span class="tk-id">db</span>.<span class="tk-fn">query</span>(<span class="tk-str">"top customers by revenue"</span>)
-<span class="tk-id">print</span>(<span class="tk-id">result</span>.<span class="tk-var">schema_used</span>)
-<span class="tk-cm"># → SchemaSnapshot(tables=['customers','orders'], columns=8, pruned_from=347)</span>
-
-<span class="tk-cm"># Add business context to improve linking accuracy:</span>
-<span class="tk-id">db</span>.<span class="tk-fn">add_description</span>(<span class="tk-str">"customers.lifetime_value"</span>, <span class="tk-str">"Total revenue from customer since sign-up"</span>)
-<span class="tk-id">db</span>.<span class="tk-fn">add_metric</span>(<span class="tk-str">"revenue"</span>, <span class="tk-str">"SUM(orders.total_amount) WHERE status = 'paid'"</span>)</pre>
-</div>
-
-<!-- ═══════════════ SELF-CORRECTION ═══════════════ -->
-<span class="section-anchor" id="self-correction"></span>
-<h2>Self-Correction</h2>
-
-<p>The correction loop runs automatically. It catches ~95% of generation errors before they reach your users:</p>
-
-<table class="doc-table">
-  <thead><tr><th>Layer</th><th>What it catches</th><th>Mechanism</th></tr></thead>
-  <tbody>
-    <tr><td><strong>Syntax</strong></td><td>Parse errors, bad SQL structure</td><td>SQLGlot parse + error message fed back to LLM</td></tr>
-    <tr><td><strong>Schema</strong></td><td>Hallucinated table/column names</td><td>Verify all identifiers exist in DB metadata</td></tr>
-    <tr><td><strong>Execution</strong></td><td>Type mismatches, division by zero</td><td>Run query, catch runtime errors, retry with context</td></tr>
-    <tr><td><strong>Semantic</strong></td><td>Logically wrong but valid SQL</td><td>LLM checks if result plausibly answers the question</td></tr>
-  </tbody>
-</table>
-
-<div class="code-block">
-  <div class="code-block-header">
-    <span class="code-block-lang">python</span>
-    <button class="copy-btn" onclick="copyCode(this)">Copy</button>
-  </div>
-  <pre><span class="tk-cm"># Configure correction depth</span>
-<span class="tk-id">db</span> = <span class="tk-id">ora</span>.<span class="tk-fn">connect</span>(<span class="tk-str">"postgresql://..."</span>,
-    <span class="tk-var">max_corrections</span>=<span class="tk-num">5</span>,         <span class="tk-cm"># default: 3</span>
-    <span class="tk-var">strategy</span>=<span class="tk-str">"accurate"</span>,        <span class="tk-cm"># fast | balanced | accurate</span>
-)</pre>
-</div>
-
-<!-- ═══════════════ MULTI-SOURCE ═══════════════ -->
-<span class="section-anchor" id="multi-source"></span>
-<h2>Multi-Source Queries</h2>
-
-<p>The feature nobody else has shipped. Ora decomposes cross-source questions into sub-queries, runs them in parallel, then synthesises the results inside DuckDB in-memory — no data leaves your environment.</p>
-
-<div class="code-block">
-  <div class="code-block-header">
-    <span class="code-block-lang">python</span>
-    <button class="copy-btn" onclick="copyCode(this)">Copy</button>
-  </div>
-  <pre><span class="tk-kw">with</span> <span class="tk-id">ora</span>.<span class="tk-fn">connect</span>(
-    <span class="tk-var">sales</span>=<span class="tk-str">"postgresql://prod/sales"</span>,
-    <span class="tk-var">inventory</span>=<span class="tk-str">"snowflake://warehouse/inventory"</span>,
-    <span class="tk-var">staff</span>=<span class="tk-str">"headcount.csv"</span>,
-) <span class="tk-kw">as</span> <span class="tk-id">db</span>:
-    <span class="tk-id">result</span> = <span class="tk-id">db</span>.<span class="tk-fn">ask</span>(<span class="tk-str">"which stores have highest revenue per employee?"</span>)
-    <span class="tk-id">print</span>(<span class="tk-id">result</span>.<span class="tk-var">dataframe</span>)
-    <span class="tk-cm"># → One DataFrame. Three databases. Zero manual join keys.</span></pre>
-</div>
-
-<div class="callout note">
-  <strong>How it works:</strong> Ora's DecomposeAgent splits the query into sub-problems, runs each against the appropriate source in parallel, then SynthesisAgent joins the results using DuckDB's in-memory engine. The join keys are inferred — you never write them.
-</div>
-
-<!-- ═══════════════ SECURITY ═══════════════ -->
-<span class="section-anchor" id="security"></span>
-<h2>Security</h2>
-
-<p>Security defaults are non-negotiable and cannot be accidentally disabled:</p>
-
-<table class="doc-table">
-  <thead><tr><th>Control</th><th>Default</th><th>Override</th></tr></thead>
-  <tbody>
-    <tr><td><strong>Read-only enforcement</strong></td><td>Always on</td><td>Not possible by design</td></tr>
-    <tr><td><strong>AST SQL firewall</strong></td><td>SELECT only</td><td>Not possible by design</td></tr>
-    <tr><td><strong>Row limit</strong></td><td>1,000 rows</td><td><code>max_rows=5000</code></td></tr>
-    <tr><td><strong>Query timeout</strong></td><td>30 seconds</td><td><code>timeout_seconds=60</code></td></tr>
-    <tr><td><strong>Input sanitization</strong></td><td>Always on</td><td>Not configurable</td></tr>
-    <tr><td><strong>PII masking</strong></td><td>Off</td><td><code>mask_pii=True</code></td></tr>
-  </tbody>
-</table>
-
-<!-- ═══════════════ TRAINING ═══════════════ -->
-<span class="section-anchor" id="training"></span>
-<h2>Training &amp; Feedback</h2>
-
-<p>Ora gets smarter with every query. Successful NL→SQL pairs are stored in the vector store and surfaced as few-shot examples for similar future queries.</p>
-
-<div class="code-block">
-  <div class="code-block-header">
-    <span class="code-block-lang">python</span>
-    <button class="copy-btn" onclick="copyCode(this)">Copy</button>
-  </div>
-  <pre><span class="tk-cm"># Train a specific pair (thumbs-up equivalent)</span>
-<span class="tk-kw">await</span> <span class="tk-id">db</span>.<span class="tk-fn">train_sql</span>(
-    <span class="tk-var">question</span>=<span class="tk-str">"top 10 stores by revenue last quarter"</span>,
-    <span class="tk-var">sql</span>=<span class="tk-str">"SELECT store, SUM(total) FROM sales WHERE ..."</span>,
-)
-
-<span class="tk-cm"># Bootstrap from real query logs</span>
-<span class="tk-kw">from</span> <span class="tk-id">ora.integrations.query_log</span> <span class="tk-kw">import</span> <span class="tk-id">SnowflakeHarvester</span>
-<span class="tk-id">result</span> = <span class="tk-kw">await</span> <span class="tk-id">SnowflakeHarvester</span>(<span class="tk-id">db</span>).<span class="tk-fn">harvest</span>(<span class="tk-var">lookback_days</span>=<span class="tk-num">30</span>)
-<span class="tk-cm"># → HarvestResult(queries_scanned=847, examples_added=312, duplicates_skipped=535)</span></pre>
-</div>
-
-<!-- ═══════════════ SOUL ═══════════════ -->
-<span class="section-anchor" id="soul"></span>
-<h2>SOUL Layer</h2>
-
-<p>After 20+ queries, Ora builds a <strong>SOUL profile</strong> — a persistent mental model of how each user thinks about their data. This improves generation accuracy for that specific user over time.</p>
-
-<div class="callout info">
-  <strong>SOUL is always in a try/except.</strong> It never breaks a query. If SOUL inference fails, it's silently skipped and the pipeline continues normally.
-</div>
-
-<div class="code-block">
-  <div class="code-block-header">
-    <span class="code-block-lang">python</span>
-    <button class="copy-btn" onclick="copyCode(this)">Copy</button>
-  </div>
-  <pre><span class="tk-cm"># Inspect what SOUL has inferred</span>
-<span class="tk-id">profile</span> = <span class="tk-kw">await</span> <span class="tk-id">db</span>.<span class="tk-fn">get_soul</span>(<span class="tk-var">user_id</span>=<span class="tk-str">"ash"</span>)
-<span class="tk-id">print</span>(<span class="tk-id">profile</span>.<span class="tk-var">cadence</span>)      <span class="tk-cm"># "weekly"</span>
-<span class="tk-id">print</span>(<span class="tk-id">profile</span>.<span class="tk-var">entity_focus</span>) <span class="tk-cm"># ["store", "revenue", "employee"]</span>
-<span class="tk-id">print</span>(<span class="tk-id">profile</span>.<span class="tk-var">vocabulary</span>)  <span class="tk-cm"># {"revenue": "SUM(total_amount)", ...}</span></pre>
-</div>
-
-<!-- ═══════════════ DBT ═══════════════ -->
-<span class="section-anchor" id="dbt"></span>
-<h2>dbt Integration</h2>
-
-<p>Load column descriptions, metric definitions, and lineage directly from your dbt project. No dbt-core import required.</p>
-
-<div class="code-block">
-  <div class="code-block-header">
-    <span class="code-block-lang">python</span>
-    <button class="copy-btn" onclick="copyCode(this)">Copy</button>
-  </div>
-  <pre><span class="tk-kw">from</span> <span class="tk-id">ora.integrations.dbt</span> <span class="tk-kw">import</span> <span class="tk-id">load_dbt_docs</span>
-
-<span class="tk-id">result</span> = <span class="tk-kw">await</span> <span class="tk-fn">load_dbt_docs</span>(<span class="tk-id">db</span>, <span class="tk-var">dbt_project_path</span>=<span class="tk-str">"/path/to/dbt"</span>)
-<span class="tk-id">print</span>(<span class="tk-id">result</span>.<span class="tk-var">models_loaded</span>)      <span class="tk-cm"># 47</span>
-<span class="tk-id">print</span>(<span class="tk-id">result</span>.<span class="tk-var">columns_described</span>)  <span class="tk-cm"># 284</span>
-<span class="tk-id">print</span>(<span class="tk-id">result</span>.<span class="tk-var">examples_added</span>)    <span class="tk-cm"># 47 (auto-generated questions)</span></pre>
-</div>
-
-<!-- ═══════════════ MCP ═══════════════ -->
-<span class="section-anchor" id="mcp"></span>
-<h2>MCP Server</h2>
-
-<p>Expose Ora as an MCP server — lets Claude, Cursor, and Windsurf query your database directly from the chat interface.</p>
-
-<div class="code-block">
-  <div class="code-block-header">
-    <span class="code-block-lang">shell</span>
-    <button class="copy-btn" onclick="copyCode(this)">Copy</button>
-  </div>
-  <pre>pip install ora-sql
-ora serve --mcp --db postgresql://localhost/mydb --port 8080</pre>
-</div>
-
-<p>Then add to your Claude Desktop / Cursor config:</p>
-
-<div class="code-block">
-  <div class="code-block-header">
-    <span class="code-block-lang">json</span>
-    <button class="copy-btn" onclick="copyCode(this)">Copy</button>
-  </div>
-  <pre>{
-  "mcpServers": {
-    "ora": {
-      "command": "ora",
-      "args": ["serve", "--mcp", "--db", "postgresql://localhost/mydb"]
-    }
-  }
-}</pre>
-</div>
-
-<!-- ═══════════════ WORKSPACE UI ═══════════════ -->
-<span class="section-anchor" id="workspace-ui"></span>
-<h2>Workspace UI</h2>
-
-<div class="code-block">
-  <div class="code-block-header">
-    <span class="code-block-lang">shell</span>
-    <button class="copy-btn" onclick="copyCode(this)">Copy</button>
-  </div>
-  <pre>ora serve --db postgresql://localhost/mydb --port 8080
-<span class="tk-cm"># Open http://localhost:8080</span></pre>
-</div>
-
-<p>The workspace gives you:</p>
+<h3>What Ora validates at each step</h3>
 <ul>
-  <li><strong>Ask view</strong> — chat-first interface with live execution traces (node-by-node)</li>
-  <li><strong>Data view</strong> — interactive knowledge map with FK relationships</li>
-  <li><strong>Tasks view</strong> — full history of every query with full execution traces</li>
-  <li><strong>Learn view</strong> — training progress, accuracy trend, improvement suggestions</li>
+  <li><strong>After decomposition</strong> — are all entity groups covered? If query says "ALL ASEAN" but only 2 countries resolved, retry with feedback</li>
+  <li><strong>After schema pruning</strong> — does the schema support the query? Missing time dimension for trend queries flagged as data gap</li>
+  <li><strong>After SQL generation</strong> — do filter values exist in actual schema? Non-existent columns stripped with warning</li>
+  <li><strong>After execution</strong> — semantic fitness: does the SQL + result actually answer the original question? Not just "rows > 0" but "are the right dimensions, entities, and metrics present?"</li>
 </ul>
 
-<!-- ═══════════════ BENCHMARKS ═══════════════ -->
-<span class="section-anchor" id="benchmarks"></span>
-<h2>Benchmarks</h2>
+<h2 id="semantic">Semantic Layer Evolution</h2>
 
-<p>Ora's target scores with GPT-4o (launch day results):</p>
+<p>The semantic layer evolves through 4 layers, each building on the previous:</p>
 
-<div style="margin: 20px 0;">
-  <div class="benchmark-row">
-    <div class="benchmark-name">Spider 1.0 EX</div>
-    <div class="benchmark-bar-wrap"><div class="benchmark-bar" style="width:85%; background:var(--green);"></div></div>
-    <div class="benchmark-score" style="color:var(--green)">85%+</div>
-    <div class="benchmark-target" style="color:var(--text-faint)">target: &gt;85%</div>
-  </div>
-  <div class="benchmark-row">
-    <div class="benchmark-name">BIRD EX</div>
-    <div class="benchmark-bar-wrap"><div class="benchmark-bar" style="width:65%;"></div></div>
-    <div class="benchmark-score">65%+</div>
-    <div class="benchmark-target" style="color:var(--text-faint)">target: &gt;65%</div>
-  </div>
-  <div class="benchmark-row">
-    <div class="benchmark-name">Spider 2.0 EX</div>
-    <div class="benchmark-bar-wrap"><div class="benchmark-bar" style="width:40%; background:var(--amber);"></div></div>
-    <div class="benchmark-score" style="color:var(--amber)">40%+</div>
-    <div class="benchmark-target" style="color:var(--text-faint)">target: &gt;40%</div>
-  </div>
+<div class="card">
+  <h4>Layer 1: Foundation <span class="badge badge-new">connect time</span></h4>
+  <p><code>analyze_source()</code> discovers domain, column meanings, abbreviation maps, dimension/measure classification. <code>build_initial_taxonomy()</code> detects cross-source join candidates and entity types.</p>
 </div>
 
-<div class="callout info">
-  <strong>CHESS LSH schema pruning</strong> is the key accuracy driver — it ensures the LLM receives only the 8 most relevant columns out of potentially thousands, eliminating the #1 failure mode (wrong table/column selection) in production NL2SQL.
+<div class="card">
+  <h4>Layer 2: Inferred <span class="badge badge-new">from data patterns</span></h4>
+  <p>Entity aliases, value mappings (e.g., "friday" -> 5), cross-source joins detected via column name/type matching.</p>
 </div>
 
-<!-- ═══════════════ EVAL HARNESS ═══════════════ -->
-<span class="section-anchor" id="eval-harness"></span>
-<h2>Eval Harness</h2>
-
-<div class="code-block">
-  <div class="code-block-header">
-    <span class="code-block-lang">python</span>
-    <button class="copy-btn" onclick="copyCode(this)">Copy</button>
-  </div>
-  <pre><span class="tk-kw">from</span> <span class="tk-id">ora.eval</span> <span class="tk-kw">import</span> <span class="tk-id">Evaluator</span>
-
-<span class="tk-id">eval</span> = <span class="tk-id">Evaluator</span>(<span class="tk-var">engine</span>=<span class="tk-id">db</span>, <span class="tk-var">dataset</span>=<span class="tk-str">"bird"</span>)
-<span class="tk-id">results</span> = <span class="tk-id">eval</span>.<span class="tk-fn">run</span>(<span class="tk-var">model</span>=<span class="tk-str">"gpt-4o"</span>, <span class="tk-var">n</span>=<span class="tk-num">100</span>)
-
-<span class="tk-id">print</span>(<span class="tk-id">results</span>.<span class="tk-var">execution_accuracy</span>)  <span class="tk-cm"># 0.67</span>
-<span class="tk-id">print</span>(<span class="tk-id">results</span>.<span class="tk-var">latency_p95</span>)         <span class="tk-cm"># 2.4s</span>
-<span class="tk-id">print</span>(<span class="tk-id">results</span>.<span class="tk-var">cost_per_query</span>)      <span class="tk-cm"># $0.006</span>
-<span class="tk-id">results</span>.<span class="tk-fn">save_benchmark_card</span>()      <span class="tk-cm"># → benchmark.md (README-ready)</span></pre>
+<div class="card">
+  <h4>Layer 3: Confirmed <span class="badge badge-improved">from successful queries</span></h4>
+  <p><code>evolve_semantic_layer()</code> runs after every successful query. Saves aliases (+3% confidence per confirmation), relationships (with query count), filter patterns (auto-injected after 3+ uses), and column enrichments.</p>
 </div>
 
-<hr>
-
-<!-- ═══════════════ API REFERENCE ═══════════════ -->
-<span class="section-anchor" id="api-connect"></span>
-<h2>API Reference — connect()</h2>
-
-<div class="code-block">
-  <div class="code-block-header">
-    <span class="code-block-lang">python</span>
-    <button class="copy-btn" onclick="copyCode(this)">Copy</button>
-  </div>
-  <pre><span class="tk-id">ora</span>.<span class="tk-fn">connect</span>(
-    <span class="tk-var">connection_string</span>: str,         <span class="tk-cm"># or named kwargs for multi-source</span>
-    <span class="tk-var">model</span>: str = <span class="tk-str">"gpt-4o-mini"</span>,
-    <span class="tk-var">strategy</span>: str = <span class="tk-str">"balanced"</span>,    <span class="tk-cm"># fast | balanced | accurate</span>
-    <span class="tk-var">max_rows</span>: int = <span class="tk-num">1000</span>,
-    <span class="tk-var">timeout_seconds</span>: int = <span class="tk-num">30</span>,
-    <span class="tk-var">max_corrections</span>: int = <span class="tk-num">3</span>,
-    <span class="tk-var">trace</span>: bool = <span class="tk-str">False</span>,
-    <span class="tk-var">mask_pii</span>: bool = <span class="tk-str">False</span>,
-) → <span class="tk-id">OraEngine</span></pre>
+<div class="card">
+  <h4>Layer 4: Corrected <span class="badge badge-improved">from user feedback</span></h4>
+  <p>Structured rules created from corrections with confidence lifecycle. Resolution failures recorded as anti-patterns so the agent avoids repeating mistakes.</p>
 </div>
 
-<span class="section-anchor" id="api-query"></span>
-<h3>db.query() / db.ask()</h3>
+<h3>Semantic Agent Reasoning Loop</h3>
+<ol>
+  <li><strong>Pre-check</strong> — high-confidence aliases (>=0.93) resolved deterministically. Known patterns and column enrichments injected. Past failures loaded as anti-patterns.</li>
+  <li><strong>LLM reasoning</strong> — entity mapping with full schema context, column meanings, and learned vocabulary.</li>
+  <li><strong>Schema search</strong> — for unresolved entities, targeted DB lookups across text columns.</li>
+  <li><strong>Refinement</strong> — merge findings, update confidence, save resolution log entry.</li>
+</ol>
 
-<div class="code-block">
-  <div class="code-block-header">
-    <span class="code-block-lang">python</span>
-    <button class="copy-btn" onclick="copyCode(this)">Copy</button>
-  </div>
-  <pre><span class="tk-id">result</span> = <span class="tk-id">db</span>.<span class="tk-fn">query</span>(
-    <span class="tk-var">question</span>: str,
-    <span class="tk-var">strategy</span>: str | <span class="tk-str">None</span> = <span class="tk-str">None</span>,  <span class="tk-cm"># overrides engine default</span>
-) → <span class="tk-id">PipelineResult</span>
-
-<span class="tk-cm"># PipelineResult attributes:</span>
-<span class="tk-id">result</span>.<span class="tk-var">dataframe</span>    <span class="tk-cm"># pandas DataFrame</span>
-<span class="tk-id">result</span>.<span class="tk-var">sql</span>          <span class="tk-cm"># generated SQL string</span>
-<span class="tk-id">result</span>.<span class="tk-var">summary</span>      <span class="tk-cm"># plain-English answer</span>
-<span class="tk-id">result</span>.<span class="tk-var">follow_ups</span>   <span class="tk-cm"># list[str] — suggested next questions</span>
-<span class="tk-id">result</span>.<span class="tk-var">chart_config</span> <span class="tk-cm"># Chart.js config if applicable</span>
-<span class="tk-id">result</span>.<span class="tk-var">trace</span>        <span class="tk-cm"># PipelineTrace — timing per stage</span>
-<span class="tk-id">result</span>.<span class="tk-var">succeeded</span>    <span class="tk-cm"># bool</span>
-<span class="tk-id">result</span>.<span class="tk-var">row_count</span>    <span class="tk-cm"># int</span>
-<span class="tk-id">result</span>.<span class="tk-var">cost_usd</span>     <span class="tk-cm"># float — LLM cost for this query</span></pre>
-</div>
-
-<span class="section-anchor" id="api-ask"></span>
-<h3>Quick one-liner: ask()</h3>
-
-<div class="code-block">
-  <div class="code-block-header">
-    <span class="code-block-lang">python</span>
-    <button class="copy-btn" onclick="copyCode(this)">Copy</button>
-  </div>
-  <pre><span class="tk-kw">from</span> <span class="tk-id">ora</span> <span class="tk-kw">import</span> <span class="tk-id">ask</span>
-
-<span class="tk-id">result</span> = <span class="tk-fn">ask</span>(<span class="tk-str">"top customers by revenue"</span>, <span class="tk-var">db</span>=<span class="tk-str">"postgresql://localhost/mydb"</span>)
-<span class="tk-id">print</span>(<span class="tk-id">result</span>.<span class="tk-var">dataframe</span>)</pre>
-</div>
-
-<span class="section-anchor" id="api-train"></span>
-<h3>train_sql() / train_docs()</h3>
-
-<div class="code-block">
-  <div class="code-block-header">
-    <span class="code-block-lang">python</span>
-    <button class="copy-btn" onclick="copyCode(this)">Copy</button>
-  </div>
-  <pre><span class="tk-kw">await</span> <span class="tk-id">db</span>.<span class="tk-fn">train_sql</span>(<span class="tk-var">question</span>=<span class="tk-str">"..."</span>, <span class="tk-var">sql</span>=<span class="tk-str">"..."</span>)
-<span class="tk-kw">await</span> <span class="tk-id">db</span>.<span class="tk-fn">train_docs</span>(<span class="tk-var">documentation</span>=<span class="tk-str">"..."</span>)  <span class="tk-cm"># free-text business context</span></pre>
-</div>
-
-<span class="section-anchor" id="api-rest"></span>
-<h2>REST API</h2>
-
-<table class="doc-table">
-  <thead><tr><th>Method</th><th>Endpoint</th><th>Description</th></tr></thead>
-  <tbody>
-    <tr><td><span class="pill blue">POST</span></td><td><code>/query</code></td><td>Run a NL query, returns JSON result</td></tr>
-    <tr><td><span class="pill blue">POST</span></td><td><code>/query/stream</code></td><td>SSE stream — live execution trace events</td></tr>
-    <tr><td><span class="pill green">GET</span></td><td><code>/schema</code></td><td>Full schema metadata</td></tr>
-    <tr><td><span class="pill green">GET</span></td><td><code>/schema/graph</code></td><td>Knowledge map (nodes + edges)</td></tr>
-    <tr><td><span class="pill blue">POST</span></td><td><code>/schema/refresh</code></td><td>Force re-introspect database</td></tr>
-    <tr><td><span class="pill blue">POST</span></td><td><code>/train/sql</code></td><td>Add a NL→SQL training pair</td></tr>
-    <tr><td><span class="pill green">GET</span></td><td><code>/health</code></td><td>Health check + system status</td></tr>
-    <tr><td><span class="pill green">GET</span></td><td><code>/metrics</code></td><td>Prometheus metrics endpoint</td></tr>
-  </tbody>
+<h3>Persistence</h3>
+<p>All semantic layer state persisted to <code>~/.sqlagent/uploads/{workspace_id}/</code>:</p>
+<table>
+  <tr><th>File</th><th>Purpose</th></tr>
+  <tr><td><code>semantic_manifest.json</code></td><td>Versioned iteration tracking with history</td></tr>
+  <tr><td><code>semantic_{source_id}.json</code></td><td>Per-source context (domain, column meanings, tips)</td></tr>
+  <tr><td><code>aliases_{source_id}.json</code></td><td>Learned entity mappings with confidence</td></tr>
+  <tr><td><code>relationships.json</code></td><td>Confirmed table joins with query count</td></tr>
+  <tr><td><code>query_patterns.json</code></td><td>Common filter combinations</td></tr>
+  <tr><td><code>column_enrichments.json</code></td><td>Column usage context</td></tr>
+  <tr><td><code>resolution_log.json</code></td><td>Resolution audit trail (last 200)</td></tr>
+  <tr><td><code>rules.json</code></td><td>Structured rules from corrections</td></tr>
 </table>
 
-<div style="margin-top: 60px; padding-top: 28px; border-top: 1px solid var(--border-light); display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
-  <div style="font-size:13px; color:var(--text-faint);">
-    Apache 2.0 · <a href="https://github.com/ashfrnndz21/ora">GitHub</a> · <a href="https://discord.gg/ora-sql">Discord</a>
-  </div>
-  <a href="/" style="font-size:13px; color:var(--blue); text-decoration:none; font-weight:500;">Open Workspace →</a>
-</div>
+<h2 id="rules">Structured Rule Engine</h2>
+
+<p>New file: <code>sqlagent/rules.py</code></p>
+
+<pre><code>from sqlagent.rules import load_rules, create_rule, record_rule_outcome
+
+rules = load_rules(workspace_id)  # sorted by confidence * log(hit_count)
+create_rule(workspace_id, text="DuckDB doesn't support YEAR()", source="user_correction")
+record_rule_outcome(workspace_id, rule_ids, succeeded=True)  # +0.05 confidence</code></pre>
+
+<h3>Rule lifecycle</h3>
+<ul>
+  <li><strong>Created</strong> from user correction (0.9) or pattern detection (0.7)</li>
+  <li><strong>Applied</strong> — top 5 rules injected into SQL generation prompt</li>
+  <li><strong>Confirmed</strong> — query succeeds with rule: +0.05 confidence</li>
+  <li><strong>Weakened</strong> — query fails with rule: -0.10 confidence</li>
+  <li><strong>Expired</strong> — confidence below 0.30: rule deactivated</li>
+</ul>
+
+<h2 id="fitness">Semantic Fitness Check</h2>
+
+<p>After SQL executes successfully (rows > 0), Ora asks the LLM: "Does this SQL + result actually answer the original question?"</p>
+
+<p>The fitness check catches:</p>
+<ul>
+  <li>UNION without grouping columns (can't do trends with no time axis)</li>
+  <li>Split comparative queries (entities being compared end up in separate queries)</li>
+  <li>Missing correlation analysis (user asked for correlation but got raw numbers)</li>
+  <li>Dropped decomposition parts (query had 4 parts but SQL only addresses 2)</li>
+</ul>
+
+<p>If not fit, Ora re-routes with the specific fix hint from the LLM.</p>
+
+<h2 id="connectors">REST API Connectors</h2>
+
+<p>New framework: <code>sqlagent/connectors/rest_connector.py</code></p>
+
+<pre><code>from sqlagent.connectors.catalog.shopify import ShopifyConnector
+
+conn = ShopifyConnector(source_id="shop", store_name="mystore", api_key="shpat_xxx")
+await conn.connect()  # pulls data into DuckDB
+result = await conn.execute("SELECT * FROM orders LIMIT 10")</code></pre>
+
+<h3>Built-in connectors</h3>
+<table>
+  <tr><th>Connector</th><th>Tables</th><th>Connection URL</th></tr>
+  <tr><td>Shopify</td><td>orders, customers, products, inventory, collections</td><td><code>shopify://store?api_key=xxx</code></td></tr>
+  <tr><td>Salesforce</td><td>accounts, contacts, opportunities, leads, cases</td><td><code>salesforce://instance?access_token=xxx</code></td></tr>
+  <tr><td>Stripe</td><td>charges, customers, subscriptions, invoices, payouts</td><td><code>stripe://?api_key=xxx</code></td></tr>
+  <tr><td>HubSpot</td><td>contacts, companies, deals, tickets</td><td><code>hubspot://?api_key=xxx</code></td></tr>
+  <tr><td>Google Analytics 4</td><td>sessions, users, events</td><td><code>ga4://property_id?access_token=xxx</code></td></tr>
+  <tr><td>Airbyte (300+)</td><td>any Airbyte source</td><td><code>airbyte://?source=source-name</code></td></tr>
+</table>
+
+<p>The <code>RestConnector</code> base class handles OAuth2 (with refresh), API key, Bearer token, Basic auth, cursor/offset/link-header pagination, and token-bucket rate limiting.</p>
+
+<h2 id="knowledge">Knowledge Page</h2>
+
+<p>The Knowledge page is the Semantic Agent's working memory — three tabs:</p>
+
+<ul>
+  <li><strong>Graph</strong> — force-directed semantic graph with table nodes, relationship edges, confidence halos, and learned term annotations</li>
+  <li><strong>Taxonomy</strong> — 4-layer knowledge feed (Foundation, Inferred, Confirmed, Corrected) with expandable entries showing exact items learned per query</li>
+  <li><strong>Agent</strong> — conversational chat with the Semantic Agent. Full context: aliases, patterns, rules, relationships, evolution history. Conversation memory across messages. Typewriter streaming.</li>
+</ul>
+
+<h2 id="learning">Learning System</h2>
+
+<h3>How learning improves queries</h3>
+<ol>
+  <li><strong>Training pairs</strong> — every thumbs-up/correction saved to Qdrant (persistent on disk). Retrieved via cosine similarity for few-shot prompting.</li>
+  <li><strong>Context rules</strong> — extracted from corrections, injected into every SQL generation prompt.</li>
+  <li><strong>Entity aliases</strong> — learned mappings (e.g., "friday" -> 5) pre-resolved before LLM call at >=93% confidence.</li>
+  <li><strong>Filter patterns</strong> — common filters (e.g., sex='Total') auto-injected after 3+ confirmations.</li>
+  <li><strong>Failure reflection</strong> — past resolution failures loaded as anti-patterns.</li>
+</ol>
+
+<h3>Observable in traces</h3>
+<p>Every query trace shows an "Applied learned context" node:</p>
+<pre><code>Applied learned context
+  3 past examples (best: 'top selling product' sim:0.94)
+  2 rules applied
+  4 context notes
+  12 pre-resolved aliases
+  semantic layer v8</code></pre>
+
+<h3>Learn page metrics</h3>
+<ul>
+  <li>Accuracy trend (early queries vs recent queries)</li>
+  <li>Active rules with hit count and success rate</li>
+  <li>Impact score showing learning improvement over time</li>
+</ul>
+
+<h2 id="ui">UI Updates</h2>
+
+<ul>
+  <li>Landing page updated for v2.0 architecture (Ora phases, Semantic Agent passes)</li>
+  <li>Sources page: SaaS connector cards (Shopify, Salesforce, Stripe, HubSpot, GA4, Airbyte, BigQuery, Snowflake)</li>
+  <li>Chart axis selection: LLM analyzes which columns vary vs are constant</li>
+  <li>Token tooltips: hover arrows for "input tokens sent to LLM" / "output tokens received"</li>
+  <li>Setup chat: persistent messages, streamed greeting, workspace naming before data</li>
+  <li>Re-execute button in Learn Agent correction flow</li>
+</ul>
+
+<h2 id="api">New API Endpoints</h2>
+
+<table>
+  <tr><th>Endpoint</th><th>Method</th><th>Purpose</th></tr>
+  <tr><td><code>/learn/re-execute</code></td><td>POST</td><td>Execute edited SQL from correction flow</td></tr>
+  <tr><td><code>/api/semantic/history</code></td><td>GET</td><td>Semantic layer evolution history</td></tr>
+  <tr><td><code>/api/semantic/graph</code></td><td>GET</td><td>Graph-ready semantic model</td></tr>
+  <tr><td><code>/api/learn/impact</code></td><td>GET</td><td>Accuracy trend and rule inventory</td></tr>
+</table>
+
+<h2 id="fixes">Bug Fixes</h2>
+
+<ul>
+  <li>Fixed React #310 crash: useState hooks before conditional returns</li>
+  <li>Fixed Qdrant lock conflict: per-workspace vectorstore paths</li>
+  <li>Fixed package shadowing: SetupAgent, LearningLoop, SchemaAgent re-exported</li>
+  <li>Fixed SQL correction loop: actual column names listed on retry</li>
+  <li>Fixed Learn Agent: _ensure_ready() before accessing _learn_graph</li>
+  <li>Fixed CTE-aware rewriting in Learn Agent correction prompt</li>
+  <li>Fixed entity coverage validation: filter values can be lists</li>
+</ul>
+
+<footer>
+  <p>Ora v2.0 &middot; MIT License &middot; <a href="https://github.com/ashfrnndz21/ora">GitHub</a> &middot; <a href="https://pypi.org/project/ora-sql/">pip install ora-sql</a></p>
+</footer>
 
 </div>
-</main>
-</div>
-
-<script>
-// ── Copy button
-function copyCode(btn) {
-  const pre = btn.closest('.code-block').querySelector('pre');
-  const text = pre.innerText;
-  navigator.clipboard?.writeText(text).then(() => {
-    btn.textContent = 'Copied!';
-    setTimeout(() => btn.textContent = 'Copy', 1800);
-  });
-}
-
-// ── Active sidebar link tracking
-const links = document.querySelectorAll('.sidebar-link[href^="#"]');
-const observer = new IntersectionObserver(entries => {
-  entries.forEach(entry => {
-    if (entry.isIntersecting) {
-      const id = entry.target.id;
-      links.forEach(l => {
-        l.classList.toggle('active', l.getAttribute('href') === '#' + id);
-      });
-    }
-  });
-}, { rootMargin: '-20% 0px -70% 0px', threshold: 0 });
-
-document.querySelectorAll('.section-anchor').forEach(el => observer.observe(el));
-</script>
 </body>
 </html>
