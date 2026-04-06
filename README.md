@@ -4,12 +4,21 @@
 
 **The NL2SQL Agentic Runtime**
 
-*Not a chatbot wrapper. A fully agentic system that reasons, self-corrects, and learns.*
+*Not a chatbot wrapper. A fully agentic system that reasons, self-corrects, and learns from every query.*
 
 [![PyPI](https://img.shields.io/pypi/v/ora-sql?color=4f7df9&label=pip%20install%20ora-sql)](https://pypi.org/project/ora-sql)
 [![CI](https://github.com/ashfrnndz21/ora/actions/workflows/ci.yml/badge.svg)](https://github.com/ashfrnndz21/ora/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue)](https://python.org)
+[![Docs](https://img.shields.io/badge/docs-v2.0-4f7df9)](https://ashfrnndz21.github.io/ora/v2.html)
+
+</div>
+
+<div align="center">
+
+An on-machine AI agent that turns natural language into SQL across any database — PostgreSQL, Snowflake, BigQuery, DuckDB, Shopify, Salesforce, or plain CSV files. Ora decomposes complex questions, resolves entity semantics, generates and self-corrects SQL, and builds a living semantic layer that gets smarter with every query.
+
+**[Quickstart](#quickstart)** · **[v2.0 Docs](https://ashfrnndz21.github.io/ora/v2.html)** · **[Architecture](#architecture)** · **[What's New](#whats-new-in-v20)** · **[Changelog](CHANGELOG.md)**
 
 </div>
 
@@ -455,6 +464,14 @@ MIT — use freely, modify as needed, contribute back if you can.
 
 <div align="center">
 
-**pip install ora-sql**
+### Get started
+
+```bash
+pip install ora-sql
+```
+
+**[Quickstart](#quickstart)** · **[v2.0 Docs](https://ashfrnndz21.github.io/ora/v2.html)** · **[Changelog](CHANGELOG.md)** · **[Contributing](CONTRIBUTING.md)**
+
+Built by [@ashfrnndz21](https://github.com/ashfrnndz21)
 
 </div>
