@@ -350,28 +350,6 @@ class OraOrchestrator:
                                validation={"checks": result_valid.checks, "approved": result_valid.passed})
 
             if result_valid.passed:
-                # ── Reflect: does result match plan's expected shape? ──
-                reflection = self._reflect(plan, sql, columns, row_count, decomp)
-                if not reflection["match"]:
-                    self._trace.record("ora", "Reflects on result",
-                                       status="retry",
-                                       output=f"✗ {reflection['gap'][:100]}",
-                                       reasoning="Result shape doesn't match plan — re-routing with specific fix")
-                    query_spec = (
-                        f"RESULT SHAPE MISMATCH — the SQL produced the wrong kind of output.\n"
-                        f"Question: {nl_query}\n\n"
-                        f"Previous SQL:\n{sql}\n\n"
-                        f"Problem: {reflection['replan_hint']}\n\n"
-                        f"Schema: {', '.join(selected_tables)}\n"
-                        f"Available columns: {', '.join(c.name for t in pruned for c in t.columns[:20])}\n\n"
-                        f"Fix the SQL. Use GROUP BY and aggregation functions (AVG, SUM, COUNT). "
-                        f"Do NOT return raw individual rows — return summarized results.\n"
-                        f"Output ONLY SQL."
-                    )
-                    correction_round += 1
-                    succeeded = False
-                    continue
-
                 # ── Semantic fitness check ──────────────────────────
                 # Only on first attempt — skip on correction rounds to avoid timeout.
                 if correction_round > 0:
@@ -381,7 +359,7 @@ class OraOrchestrator:
                     break
 
                 fitness = await self._check_semantic_fitness(
-                    nl_query, sql, columns, rows[:5], decomp,
+                    nl_query, sql, columns, rows[:5], decomp, row_count,
                 )
                 if fitness["fit"]:
                     self._trace.record("ora", "Semantic fitness check",
@@ -1028,13 +1006,14 @@ class OraOrchestrator:
 
     async def _check_semantic_fitness(
         self, question: str, sql: str, columns: list, sample_rows: list, decomp,
+        row_count: int = 0,
     ) -> dict:
-        """Ora reviews its own work — does the SQL + result actually answer the question?
+        """Ora reviews its own work — does the SQL + result match what the plan expected?
 
-        This is the analyst double-check: not "did it run?" but "does it make sense?"
-        One LLM call. Returns {"fit": bool, "reasoning": str, "fix_hint": str}.
+        One LLM call. Compares the plan's expectations against the actual result.
+        No hardcoded checklist — the plan IS the checklist.
+        Returns {"fit": bool, "reasoning": str, "fix_hint": str}.
         """
-        # Build a compact view of what came back
         cols_str = ", ".join(columns[:15]) if columns else "(no columns)"
         sample_str = ""
         if sample_rows:
@@ -1042,31 +1021,40 @@ class OraOrchestrator:
                 vals = [f"{k}={v}" for k, v in (row.items() if isinstance(row, dict) else [])]
                 sample_str += "  " + ", ".join(vals[:6]) + "\n"
 
-        parts_str = " | ".join(
-            f"Part {p.get('id','?')}: {p.get('description','')[:60]}"
-            for p in decomp.parts
-        )
+        # The plan's expectations — this is the contract
+        plan_context = ""
+        if decomp.plan_understanding:
+            plan_context += f"PLAN UNDERSTANDING: {decomp.plan_understanding}\n"
+        if decomp.plan_approach:
+            plan_context += f"PLAN APPROACH: {decomp.plan_approach}\n"
+        expected = getattr(decomp, '_expected_result', {}) or {}
+        if expected:
+            plan_context += f"EXPECTED RESULT: ~{expected.get('row_count_approx', '?')} rows"
+            if expected.get('should_aggregate'):
+                plan_context += f", aggregated by {expected.get('group_by', [])}"
+            if expected.get('columns_expected'):
+                plan_context += f", columns: {expected.get('columns_expected')}"
+            plan_context += "\n"
+        if decomp.plan_tables:
+            plan_context += f"TABLES PLAN SPECIFIED: {decomp.plan_tables}\n"
 
         prompt = (
-            "You are reviewing a SQL query and its results to check if they actually "
-            "answer the user's question. Think like a senior data analyst checking "
-            "a junior's work before presenting to the client.\n\n"
+            "You are Ora reviewing your own work. Compare what you PLANNED to do "
+            "against what the SQL actually produced. Think like a senior analyst "
+            "checking work before presenting to a client.\n\n"
             f"ORIGINAL QUESTION: {question}\n\n"
-            f"DECOMPOSITION: {parts_str}\n\n"
-            f"SQL:\n{sql}\n\n"
-            f"RESULT COLUMNS: {cols_str}\n"
-            f"SAMPLE ROWS:\n{sample_str or '(empty)'}\n\n"
-            "Check ALL of these:\n"
-            "1. Does the SQL query ALL entities the user mentioned? (not just some)\n"
-            "2. For trend/time queries: does the result include a time column for each row?\n"
-            "3. For comparison queries: does the result include an identifier column "
-            "(country, category, etc.) so rows can be distinguished?\n"
-            "4. For correlation queries: are the entities being correlated in the same "
-            "result set with aligned dimensions?\n"
-            "5. Does the SQL match the decomposition parts, or were some parts dropped?\n\n"
+            f"{plan_context}\n"
+            f"ACTUAL SQL:\n{sql}\n\n"
+            f"ACTUAL RESULT: {row_count} rows, columns: {cols_str}\n"
+            f"SAMPLE:\n{sample_str or '(empty)'}\n\n"
+            f"Compare the plan against the actual result:\n"
+            f"- Does the result match what the plan intended?\n"
+            f"- Did the SQL use all the tables the plan specified?\n"
+            f"- Is the result aggregated/summarized as the plan expected, or is it a raw data dump?\n"
+            f"- Would a user find this result useful and complete, or partial and confusing?\n\n"
             "Return JSON:\n"
-            '{"fit": true/false, "reasoning": "one sentence why it fits or not", '
-            '"fix_hint": "if not fit: what specific change to the SQL would fix it"}\n'
+            '{"fit": true/false, "reasoning": "one sentence", '
+            '"fix_hint": "if not fit: what specific SQL change would fix it"}\n'
             "Return ONLY valid JSON."
         )
 
@@ -1090,76 +1078,6 @@ class OraOrchestrator:
         except Exception as exc:
             logger.warning("ora.fitness_check_failed", error=str(exc))
             return {"fit": True, "reasoning": "Fitness check failed — proceeding", "fix_hint": ""}
-
-    def _reflect(self, plan: dict, sql: str, columns: list, row_count: int, decomp) -> dict:
-        """Reflect: compare actual result against plan's expected result shape.
-
-        Returns {"match": bool, "gap": str, "replan_hint": str}
-        This is a DETERMINISTIC check — no LLM call. Fast and reliable.
-        """
-        expected = plan.get("expected_result") or getattr(decomp, '_expected_result', {}) or {}
-        if not expected:
-            return {"match": True, "gap": "", "replan_hint": ""}
-
-        gaps = []
-
-        # Check aggregation
-        if expected.get("should_aggregate") and row_count > 500:
-            group_by = expected.get("group_by", [])
-            has_group_by = any(f"GROUP BY" in sql.upper() for _ in [1])
-            if not has_group_by:
-                gaps.append(
-                    f"Plan expected aggregated result (~{expected.get('row_count_approx', 'few')} rows) "
-                    f"but got {row_count} raw rows. SQL is missing GROUP BY {', '.join(group_by) if group_by else 'clause'}."
-                )
-
-        # Check expected row count range
-        approx = expected.get("row_count_approx", "")
-        if approx and row_count > 0:
-            try:
-                if isinstance(approx, str) and '-' in approx:
-                    lo, hi = [int(x.strip()) for x in approx.split('-')]
-                elif isinstance(approx, (int, float)):
-                    lo, hi = int(approx) // 2, int(approx) * 5
-                else:
-                    lo, hi = int(approx) // 2, int(approx) * 5
-                if row_count > hi * 2:
-                    gaps.append(
-                        f"Plan expected ~{approx} rows but got {row_count}. "
-                        f"Result may be un-aggregated or missing filters."
-                    )
-            except (ValueError, TypeError):
-                pass
-
-        # Check expected columns
-        expected_cols = expected.get("columns_expected", [])
-        if expected_cols and columns:
-            actual_cols_lower = {c.lower() for c in columns}
-            missing = [c for c in expected_cols if c.lower() not in actual_cols_lower]
-            if missing and len(missing) > len(expected_cols) // 2:
-                gaps.append(
-                    f"Plan expected columns {expected_cols} but result has {columns}. "
-                    f"Missing: {missing}"
-                )
-
-        # Check table coverage — did SQL query all tables the plan specified?
-        plan_tables = plan.get("tables_to_use", []) or getattr(decomp, 'plan_tables', [])
-        if plan_tables and len(plan_tables) > 1 and sql:
-            sql_upper = sql.upper()
-            missing_tables = [t for t in plan_tables if t.upper() not in sql_upper]
-            if missing_tables:
-                gaps.append(
-                    f"Plan specified tables {plan_tables} but SQL only queries "
-                    f"{[t for t in plan_tables if t.upper() in sql_upper]}. "
-                    f"Missing: {missing_tables}. The result may be partial — "
-                    f"include ALL tables for a complete answer."
-                )
-
-        if gaps:
-            replan_hint = " ".join(gaps)
-            return {"match": False, "gap": replan_hint, "replan_hint": replan_hint}
-
-        return {"match": True, "gap": "", "replan_hint": ""}
 
     def _detect_schema_gaps(self, decomp, pruned) -> list[dict]:
         """Check if pruned schema can support each decomposition part's requirements.
