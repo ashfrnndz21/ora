@@ -2689,7 +2689,7 @@ function ChartView({config, rows, columns}) {
 }
 
 function ResultBlock({data: d, addToast, setQuery, workspace}) {
-  const [tab, setTab] = useState('sql');
+  const [tab, setTab] = useState('table');
   const [feedback, setFeedback] = useState(null); // null | 'up' | 'down'
   const [showCorrection, setShowCorrection] = useState(false);
   const [correctionNote, setCorrectionNote] = useState('');
@@ -4661,7 +4661,17 @@ function KnowledgeView({workspace, addToast}) {
   const [expandedIter, setExpandedIter] = useState(null);
   const [showGraph, setShowGraph] = useState(false);
   const [expandedSections, setExpandedSections] = useState({foundation:true, inferred:true, confirmed:true, corrected:true});
-  const [kChatMessages, setKChatMessages] = useState([]);
+  const _kChatKey = 'ora_kchat_' + (workspace?.workspace_id || 'default');
+  const [kChatMessages, _setKChatMessages] = useState(() => {
+    try { const s = localStorage.getItem(_kChatKey); return s ? JSON.parse(s) : []; } catch(e) { return []; }
+  });
+  const setKChatMessages = (updater) => {
+    _setKChatMessages(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      try { localStorage.setItem(_kChatKey, JSON.stringify(next.slice(-20))); } catch(e) {}
+      return next;
+    });
+  };
   const [kChatInput, setKChatInput] = useState('');
   const [kChatLoading, setKChatLoading] = useState(false);
 

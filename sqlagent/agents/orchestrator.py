@@ -642,11 +642,16 @@ class OraOrchestrator:
         if not tables:
             issues.append("No tables identified")
 
-        # Check filters exist
+        # Check filters — only required when the decomposition identified entities to resolve
         filters = response.result.get("filters", [])
-        checks.append({"check": "filters resolved", "passed": len(filters) > 0})
-        if not filters:
-            issues.append("No filters resolved")
+        has_entities = len(decomp.entities_to_resolve) > 0
+        if has_entities:
+            checks.append({"check": "filters resolved", "passed": len(filters) > 0})
+            if not filters:
+                issues.append("No filters resolved")
+        else:
+            checks.append({"check": "filters resolved", "passed": True,
+                          "note": "no entities to resolve — filters not required"})
 
         # Check calculations coverage
         if decomp.calculations_needed:
