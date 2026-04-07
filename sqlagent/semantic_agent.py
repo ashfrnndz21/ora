@@ -467,6 +467,35 @@ def evolve_semantic_layer(
             if new_confs:
                 _save_learned_aliases(workspace_id, sid, existing, new_confs)
 
+    # ── 1b. Learn group memberships from resolved filters ─────────────
+    # If a filter has a list of values (e.g., ASEAN → 10 countries),
+    # save the group mapping so future queries resolve instantly
+    if sem_reasoning and sem_reasoning.get("filters"):
+        for flt in sem_reasoning["filters"]:
+            val = flt.get("value", "")
+            if isinstance(val, list) and len(val) >= 3:
+                # This is a group resolution — save it
+                # Check if any alias maps to this group
+                reasoning = sem_reasoning.get("reasoning", "").lower()
+                for alias_term, alias_val in sem_reasoning.get("new_aliases", {}).items():
+                    if isinstance(alias_val, str) and alias_val.lower() in reasoning:
+                        # Save the group: term → list of values
+                        target_sources = query_result.get("target_sources", [])
+                        for sid in target_sources:
+                            existing = _load_learned_aliases(workspace_id, sid)
+                            key = alias_term.lower().strip()
+                            if key not in existing or not isinstance(existing.get(key), list):
+                                existing[key] = val  # Save the list, not the description
+                                _save_learned_aliases(workspace_id, sid, existing, {key: 0.9})
+                                learned["aliases"] += 1
+                                learned_details["aliases"].append(f"{key} → [{len(val)} values]")
+                                break
+
+    # ── 1c. Learn which tables were used together ─────────────────────
+    # If the query successfully used multiple tables, save which tables
+    # answer what kind of question (e.g., "both rates" = both tables)
+    sql = query_result.get("sql", "")
+
     # ── 2. Save confirmed relationships ──────────────────────────────────
     if sem_reasoning and len(sem_reasoning.get("tables", [])) >= 2:
         rels_path = os.path.join(ws_dir, "relationships.json")

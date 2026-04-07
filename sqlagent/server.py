@@ -2830,7 +2830,8 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
             if ctx:
                 sem_contexts[sid] = ctx
 
-        # Build nodes from connected sources
+        # Build nodes from connected sources (deduplicate by table name)
+        seen_tables = set()
         for sid, conn in agent.services.connectors.items():
             try:
                 snap = await conn.introspect()
@@ -2840,6 +2841,9 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
             ctx = sem_contexts.get(sid)
 
             for table in snap.tables[:15]:
+                if table.name in seen_tables:
+                    continue
+                seen_tables.add(table.name)
                 # Table node
                 dim_cols = []
                 measure_cols = []
@@ -2921,23 +2925,37 @@ def create_app(config: Any = None, default_db: str = "") -> FastAPI:
             except Exception:
                 pass
 
-        # Add cross-source join candidates from taxonomy
+        # Add cross-source join candidates from taxonomy (deduplicate)
+        seen_edges = {(e["source"], e["target"]) for e in edges}
         taxonomy = manifest.get("taxonomy", {})
         for join in taxonomy.get("cross_source_joins", []):
-            edges.append({
-                "source": f"tbl:{join['from'].split('.')[1] if '.' in join['from'] else join['from']}",
-                "target": f"tbl:{join['to'].split('.')[1] if '.' in join['to'] else join['to']}",
-                "type": "cross_source",
-                "confidence": join.get("confidence", 0.7),
-            })
+            src = f"tbl:{join['from'].split('.')[1] if '.' in join['from'] else join['from']}"
+            tgt = f"tbl:{join['to'].split('.')[1] if '.' in join['to'] else join['to']}"
+            if (src, tgt) not in seen_edges and (tgt, src) not in seen_edges:
+                seen_edges.add((src, tgt))
+                edges.append({"source": src, "target": tgt, "type": "cross_source", "confidence": join.get("confidence", 0.7)})
 
-        # Synonyms/aliases as decorations
+        # Synonyms/aliases as decorations (deduplicate by term)
         synonyms = []
+        seen_terms = set()
         for sid in agent.services.connectors:
             aliases = _load_learned_aliases(workspace_id, sid)
+            confs = {}
+            try:
+                key = f"{workspace_id}:{sid}"
+                from sqlagent.semantic_agent import _alias_confidence
+                confs = _alias_confidence.get(key, {})
+            except Exception:
+                pass
             for term, canonical in aliases.items():
-                if term != "_confidence":
-                    synonyms.append({"term": term, "canonical": canonical, "source_id": sid})
+                if term != "_confidence" and term not in seen_terms:
+                    seen_terms.add(term)
+                    conf = confs.get(term, 0.85)
+                    synonyms.append({
+                        "term": term, "canonical": canonical, "source_id": sid,
+                        "confidence": conf,
+                        "source": "confirmed by query" if conf >= 0.93 else "discovered" if conf >= 0.85 else "inferred",
+                    })
 
         # Patterns
         patterns = []
