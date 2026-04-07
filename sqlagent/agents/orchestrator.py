@@ -1142,6 +1142,19 @@ class OraOrchestrator:
                     f"Missing: {missing}"
                 )
 
+        # Check table coverage — did SQL query all tables the plan specified?
+        plan_tables = plan.get("tables_to_use", []) or getattr(decomp, 'plan_tables', [])
+        if plan_tables and len(plan_tables) > 1 and sql:
+            sql_upper = sql.upper()
+            missing_tables = [t for t in plan_tables if t.upper() not in sql_upper]
+            if missing_tables:
+                gaps.append(
+                    f"Plan specified tables {plan_tables} but SQL only queries "
+                    f"{[t for t in plan_tables if t.upper() in sql_upper]}. "
+                    f"Missing: {missing_tables}. The result may be partial — "
+                    f"include ALL tables for a complete answer."
+                )
+
         if gaps:
             replan_hint = " ".join(gaps)
             return {"match": False, "gap": replan_hint, "replan_hint": replan_hint}
