@@ -132,9 +132,9 @@ class SQLAgent:
         # Vector store + example store
         from sqlagent.retrieval import QdrantVectorStore, ExampleStore
 
-        # Persistent vector store — per-workspace to avoid lock conflicts
-        _ws_id = getattr(self, '_workspace_id', '') or getattr(self, '_source_id', '') or 'default'
-        _vs_path = os.path.join(os.path.expanduser("~"), ".sqlagent", "vectorstore", _ws_id)
+        # Persistent vector store — shared across workspaces for now
+        # (workspace IDs aren't stable across restarts, so per-workspace paths orphan data)
+        _vs_path = os.path.join(os.path.expanduser("~"), ".sqlagent", "vectorstore", "shared")
         os.makedirs(_vs_path, exist_ok=True)
         vector_store = QdrantVectorStore(path=_vs_path)
         await vector_store.ensure_collection(dimensions=self._config.embedding_dimensions)
