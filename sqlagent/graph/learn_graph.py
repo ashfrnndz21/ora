@@ -337,6 +337,54 @@ def make_execute_corrected_node(services: Any):
                 else:
                     rows, columns, row_count = [], [], 0
 
+                # Validate: does the corrected result address the user's complaint?
+                correction_note = state.get("correction_note", "")
+                nl_query = state.get("nl_query", "")
+                fit_ok = True
+
+                if services.llm and row_count > 0 and (correction_note or nl_query):
+                    try:
+                        fit_resp = await services.llm.complete(
+                            [{"role": "user", "content": (
+                                f"A user said a SQL query was wrong. The Learn Agent rewrote it.\n"
+                                f"Original question: {nl_query[:100]}\n"
+                                f"User's complaint: {correction_note[:100]}\n"
+                                f"Corrected SQL produced {row_count} rows, columns: {columns}\n"
+                                f"Sample: {rows[:2]}\n\n"
+                                f"Does this corrected result address the user's complaint?\n"
+                                f'Return JSON: {{"fit": true/false, "issue": "what is still wrong if not fit"}}'
+                            )}],
+                            temperature=0.0, max_tokens=128, json_mode=True,
+                        )
+                        fit_raw = fit_resp.content.strip()
+                        if fit_raw.startswith("```"):
+                            fit_raw = fit_raw.split("```")[1].strip()
+                            if fit_raw.startswith("json"): fit_raw = fit_raw[4:].strip()
+                            fit_raw = fit_raw.rstrip("```").strip()
+                        fit_parsed = json.loads(fit_raw)
+                        if not fit_parsed.get("fit", True) and attempt == 0:
+                            # Result doesn't address the complaint — rewrite
+                            issue = fit_parsed.get("issue", "Result doesn't match correction intent")
+                            fix_resp2 = await services.llm.complete(
+                                [{"role": "user", "content": (
+                                    f"Fix this SQL. The corrected result still doesn't address the issue.\n"
+                                    f"Issue: {issue}\n"
+                                    f"Current SQL:\n{current_sql}\n"
+                                    f"Return ONLY the fixed SQL."
+                                )}],
+                                max_tokens=1200,
+                            )
+                            fixed2 = fix_resp2.content.strip()
+                            if fixed2.startswith("```"):
+                                fixed2 = fixed2.split("```")[1]
+                                if fixed2.startswith("sql"): fixed2 = fixed2[3:]
+                                fixed2 = fixed2.strip().rstrip("```").strip()
+                            if fixed2 and fixed2 != current_sql:
+                                current_sql = fixed2
+                                continue
+                    except Exception:
+                        pass
+
                 return {
                     "rewritten_sql": current_sql,
                     "rows": rows,
