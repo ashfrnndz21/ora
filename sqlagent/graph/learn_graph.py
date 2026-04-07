@@ -316,57 +316,85 @@ def make_execute_corrected_node(services: Any):
                 ],
             }
 
-        try:
-            import pandas as _pd
+        import pandas as _pd
 
-            # conn.execute() returns pd.DataFrame for DuckDB/file connectors
-            result = await conn.execute(sql, timeout_s=30)
-            latency = int((time.monotonic() - started) * 1000)
+        # Self-correction loop: try up to 2 times (original + 1 fix attempt)
+        current_sql = sql
+        last_error = ""
+        for attempt in range(2):
+            try:
+                result = await conn.execute(current_sql, timeout_s=30)
+                latency = int((time.monotonic() - started) * 1000)
 
-            # Normalise: DataFrame → rows/columns/row_count
-            if isinstance(result, _pd.DataFrame):
-                rows = result.head(20).to_dict("records")
-                columns = list(result.columns)
-                row_count = len(result)
-            elif hasattr(result, "rows"):
-                # ExecutionResult or similar dataclass with .rows
-                rows = list(result.rows)[:20]
-                columns = list(getattr(result, "columns", []))
-                row_count = getattr(result, "row_count", len(rows))
-            else:
-                rows, columns, row_count = [], [], 0
+                if isinstance(result, _pd.DataFrame):
+                    rows = result.head(20).to_dict("records")
+                    columns = list(result.columns)
+                    row_count = len(result)
+                elif hasattr(result, "rows"):
+                    rows = list(result.rows)[:20]
+                    columns = list(getattr(result, "columns", []))
+                    row_count = getattr(result, "row_count", len(rows))
+                else:
+                    rows, columns, row_count = [], [], 0
 
-            return {
-                "rows": rows,
-                "columns": columns,
-                "row_count": row_count,
-                "exec_error": "",
-                "learn_trace_events": state.get("learn_trace_events", [])
-                + [
-                    {
-                        "node": "learn.execute_corrected",
-                        "status": "completed",
-                        "latency_ms": latency,
-                        "summary": f"{row_count} rows returned",
-                    }
-                ],
-            }
-        except Exception as exc:
-            latency = int((time.monotonic() - started) * 1000)
-            return {
-                "exec_error": str(exc),
-                "rows": [],
-                "columns": [],
-                "row_count": 0,
-                "learn_trace_events": state.get("learn_trace_events", [])
-                + [
-                    {
-                        "node": "learn.execute_corrected",
-                        "status": "failed",
-                        "latency_ms": latency,
-                        "summary": f"Execution error: {str(exc)[:60]}",
-                    }
-                ],
+                return {
+                    "rewritten_sql": current_sql,
+                    "rows": rows,
+                    "columns": columns,
+                    "row_count": row_count,
+                    "exec_error": "",
+                    "learn_trace_events": state.get("learn_trace_events", [])
+                    + [
+                        {
+                            "node": "learn.execute_corrected",
+                            "status": "completed",
+                            "latency_ms": latency,
+                            "summary": f"{row_count} rows returned" + (f" (fixed on attempt {attempt+1})" if attempt > 0 else ""),
+                        }
+                    ],
+                }
+            except Exception as exc:
+                last_error = str(exc)
+                if attempt == 0 and services.llm:
+                    # Self-correct: ask LLM to fix the syntax error
+                    try:
+                        fix_resp = await services.llm.complete(
+                            [{"role": "user", "content": (
+                                f"Fix this SQL syntax error. Return ONLY the corrected SQL.\n\n"
+                                f"SQL:\n{current_sql}\n\n"
+                                f"Error: {last_error}\n\n"
+                                f"Fix the error and return the complete corrected SQL. Output ONLY SQL."
+                            )}],
+                            max_tokens=1200,
+                        )
+                        fixed = fix_resp.content.strip()
+                        if fixed.startswith("```"):
+                            fixed = fixed.split("```")[1]
+                            if fixed.startswith("sql"):
+                                fixed = fixed[3:]
+                            fixed = fixed.strip().rstrip("```").strip()
+                        if fixed and fixed != current_sql:
+                            current_sql = fixed
+                            continue
+                    except Exception:
+                        pass
+
+        # All attempts failed
+        latency = int((time.monotonic() - started) * 1000)
+        return {
+            "exec_error": last_error,
+            "rows": [],
+            "columns": [],
+            "row_count": 0,
+            "learn_trace_events": state.get("learn_trace_events", [])
+            + [
+                {
+                    "node": "learn.execute_corrected",
+                    "status": "failed",
+                    "latency_ms": latency,
+                    "summary": f"Execution error after 2 attempts: {last_error[:60]}",
+                }
+            ],
             }
 
     return execute_corrected_node
