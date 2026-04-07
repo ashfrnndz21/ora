@@ -226,10 +226,19 @@ The Knowledge page is the Semantic Agent's working memory — a live, observable
 ## Install
 
 ```bash
-pip install ora-sql
+pip install ora-sql            # latest stable release
+pip install ora-sql --upgrade  # upgrade to latest
+pip install ora-sql==2.1.2     # specific version
+```
+
+Check installed version:
+```bash
+python -c "import sqlagent; print(sqlagent.__version__)"
 ```
 
 Works with any LLM. Works offline with Ollama. No API key required for local models.
+
+All releases: [PyPI](https://pypi.org/project/ora-sql/#history) · [GitHub Releases](https://github.com/ashfrnndz21/ora/releases)
 
 ---
 

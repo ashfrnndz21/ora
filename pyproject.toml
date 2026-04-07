@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ora-sql"
-version = "2.1.0"
+version = "2.1.2"
 description = "ora — The NL2SQL Agentic Runtime. Connect any database. Ask in plain English."
 readme = "README.md"
 requires-python = ">=3.11"
