@@ -84,6 +84,8 @@ class OraOrchestrator:
         decomp.plan_filters_needed = plan.get("filters_needed", True)
         decomp.plan_limitations = plan.get("honest_limitations", "") or ""
         decomp.plan_steps = plan.get("steps", [])
+        decomp._sql_strategy = plan.get("sql_strategy", "")
+        decomp._expected_result = plan.get("expected_result", {})
 
         # ══════════════════════════════════════════════════════════════
         # PHASE 2: SEMANTIC RESOLUTION — call Semantic Agent
@@ -348,9 +350,30 @@ class OraOrchestrator:
                                validation={"checks": result_valid.checks, "approved": result_valid.passed})
 
             if result_valid.passed:
+                # ── Reflect: does result match plan's expected shape? ──
+                reflection = self._reflect(plan, sql, columns, row_count, decomp)
+                if not reflection["match"]:
+                    self._trace.record("ora", "Reflects on result",
+                                       status="retry",
+                                       output=f"✗ {reflection['gap'][:100]}",
+                                       reasoning="Result shape doesn't match plan — re-routing with specific fix")
+                    query_spec = (
+                        f"RESULT SHAPE MISMATCH — the SQL produced the wrong kind of output.\n"
+                        f"Question: {nl_query}\n\n"
+                        f"Previous SQL:\n{sql}\n\n"
+                        f"Problem: {reflection['replan_hint']}\n\n"
+                        f"Schema: {', '.join(selected_tables)}\n"
+                        f"Available columns: {', '.join(c.name for t in pruned for c in t.columns[:20])}\n\n"
+                        f"Fix the SQL. Use GROUP BY and aggregation functions (AVG, SUM, COUNT). "
+                        f"Do NOT return raw individual rows — return summarized results.\n"
+                        f"Output ONLY SQL."
+                    )
+                    correction_round += 1
+                    succeeded = False
+                    continue
+
                 # ── Semantic fitness check ──────────────────────────
                 # Only on first attempt — skip on correction rounds to avoid timeout.
-                # Corrections already have targeted fix instructions.
                 if correction_round > 0:
                     self._trace.record("ora", "Semantic fitness check",
                                        status="completed",
@@ -627,6 +650,8 @@ class OraOrchestrator:
             f"Create a plan. Return JSON:\n"
             f'{{"understanding": "what the user actually wants in one sentence",'
             f'"approach": "how you will answer this using your agents and data — be specific about tables, joins, aggregations",'
+            f'"sql_strategy": "direct|aggregate|join_and_aggregate|comparative|exploratory — what kind of SQL to generate",'
+            f'"expected_result": {{"row_count_approx": "number or range like 10-20", "columns_expected": ["list of column names that should appear in result"], "should_aggregate": true/false, "group_by": ["columns to GROUP BY if aggregating"]}},'
             f'"steps": [{{"agent": "semantic|schema|sql", "action": "what to do", "expects": "what you need back from this step"}}],'
             f'"tables_to_use": ["list of table names needed"],'
             f'"filters_needed": true or false,'
@@ -968,9 +993,27 @@ class OraOrchestrator:
             )
         spec += "\nThe values above are EXACT database strings. Copy them character-for-character.\n"
 
-        # Inject plan approach so SQL Agent understands the intent
+        # Inject plan approach and SQL strategy so SQL Agent knows what to generate
         if decomp.plan_approach:
             spec += f"\nAPPROACH: {decomp.plan_approach}\n"
+        # SQL strategy from plan
+        plan_strategy = decomp.plan_steps[0].get("strategy", "") if decomp.plan_steps else ""
+        if not plan_strategy:
+            # Extract from plan fields stored elsewhere
+            plan_strategy = getattr(decomp, '_sql_strategy', '')
+        if plan_strategy:
+            spec += f"\nSQL STRATEGY: {plan_strategy}\n"
+        # Expected result shape from plan
+        expected = getattr(decomp, '_expected_result', None)
+        if expected:
+            if expected.get("should_aggregate"):
+                group_cols = expected.get("group_by", [])
+                spec += f"\nIMPORTANT: Use GROUP BY {', '.join(group_cols) if group_cols else 'appropriate columns'}. "
+                spec += f"Return aggregated results (AVG, SUM, COUNT), NOT raw individual rows.\n"
+            if expected.get("row_count_approx"):
+                spec += f"Expected result size: approximately {expected['row_count_approx']} rows.\n"
+            if expected.get("columns_expected"):
+                spec += f"Expected columns in result: {', '.join(expected['columns_expected'])}\n"
         if decomp.plan_limitations:
             spec += f"\nLIMITATIONS: {decomp.plan_limitations}\n"
 
@@ -1047,6 +1090,63 @@ class OraOrchestrator:
         except Exception as exc:
             logger.warning("ora.fitness_check_failed", error=str(exc))
             return {"fit": True, "reasoning": "Fitness check failed — proceeding", "fix_hint": ""}
+
+    def _reflect(self, plan: dict, sql: str, columns: list, row_count: int, decomp) -> dict:
+        """Reflect: compare actual result against plan's expected result shape.
+
+        Returns {"match": bool, "gap": str, "replan_hint": str}
+        This is a DETERMINISTIC check — no LLM call. Fast and reliable.
+        """
+        expected = plan.get("expected_result") or getattr(decomp, '_expected_result', {}) or {}
+        if not expected:
+            return {"match": True, "gap": "", "replan_hint": ""}
+
+        gaps = []
+
+        # Check aggregation
+        if expected.get("should_aggregate") and row_count > 500:
+            group_by = expected.get("group_by", [])
+            has_group_by = any(f"GROUP BY" in sql.upper() for _ in [1])
+            if not has_group_by:
+                gaps.append(
+                    f"Plan expected aggregated result (~{expected.get('row_count_approx', 'few')} rows) "
+                    f"but got {row_count} raw rows. SQL is missing GROUP BY {', '.join(group_by) if group_by else 'clause'}."
+                )
+
+        # Check expected row count range
+        approx = expected.get("row_count_approx", "")
+        if approx and row_count > 0:
+            try:
+                if isinstance(approx, str) and '-' in approx:
+                    lo, hi = [int(x.strip()) for x in approx.split('-')]
+                elif isinstance(approx, (int, float)):
+                    lo, hi = int(approx) // 2, int(approx) * 5
+                else:
+                    lo, hi = int(approx) // 2, int(approx) * 5
+                if row_count > hi * 2:
+                    gaps.append(
+                        f"Plan expected ~{approx} rows but got {row_count}. "
+                        f"Result may be un-aggregated or missing filters."
+                    )
+            except (ValueError, TypeError):
+                pass
+
+        # Check expected columns
+        expected_cols = expected.get("columns_expected", [])
+        if expected_cols and columns:
+            actual_cols_lower = {c.lower() for c in columns}
+            missing = [c for c in expected_cols if c.lower() not in actual_cols_lower]
+            if missing and len(missing) > len(expected_cols) // 2:
+                gaps.append(
+                    f"Plan expected columns {expected_cols} but result has {columns}. "
+                    f"Missing: {missing}"
+                )
+
+        if gaps:
+            replan_hint = " ".join(gaps)
+            return {"match": False, "gap": replan_hint, "replan_hint": replan_hint}
+
+        return {"match": True, "gap": "", "replan_hint": ""}
 
     def _detect_schema_gaps(self, decomp, pruned) -> list[dict]:
         """Check if pruned schema can support each decomposition part's requirements.
