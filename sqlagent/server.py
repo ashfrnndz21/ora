@@ -3708,6 +3708,7 @@ async def _get_or_create_agent(workspace_id: str, user_id: str) -> Any:
     elif ws_sources:
         db_to_use = ""  # Workspace has its own sources, don't use default
     agent = SQLAgent(db=db_to_use, config=cfg)
+    agent._workspace_id = workspace_id or "default"  # Set before _ensure_ready so vectorstore uses correct path
     await agent._ensure_ready()
 
     # Load workspace sources (uploaded files + database connections)
