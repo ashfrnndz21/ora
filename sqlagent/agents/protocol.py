@@ -53,3 +53,11 @@ class QueryDecomposition:
     raw_query: str = ""
     is_cross_source: bool = False  # True if parts target different data sources
     data_gaps: list[dict] = field(default_factory=list)  # schema gaps detected per part
+
+    # ── Plan fields (Phase 0 — Ora's execution plan) ──────────────
+    plan_understanding: str = ""        # what the user actually wants
+    plan_approach: str = ""             # how Ora will answer using its agents
+    plan_tables: list[str] = field(default_factory=list)  # which tables to use
+    plan_filters_needed: bool = True    # whether entity filters are expected
+    plan_limitations: str = ""          # what can't be fully answered and why
+    plan_steps: list[dict] = field(default_factory=list)  # expected output per agent step

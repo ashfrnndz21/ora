@@ -1311,54 +1311,42 @@ function ToastContainer({toasts, onRemove}) {
 const MODEL_OPTIONS = [
   // ── Anthropic ──────────────────────────────────────────────────────────
   {
-    id: 'claude-opus-4-5',
-    name: 'Claude Opus 4.5',
-    provider: 'Anthropic',
-    desc: 'Most powerful Claude. Best accuracy on complex multi-table queries.',
-    badge: 'Most Capable',
-    badgeColor: 'var(--blue-soft)',
-    badgeText: 'var(--blue-text)',
-    keyField: 'anthropic_key',
-    keyPlaceholder: 'sk-ant-api03-...',
-    keyLabel: 'Anthropic API Key',
-  },
-  {
-    id: 'claude-sonnet-4-5',
-    name: 'Claude Sonnet 4.5',
+    id: 'claude-sonnet-4-20250514',
+    name: 'Claude Sonnet 4',
     provider: 'Anthropic',
     desc: 'Best speed/accuracy balance. Recommended for most NL2SQL workloads.',
     badge: 'Recommended',
     badgeColor: 'var(--green-soft)',
     badgeText: 'var(--green-text)',
     keyField: 'anthropic_key',
-    keyPlaceholder: 'sk-ant-api03-...',
+    keyPlaceholder: 'sk-ant-...',
     keyLabel: 'Anthropic API Key',
   },
   {
-    id: 'claude-haiku-4-5',
-    name: 'Claude Haiku 4.5',
+    id: 'claude-opus-4-20250514',
+    name: 'Claude Opus 4',
+    provider: 'Anthropic',
+    desc: 'Most powerful Claude. Best accuracy on complex multi-table queries.',
+    badge: 'Most Capable',
+    badgeColor: 'var(--blue-soft)',
+    badgeText: 'var(--blue-text)',
+    keyField: 'anthropic_key',
+    keyPlaceholder: 'sk-ant-...',
+    keyLabel: 'Anthropic API Key',
+  },
+  {
+    id: 'claude-haiku-3-5-20241022',
+    name: 'Claude Haiku 3.5',
     provider: 'Anthropic',
     desc: 'Fastest Claude. For high-volume or latency-sensitive workloads.',
     badge: 'Fast',
     badgeColor: 'var(--glass)',
     badgeText: 'var(--text-secondary)',
     keyField: 'anthropic_key',
-    keyPlaceholder: 'sk-ant-api03-...',
+    keyPlaceholder: 'sk-ant-...',
     keyLabel: 'Anthropic API Key',
   },
   // ── OpenAI ─────────────────────────────────────────────────────────────
-  {
-    id: 'gpt-4.5-preview',
-    name: 'GPT-4.5',
-    provider: 'OpenAI',
-    desc: "OpenAI's most advanced model. Strongest reasoning and SQL generation.",
-    badge: 'Most Capable',
-    badgeColor: 'var(--blue-soft)',
-    badgeText: 'var(--blue-text)',
-    keyField: 'openai_key',
-    keyPlaceholder: 'sk-...',
-    keyLabel: 'OpenAI API Key',
-  },
   {
     id: 'gpt-4o',
     name: 'GPT-4o',
@@ -1367,6 +1355,18 @@ const MODEL_OPTIONS = [
     badge: 'Recommended',
     badgeColor: 'var(--green-soft)',
     badgeText: 'var(--green-text)',
+    keyField: 'openai_key',
+    keyPlaceholder: 'sk-...',
+    keyLabel: 'OpenAI API Key',
+  },
+  {
+    id: 'o3-mini',
+    name: 'o3-mini',
+    provider: 'OpenAI',
+    desc: 'Advanced reasoning model. Strong on complex SQL logic and multi-step queries.',
+    badge: 'Reasoning',
+    badgeColor: 'var(--blue-soft)',
+    badgeText: 'var(--blue-text)',
     keyField: 'openai_key',
     keyPlaceholder: 'sk-...',
     keyLabel: 'OpenAI API Key',
@@ -6431,7 +6431,7 @@ function SettingsView({addToast}) {
               onClick: () => {
                 update('model_provider', p);
                 // Auto-switch model to first option of this provider
-                const defaults = {anthropic:'claude-sonnet-4-5', openai:'gpt-4o', local:'ollama/llama3'};
+                const defaults = {anthropic:'claude-sonnet-4-20250514', openai:'gpt-4o', local:'ollama/llama3'};
                 update('model', defaults[p]);
               },
               style:{
@@ -6463,9 +6463,9 @@ function SettingsView({addToast}) {
             const provider = settings.model_provider || 'anthropic';
             const modelGroups = {
               anthropic: [
-                {v:'claude-opus-4-5',    l:'Claude Opus 4.5',          badge:'Most capable', desc:'Best reasoning, slower'},
-                {v:'claude-sonnet-4-5',  l:'Claude Sonnet 4.5',        badge:'Recommended',  desc:'Best balance of speed/quality'},
-                {v:'claude-haiku-4-5',   l:'Claude Haiku 4.5',         badge:'Fast',         desc:'Fastest, lowest cost'},
+                {v:'claude-sonnet-4-20250514',  l:'Claude Sonnet 4',          badge:'Recommended',  desc:'Best balance of speed/quality'},
+                {v:'claude-opus-4-20250514',    l:'Claude Opus 4',            badge:'Most capable', desc:'Best reasoning, slower'},
+                {v:'claude-haiku-3-5-20241022', l:'Claude Haiku 3.5',         badge:'Fast',         desc:'Fastest, lowest cost'},
                 {v:'claude-3-haiku-20240307', l:'Claude 3 Haiku',      badge:'',             desc:'Legacy, very fast'},
               ],
               openai: [
@@ -6481,7 +6481,7 @@ function SettingsView({addToast}) {
               ],
             };
             return (modelGroups[provider] || []).map(m => {
-              const selected = (settings.model || 'claude-sonnet-4-5') === m.v;
+              const selected = (settings.model || 'claude-sonnet-4-20250514') === m.v;
               return e('div', {
                 key: m.v,
                 onClick: () => {
@@ -6517,7 +6517,7 @@ function SettingsView({addToast}) {
         e('div', {style:{marginTop:8,fontSize:11,padding:'6px 12px',background:'rgba(34,197,94,0.05)',borderRadius:6,display:'flex',alignItems:'center',gap:6}},
           e('span', {style:{color:'#22c55e',fontSize:10}}, '●'),
           e('span', {style:{color:'#4a5068'}}, 'Active: '),
-          e('code', {style:{color:'#a5b4fc',fontFamily:'monospace',fontSize:11}}, settings.model || 'claude-sonnet-4-5'),
+          e('code', {style:{color:'#a5b4fc',fontFamily:'monospace',fontSize:11}}, settings.model || 'claude-sonnet-4-20250514'),
           e('span', {style:{fontSize:10,color:'#4a5068',marginLeft:4}}, '— click a card to switch instantly'),
         ),
       ),
@@ -6896,7 +6896,7 @@ function SetupChat({workspace, onReady, onBack, user, hasLlmKey, onLlmKeyAdded})
   const [keyProvider, setKeyProvider] = useState('anthropic'); // 'anthropic' | 'openai'
   const [keyInput, setKeyInput] = useState('');
   const [keyStatus, setKeyStatus] = useState('idle'); // 'idle'|'testing'|'ok'|'fail'
-  const [chosenModel, setChosenModel] = useState('claude-sonnet-4-5'); // default: best Anthropic balance model
+  const [chosenModel, setChosenModel] = useState('claude-sonnet-4-20250514'); // default: best Anthropic balance model
   const [greetingTriggered, setGreetingTriggered] = useState(false);
   // Track whether the USER has personally completed key setup — per workspace.
   // Each new workspace always shows the API key step so the user can confirm
@@ -7187,7 +7187,7 @@ function SetupChat({workspace, onReady, onBack, user, hasLlmKey, onLlmKeyAdded})
               setKeyInput('');
               setKeyStatus('idle');
               // Auto-select the Recommended model for this provider
-              setChosenModel(p === 'anthropic' ? 'claude-sonnet-4-5' : 'gpt-4o');
+              setChosenModel(p === 'anthropic' ? 'claude-sonnet-4-20250514' : 'gpt-4o');
             },
             style:{
               padding:'5px 14px',borderRadius:100,fontSize:12,cursor:'pointer',fontFamily:'var(--font-ui)',

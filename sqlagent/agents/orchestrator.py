@@ -59,17 +59,58 @@ class OraOrchestrator:
                            output=f"Sources: {effective_sources}")
 
         # ══════════════════════════════════════════════════════════════
+        # PHASE 0: PLAN — Ora reads self-model and decides approach
+        # ══════════════════════════════════════════════════════════════
+        plan = await self._plan(nl_query, workspace_id)
+        total_tokens += plan.get("_tokens", 0)
+
+        self._trace.record("ora", "Planned approach",
+                           input_context=nl_query[:100],
+                           output=f"Understanding: {plan.get('understanding','')[:80]}",
+                           reasoning=f"Approach: {plan.get('approach','')[:120]}",
+                           status="completed")
+
+        # ══════════════════════════════════════════════════════════════
         # PHASE 1: DECOMPOSE — Ora thinks about the query structure
         # ══════════════════════════════════════════════════════════════
         decomp = await self._decompose(nl_query, effective_sources)
         total_tokens += getattr(decomp, "_tokens", 0)
+
+        # Store plan in decomposition so downstream phases can use it
+        decomp.plan_understanding = plan.get("understanding", "")
+        decomp.plan_approach = plan.get("approach", "")
+        decomp.plan_tables = plan.get("tables_to_use", [])
+        decomp.plan_filters_needed = plan.get("filters_needed", True)
+        decomp.plan_limitations = plan.get("honest_limitations", "") or ""
+        decomp.plan_steps = plan.get("steps", [])
 
         # ══════════════════════════════════════════════════════════════
         # PHASE 2: SEMANTIC RESOLUTION — call Semantic Agent
         # ══════════════════════════════════════════════════════════════
         sem_response = await self._resolve(nl_query, decomp, effective_sources, workspace_id)
 
-        # Validate semantic output
+        # ── Handoff validation: Semantic Agent ─────────────────────
+        # Plan-based recovery FIRST, then validation
+        if not sem_response.result.get("tables") and decomp.plan_tables:
+            sem_response.result["tables"] = decomp.plan_tables
+            if sem_response.confidence < 0.5:
+                sem_response.confidence = 0.5
+            self._trace.record("ora", "Applied plan tables",
+                               output=f"Plan specified tables: {decomp.plan_tables}",
+                               status="completed")
+        elif not sem_response.result.get("tables"):
+            try:
+                all_t = await self._schema.get_all_tables()
+                sem_response.result["tables"] = [t.name for t in all_t[:10]]
+                if sem_response.confidence < 0.5:
+                    sem_response.confidence = 0.5
+                self._trace.record("ora", "Using all available tables",
+                                   output=f"No specific tables identified — using all: {sem_response.result['tables']}",
+                                   status="completed")
+            except Exception:
+                pass
+
+        # NOW validate (after plan recovery has had a chance to fill gaps)
         sem_valid = self._validate_semantic(decomp, sem_response, workspace_id)
         checks_detail = "\n".join(
             f"  {'✓' if c.get('passed') else '✗'} {c.get('check','')}"
@@ -451,12 +492,12 @@ class OraOrchestrator:
             "data_gaps": [g["detail"] for g in decomp.data_gaps] if decomp.data_gaps else [],
             "is_compound_query": len(decomp.parts) > 1,
             "complexity": "complex" if len(decomp.parts) > 2 else "moderate",
-            "data_warnings": [],
+            "data_warnings": [decomp.plan_limitations] if decomp.plan_limitations else [],
             "entity_filters": [],
             "routing_reasoning": sem_response.reasoning,
-            "ora_reasoning": sem_response.reasoning,
+            "ora_reasoning": f"Plan: {decomp.plan_approach}\n{sem_response.reasoning}",
             "analytical_intent": decomp.comparison_type or "comparison",
-            "plan_reasoning": "",
+            "plan_reasoning": decomp.plan_approach,
             "started_at": datetime.now(timezone.utc).isoformat(),
             "max_corrections": MAX_ATTEMPTS,
             "sub_queries": [],
@@ -473,6 +514,138 @@ class OraOrchestrator:
     # ══════════════════════════════════════════════════════════════════
     # INTERNAL METHODS
     # ══════════════════════════════════════════════════════════════════
+
+    async def _build_self_model(self, workspace_id: str = "") -> str:
+        """Assemble Ora's self-model from live data — what it can do, what it knows."""
+        parts = []
+
+        # Agents
+        parts.append(
+            "AGENTS:\n"
+            "- Semantic Agent: resolves user terms (abbreviations, codes, names) to exact database values. "
+            "Learns aliases over time. Pre-resolves high-confidence terms without LLM call.\n"
+            "- Schema Agent: knows table structures, columns, data types, relationships between tables.\n"
+            "- SQL Agent: generates SQL from a query specification. Self-corrects up to 3 times on errors."
+        )
+
+        # Data sources
+        source_lines = []
+        for sid, conn in self._services.connectors.items():
+            try:
+                snap = await conn.introspect()
+                cols = []
+                for t in snap.tables[:6]:
+                    col_names = ", ".join(c.name for c in t.columns[:10])
+                    cols.append(f"  {t.name} ({t.row_count_estimate:,} rows): {col_names}")
+                source_lines.append(f"Source '{sid}':\n" + "\n".join(cols))
+            except Exception:
+                pass
+        if source_lines:
+            parts.append("DATA SOURCES:\n" + "\n".join(source_lines))
+
+        # Learned context
+        learned = []
+        try:
+            from sqlagent.semantic_agent import _load_manifest, _load_learned_aliases
+            manifest = _load_manifest(workspace_id)
+            iter_id = manifest.get("iteration_id", 0)
+
+            alias_count = 0
+            for sid in self._services.connectors:
+                aliases = _load_learned_aliases(workspace_id, sid)
+                alias_count += len([k for k in aliases if k != "_confidence"])
+
+            import os
+            ws_dir = os.path.join(os.path.expanduser("~"), ".sqlagent", "uploads", workspace_id)
+            pattern_count = 0
+            if os.path.exists(os.path.join(ws_dir, "query_patterns.json")):
+                with open(os.path.join(ws_dir, "query_patterns.json")) as f:
+                    pattern_count = len(json.load(f))
+
+            rule_count = 0
+            try:
+                from sqlagent.rules import load_rules
+                rule_count = len(load_rules(workspace_id))
+            except Exception:
+                pass
+
+            if iter_id > 0:
+                learned.append(
+                    f"Semantic layer v{iter_id}: {alias_count} learned aliases, "
+                    f"{pattern_count} query patterns, {rule_count} active rules"
+                )
+        except Exception:
+            pass
+        if learned:
+            parts.append("LEARNED CONTEXT:\n" + "\n".join(learned))
+
+        # Boundaries
+        parts.append(
+            "BOUNDARIES:\n"
+            "- Can ONLY query the connected data sources listed above (SELECT only)\n"
+            "- Cannot predict, forecast, or access external data\n"
+            "- Cannot modify data (no INSERT, UPDATE, DELETE)\n"
+            "- If a query needs data not in the connected sources, say so honestly\n"
+            "- If a query is analytical or exploratory, use all available tables"
+        )
+
+        return "\n\n".join(parts)
+
+    async def _plan(self, query: str, workspace_id: str = "") -> dict:
+        """Phase 0: Ora reads its self-model and creates an execution plan.
+
+        The plan drives all downstream routing — no hardcoded rules needed.
+        Returns a dict with understanding, approach, steps, tables, limitations.
+        """
+        self_model = await self._build_self_model(workspace_id)
+
+        prompt = (
+            f"You are Ora, an agentic SQL runtime. Read your capabilities below "
+            f"and create an execution plan for the user's query.\n\n"
+            f"{self_model}\n\n"
+            f"USER QUERY: \"{query}\"\n\n"
+            f"Create a plan. Return JSON:\n"
+            f'{{"understanding": "what the user actually wants in one sentence",'
+            f'"approach": "how you will answer this using your agents and data — be specific about tables, joins, aggregations",'
+            f'"steps": [{{"agent": "semantic|schema|sql", "action": "what to do", "expects": "what you need back from this step"}}],'
+            f'"tables_to_use": ["list of table names needed"],'
+            f'"filters_needed": true or false,'
+            f'"honest_limitations": "what you cannot fully answer and why, or null if no limitations"}}'
+            f"\nReturn ONLY valid JSON."
+        )
+
+        try:
+            resp = await self._services.llm.complete(
+                [{"role": "user", "content": prompt}],
+                temperature=0.0, max_tokens=512, json_mode=True,
+            )
+            raw = resp.content.strip()
+            if raw.startswith("```"):
+                raw = raw.split("```")[1]
+                if raw.startswith("json"):
+                    raw = raw[4:]
+                raw = raw.strip().rstrip("```").strip()
+            plan = json.loads(raw)
+            plan["_tokens"] = getattr(resp, "tokens_input", 0) + getattr(resp, "tokens_output", 0)
+            return plan
+        except Exception as exc:
+            logger.warning("ora.plan_failed", error=str(exc))
+            # Fallback: try to infer from query text whether filters are needed
+            # If no specific entities mentioned, filters probably not needed
+            q_lower = query.lower()
+            likely_exploratory = any(w in q_lower for w in [
+                "describe", "insight", "tell me about", "what can",
+                "overview", "summarize", "explore", "what type",
+            ])
+            return {
+                "understanding": query,
+                "approach": "exploratory analysis across all tables" if likely_exploratory else "standard query execution",
+                "steps": [],
+                "tables_to_use": [],
+                "filters_needed": not likely_exploratory,
+                "honest_limitations": None,
+                "_tokens": 0,
+            }
 
     async def _decompose(self, query: str, source_ids: list[str] | None = None) -> QueryDecomposition:
         """Ora THINKS — decomposes query into logical parts via LLM.
@@ -642,16 +815,15 @@ class OraOrchestrator:
         if not tables:
             issues.append("No tables identified")
 
-        # Check filters — only required when the decomposition identified entities to resolve
+        # Check filters — driven by plan, not hardcoded rules
         filters = response.result.get("filters", [])
-        has_entities = len(decomp.entities_to_resolve) > 0
-        if has_entities:
+        if decomp.plan_filters_needed:
             checks.append({"check": "filters resolved", "passed": len(filters) > 0})
             if not filters:
-                issues.append("No filters resolved")
+                issues.append("No filters resolved (plan expected filters)")
         else:
             checks.append({"check": "filters resolved", "passed": True,
-                          "note": "no entities to resolve — filters not required"})
+                          "note": "plan says filters not needed for this query"})
 
         # Check calculations coverage
         if decomp.calculations_needed:
@@ -775,6 +947,12 @@ class OraOrchestrator:
                 f"Use the actual column names from the schema provided.\n"
             )
         spec += "\nThe values above are EXACT database strings. Copy them character-for-character.\n"
+
+        # Inject plan approach so SQL Agent understands the intent
+        if decomp.plan_approach:
+            spec += f"\nAPPROACH: {decomp.plan_approach}\n"
+        if decomp.plan_limitations:
+            spec += f"\nLIMITATIONS: {decomp.plan_limitations}\n"
 
         # Substitute user terms with resolved values
         new_aliases = sem_response.result.get("new_aliases", {})
