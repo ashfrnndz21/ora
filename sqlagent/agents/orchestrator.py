@@ -166,6 +166,20 @@ class OraOrchestrator:
 
         query_spec = self._build_spec(nl_query, decomp, sem_response, actual_columns)
 
+        # Inject database dialect so SQL Agent generates correct syntax
+        dialects = set()
+        for conn in self._services.connectors.values():
+            dialects.add(getattr(conn, 'dialect', 'sql'))
+        if dialects:
+            dialect_str = ', '.join(dialects)
+            query_spec += f"\n\nDATABASE DIALECT: {dialect_str}. Generate SQL compatible with this dialect.\n"
+            if 'duckdb' in dialects:
+                query_spec += (
+                    "DuckDB syntax notes: use STRING_AGG(col, ',') not GROUP_CONCAT, "
+                    "use LIST_AGG or STRING_AGG for aggregation, "
+                    "no SEPARATOR keyword, use standard SQL window functions.\n"
+                )
+
         # Inject schema gaps into spec so SQL Agent and Response Writer know
         if schema_gaps:
             gap_notes = "\n".join(f"  - {g['detail']}" for g in schema_gaps)
@@ -412,9 +426,15 @@ class OraOrchestrator:
                 for t in pruned:
                     cols = [f"{c.name} ({c.data_type})" for c in t.columns[:30]]
                     col_ref += f"\nTable {t.name} columns: {', '.join(cols)}"
+                dialect_hint = ""
+                if dialects:
+                    dialect_hint = f"\nDATABASE DIALECT: {', '.join(dialects)}. Use ONLY syntax compatible with this dialect.\n"
+                    if 'duckdb' in dialects:
+                        dialect_hint += "DuckDB: use STRING_AGG(col, ',') not GROUP_CONCAT, no SEPARATOR keyword.\n"
                 query_spec = (
                     f"SQL error: {execution_error}\n\n"
                     f"Question: {nl_query}\n\n"
+                    f"{dialect_hint}"
                     f"ACTUAL SCHEMA (use ONLY these column names):{col_ref}\n\n"
                     f"Full schema:\n{schema_text[:3000]}\n"
                     f"Fix the SQL using ONLY the column names listed above. Output ONLY SQL."
