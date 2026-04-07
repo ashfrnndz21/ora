@@ -61,7 +61,8 @@ class OraOrchestrator:
         # ══════════════════════════════════════════════════════════════
         # PHASE 0: PLAN — Ora reads self-model and decides approach
         # ══════════════════════════════════════════════════════════════
-        plan = await self._plan(nl_query, workspace_id)
+        conversation_history = state.get("conversation_history", [])
+        plan = await self._plan(nl_query, workspace_id, conversation_history)
         total_tokens += plan.get("_tokens", 0)
 
         self._trace.record("ora", "Planned approach",
@@ -591,19 +592,38 @@ class OraOrchestrator:
 
         return "\n\n".join(parts)
 
-    async def _plan(self, query: str, workspace_id: str = "") -> dict:
+    async def _plan(self, query: str, workspace_id: str = "", conversation_history: list | None = None) -> dict:
         """Phase 0: Ora reads its self-model and creates an execution plan.
 
         The plan drives all downstream routing — no hardcoded rules needed.
+        Includes conversation history so follow-up queries are understood in context.
         Returns a dict with understanding, approach, steps, tables, limitations.
         """
         self_model = await self._build_self_model(workspace_id)
+
+        # Build conversation context for follow-up resolution
+        conv_context = ""
+        if conversation_history:
+            conv_lines = []
+            for turn in conversation_history[-4:]:
+                role = turn.get("role", "")
+                text = turn.get("text", "") or turn.get("nl_response", "") or ""
+                sql = turn.get("sql", "")
+                if role == "user" and text:
+                    conv_lines.append(f"User: {text[:150]}")
+                elif role == "assistant" and (text or sql):
+                    conv_lines.append(f"Agent: {text[:100]}" + (f"\n  SQL: {sql[:150]}" if sql else ""))
+            if conv_lines:
+                conv_context = "\nCONVERSATION HISTORY (for follow-up resolution):\n" + "\n".join(conv_lines) + "\n"
 
         prompt = (
             f"You are Ora, an agentic SQL runtime. Read your capabilities below "
             f"and create an execution plan for the user's query.\n\n"
             f"{self_model}\n\n"
+            f"{conv_context}\n"
             f"USER QUERY: \"{query}\"\n\n"
+            f"If this is a follow-up question (e.g., 'what about X?', 'and for Y?', 'show me the same for Z'), "
+            f"interpret it in the context of the conversation history above.\n\n"
             f"Create a plan. Return JSON:\n"
             f'{{"understanding": "what the user actually wants in one sentence",'
             f'"approach": "how you will answer this using your agents and data — be specific about tables, joins, aggregations",'
